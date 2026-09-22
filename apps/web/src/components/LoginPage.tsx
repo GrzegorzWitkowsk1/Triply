@@ -6,7 +6,7 @@ import {
   VisibilityOffOutlined,
   VisibilityOutlined,
 } from "@mui/icons-material";
-import FlightIcon from "@mui/icons-material/Flight";
+import Logo from "./Logo";
 
 type AuthView = "login" | "register";
 
@@ -116,13 +116,7 @@ export default function LoginPage() {
 
         <div className="auth-panel">
           <div className="auth-brand">
-            <span className="auth-brand-badge">
-              <FlightIcon
-                sx={{ ml: "4px", color: "#ffffff", transform: "rotate(45deg)" }}
-                fontSize="small"
-              />
-            </span>
-            <span className="auth-brand-name">Triply</span>
+            <Logo />
           </div>
 
           <div className="auth-switch" role="group" aria-label="Auth view">

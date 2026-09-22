@@ -1,11 +1,20 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import AppLayout from "./components/layout/AppLayout";
 import LoginPage from "./components/LoginPage";
+import PlaceholderPage from "./pages/PlaceholderPage";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<LoginPage />} />
+        <Route element={<AppLayout />}>
+          <Route path="/trips" element={<PlaceholderPage title="My trips" />} />
+          <Route path="/explore" element={<PlaceholderPage title="Explore" />} />
+          <Route path="/saved" element={<PlaceholderPage title="Saved" />} />
+          <Route path="/profile" element={<PlaceholderPage title="Profile" />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   );
