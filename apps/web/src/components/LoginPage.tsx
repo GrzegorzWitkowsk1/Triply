@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { IconButton, InputAdornment, TextField } from "@mui/material";
+import {
+  CheckCircle,
+  LocationOnOutlined,
+  VisibilityOffOutlined,
+  VisibilityOutlined,
+} from "@mui/icons-material";
 import FlightIcon from "@mui/icons-material/Flight";
-import { VisibilityOffOutlined, VisibilityOutlined } from "@mui/icons-material";
+
+type AuthView = "login" | "register";
 
 function GoogleIcon() {
   return (
@@ -26,83 +33,186 @@ function GoogleIcon() {
   );
 }
 
+interface FormState {
+  email: string;
+  password: string;
+  showPassword: boolean;
+  setEmail: (v: string) => void;
+  setPassword: (v: string) => void;
+  setShowPassword: (v: boolean) => void;
+}
+
+function Fields({ email, password, showPassword, setEmail, setPassword, setShowPassword }: FormState) {
+  return (
+    <>
+      <TextField
+        label="Email address"
+        fullWidth
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+
+      <TextField
+        label="Password"
+        fullWidth
+        type={showPassword ? "text" : "password"}
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        slotProps={{
+          input: {
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  onClick={() => setShowPassword(!showPassword)}
+                  size="small"
+                >
+                  {showPassword ? <VisibilityOffOutlined /> : <VisibilityOutlined />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          },
+        }}
+      />
+    </>
+  );
+}
+
 export default function LoginPage() {
+  const [view, setView] = useState<AuthView>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  const formState = { email, password, showPassword, setEmail, setPassword, setShowPassword };
+
   return (
-		<div className="login-screen">
-			<div className="login-card">
-				<div className="login-logo">
-					<span className="login-logo-badge">
-						<FlightIcon  sx={{ml:'4px', color:'#ffffff', transform:'rotate(45deg)'}}/>
-					</span>
-					<h1 className="login-brand">Triply</h1>
-				</div>
+    <div className="login-screen">
+      <div className="auth-card">
+        <div className="auth-media">
+          <img src="/barcelona.jpg" alt="Barcelona, Spain" />
+          <div className="auth-media-fade" />
+          <div className="auth-media-body">
+            <span className="auth-location">
+              <LocationOnOutlined sx={{ color: "var(--color-primary)" }} fontSize="small" />
+              Barcelona, Spain
+            </span>
+            <h2 className="auth-tagline">
+              A better trip starts with a plan that feels like you.
+            </h2>
+            <ul className="auth-features">
+              <li>
+                <CheckCircle sx={{ color: "var(--color-ok)" }} fontSize="small" />
+                Personal itineraries in seconds
+              </li>
+              <li>
+                <CheckCircle sx={{ color: "var(--color-ok)" }} fontSize="small" />
+                Realistic routes and budgets
+              </li>
+            </ul>
+          </div>
+        </div>
 
-				<h2 className="login-title">Welcome back</h2>
-				<p className="login-subtitle">
-					Your next thoughtful itinerary is only a few details away.
-				</p>
+        <div className="auth-panel">
+          <div className="auth-brand">
+            <span className="auth-brand-badge">
+              <FlightIcon
+                sx={{ ml: "4px", color: "#ffffff", transform: "rotate(45deg)" }}
+                fontSize="small"
+              />
+            </span>
+            <span className="auth-brand-name">Triply</span>
+          </div>
 
-				<button type="button" className="btn btn-google" onClick={() => {}}>
-					<GoogleIcon />
-					Continue with Google
-				</button>
+          <div className="auth-switch" role="group" aria-label="Auth view">
+            <button
+              type="button"
+              className={`auth-switch-btn${view === "login" ? " is-active" : ""}`}
+              onClick={() => setView("login")}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              className={`auth-switch-btn${view === "register" ? " is-active" : ""}`}
+              onClick={() => setView("register")}
+            >
+              Register
+            </button>
+          </div>
 
-				<div className="login-divider">
-					<span>or continue with email</span>
-				</div>
+          {view === "login" ? (
+            <form
+              className="auth-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+              }}
+            >
+              <h3 className="auth-heading">Welcome back</h3>
+              <p className="auth-subtitle">
+                Sign in to continue planning your next adventure.
+              </p>
 
-				<form
-					className="login-form"
-					onSubmit={(e) => {
-						e.preventDefault();
-					}}
-				>
-					<TextField
-						label="Email address"
-						fullWidth
-						type="email"
-						value={email}
-						onChange={(e) => setEmail(e.target.value)}
-					/>
+              <button type="button" className="btn btn-google" onClick={() => {}}>
+                <GoogleIcon />
+                Continue with Google
+              </button>
 
-					<TextField
-						label="Password"
-						fullWidth
-						type={showPassword ? "text" : "password"}
-						value={password}
-						onChange={(e) => setPassword(e.target.value)}
-						slotProps={{
-							input: {
-								endAdornment: (
-									<InputAdornment position="end">
-										<IconButton
-											aria-label={
-												showPassword ? "Hide password" : "Show password"
-											}
-											onClick={() => setShowPassword((v) => !v)}
-											size="small"
-										>
-											{showPassword ? <VisibilityOffOutlined /> : <VisibilityOutlined />}
-										</IconButton>
-									</InputAdornment>
-								),
-							},
-						}}
-					/>
+              <div className="login-divider">
+                <span>or continue with email</span>
+              </div>
 
-					<button type="submit" className="btn btn-primary">
-						Sign in
-					</button>
-				</form>
+              <Fields {...formState} />
 
-				<p className="login-signup">
-					New to Triply? <a href="/signup">Create an account</a>
-				</p>
-			</div>
-		</div>
-	);
+              <button type="submit" className="btn btn-primary">
+                Sign in
+              </button>
+
+              <p className="auth-switch-link">
+                New to Triply?{" "}
+                <button type="button" className="auth-link" onClick={() => setView("register")}>
+                  Create an account
+                </button>
+              </p>
+            </form>
+          ) : (
+            <form
+              className="auth-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+              }}
+            >
+              <h3 className="auth-heading">Create your account</h3>
+              <p className="auth-subtitle">
+                Join Triply and keep every thoughtful itinerary in one place.
+              </p>
+
+              <button type="button" className="btn btn-google" onClick={() => {}}>
+                <GoogleIcon />
+                Continue with Google
+              </button>
+
+              <div className="login-divider">
+                <span>or continue with email</span>
+              </div>
+
+              <Fields {...formState} />
+
+              <button type="submit" className="btn btn-primary">
+                Create account
+              </button>
+
+              <p className="auth-switch-link">
+                Already have an account?{" "}
+                <button type="button" className="auth-link" onClick={() => setView("login")}>
+                  Sign In
+                </button>
+              </p>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
