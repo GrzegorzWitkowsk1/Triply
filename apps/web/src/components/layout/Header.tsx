@@ -5,22 +5,24 @@ import {
   NotificationsNoneOutlined,
   PersonOutlineOutlined,
 } from "@mui/icons-material";
-import { NavLink } from "react-router-dom";
+import { NavLink, Link } from "react-router-dom";
 import Logo from "../Logo";
 
 const USER_EMAIL = "user@triply.app";
 
 const TABS = [
-  { to: "/trips", label: "my trips" },
-  { to: "/explore", label: "explore" },
-  { to: "/saved", label: "saved" },
+  { to: "/trips", label: "My Trips" },
+  { to: "/explore", label: "Explore" },
+  { to: "/saved", label: "Saved" },
 ];
 
 export default function Header() {
   return (
     <header className="app-header">
       <div className="app-header-inner">
-        <Logo />
+        <Link to="/home" className="logo-link">
+          <Logo />
+        </Link>
 
         <nav className="header-tabs">
           {TABS.map((tab) => (
