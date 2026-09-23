@@ -2320,7 +2320,7 @@ body {
     justify-content: center;
   }
 }
-}
+
 
 .trip-page {
   width: 100vw;
@@ -3182,3 +3182,22 @@ body {
     transform: translateY(-4px);
     opacity: 1;
   }
+}
+
+@media (max-width: 600px) {
+  .assistant-fab {
+    width: 56px;
+    height: 56px;
+    bottom: 100px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .assistant-fab-label {
+    display: none;
+  }
+
+  .assistant-panel {
+    width: 100%;
+  }
+}
