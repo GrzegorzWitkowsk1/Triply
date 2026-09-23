@@ -4,8 +4,8 @@ import LoginPage from "./components/LoginPage";
 import ExplorePage from "./pages/ExplorePage";
 import HomePage from "./pages/HomePage";
 import MyTripsPage from "./pages/MyTripsPage";
-import PlaceholderPage from "./pages/PlaceholderPage";
 import ProfilePage from "./pages/ProfilePage";
+import SavedPage from "./pages/SavedPage";
 
 export default function App() {
   return (
@@ -16,7 +16,7 @@ export default function App() {
           <Route path="/home" element={<HomePage />} />
           <Route path="/trips" element={<MyTripsPage />} />
           <Route path="/explore" element={<ExplorePage />} />
-          <Route path="/saved" element={<PlaceholderPage title="Saved" />} />
+          <Route path="/saved" element={<SavedPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
