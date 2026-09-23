@@ -5,6 +5,7 @@ import {
   RouteOutlined,
   ScheduleOutlined,
 } from "@mui/icons-material";
+import { useNavigate } from "react-router-dom";
 import { TripsPageTrip } from "../../config/trips";
 
 function formatBudget(n: number): string {
@@ -17,6 +18,7 @@ interface MyTripCardProps {
 }
 
 export default function MyTripCard({ trip, isFirst }: MyTripCardProps) {
+  const navigate = useNavigate();
   const progress = Math.round((trip.completed / trip.activities) * 100);
   const planActivities = trip.planActivities.slice(0, 3);
   const hasMore = trip.planActivities.length > 3;
@@ -97,6 +99,7 @@ export default function MyTripCard({ trip, isFirst }: MyTripCardProps) {
         <button
           type="button"
           className={`trip-btn my-trip-btn${isFirst ? " is-contained" : ""}`}
+          onClick={() => navigate(`/trips/${trip.id}`)}
         >
           View trip
           <ArrowForwardOutlined fontSize="small" />

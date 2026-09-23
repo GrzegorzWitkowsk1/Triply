@@ -6,6 +6,7 @@ import HomePage from "./pages/HomePage";
 import MyTripsPage from "./pages/MyTripsPage";
 import ProfilePage from "./pages/ProfilePage";
 import SavedPage from "./pages/SavedPage";
+import TripPage from "./pages/TripPage";
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/home" element={<HomePage />} />
           <Route path="/trips" element={<MyTripsPage />} />
+          <Route path="/trips/:id" element={<TripPage />} />
           <Route path="/explore" element={<ExplorePage />} />
           <Route path="/saved" element={<SavedPage />} />
           <Route path="/profile" element={<ProfilePage />} />
