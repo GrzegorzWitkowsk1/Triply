@@ -6,7 +6,7 @@ import {
   MicOutlined,
 } from "@mui/icons-material";
 import { TextField } from "@mui/material";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { HOME_BADGES, TRIPS } from "../config/home";
 import TripCard from "../components/trips/TripCard";
 
@@ -38,6 +38,7 @@ export default function HomePage() {
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const interimRef = useRef("");
+  const navigate = useNavigate()
   const hadErrorRef = useRef(false);
 
   useEffect(() => {
@@ -259,7 +260,7 @@ export default function HomePage() {
           <p className="home-eyebrow">Pick up where you left off</p>
           <div className="trips-head">
             <h2 className="trips-title">My trips</h2>
-            <button type="button" className="view-all">
+            <button onClick={() => navigate('/trips')} type="button" className="view-all">
               View all
               <ArrowForwardOutlined fontSize="small" />
             </button>
