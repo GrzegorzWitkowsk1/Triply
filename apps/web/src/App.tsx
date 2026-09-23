@@ -4,6 +4,7 @@ import LoginPage from "./components/LoginPage";
 import ExplorePage from "./pages/ExplorePage";
 import HomePage from "./pages/HomePage";
 import MyTripsPage from "./pages/MyTripsPage";
+import NotificationsPage from "./pages/NotificationsPage";
 import ProfilePage from "./pages/ProfilePage";
 import SavedPage from "./pages/SavedPage";
 
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="/trips" element={<MyTripsPage />} />
           <Route path="/explore" element={<ExplorePage />} />
           <Route path="/saved" element={<SavedPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
