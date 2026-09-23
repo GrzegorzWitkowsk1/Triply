@@ -1,5 +1,6 @@
 import { AccountBalanceWalletOutlined, ArrowForwardOutlined, RouteOutlined } from "@mui/icons-material";
 import { isOverBudget, Trip } from "../../config/home";
+import { useNavigate } from "react-router-dom";
 
 interface TripCardProps {
   trip: Trip;
@@ -13,6 +14,7 @@ function formatBudget(n: number): string {
 export default function TripCard({ trip, isFirst }: TripCardProps) {
   const progress = Math.round((trip.completed / trip.activities) * 100);
   const overBudget = isOverBudget(trip);
+  const navigate = useNavigate()
 
   return (
     <article className="trip-card">
@@ -53,6 +55,7 @@ export default function TripCard({ trip, isFirst }: TripCardProps) {
         </div>
 
         <button
+         onClick={() => navigate(`/trips/${trip.id}`)}
           type="button"
           className={`trip-btn${isFirst ? " is-contained" : ""}`}
         >

@@ -22,6 +22,7 @@ body {
   background: var(--color-primary-light);
   color: var(--color-text);
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 .login-screen {
@@ -2402,7 +2403,7 @@ body {
   color: var(--color-muted);
 }
 
-.trip-card {
+.trip-page .trip-card {
   background: #ffffff;
   border: 1px solid var(--color-line);
   border-radius: 20px;
@@ -2411,7 +2412,7 @@ body {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.trip-card:hover {
+.trip-page .trip-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 16px 40px rgba(242, 102, 75, 0.16);
 }
@@ -2618,5 +2619,300 @@ body {
   .trip-hero-actions .trip-action {
     flex: 1;
     justify-content: center;
+  }
+
+  .assistant-panel {
+    width: 100vw;
+  }
+}
+
+.assistant-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1100;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 22px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 12px 30px rgba(242, 102, 75, 0.4);
+  transition: background 0.15s ease, transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.assistant-fab:hover {
+  background: var(--color-primary-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 16px 40px rgba(242, 102, 75, 0.5);
+}
+
+.assistant-fab .MuiSvgIcon-root {
+  font-size: 20px;
+}
+
+.assistant-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  background: rgba(0, 0, 0, 0.45);
+  animation: assistant-fade 0.2s ease;
+}
+
+.assistant-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1500;
+  width: 480px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.18);
+  animation: assistant-slide-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.assistant-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 8px;
+}
+
+.assistant-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.assistant-close {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.assistant-close:hover {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.assistant-close .MuiSvgIcon-root {
+  font-size: 20px;
+}
+
+.assistant-chat {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 20px 20px;
+  scrollbar-width: thin;
+}
+
+.assistant-bubble {
+  max-width: 85%;
+  padding: 12px 14px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  animation: assistant-fade 0.2s ease;
+}
+
+.assistant-bubble.is-ai {
+  align-self: flex-start;
+  background: var(--color-primary-light);
+  color: var(--color-text);
+  border-bottom-left-radius: 6px;
+}
+
+.assistant-bubble.is-intro {
+  align-self: flex-end;
+  background: var(--color-primary-light);
+  color: var(--color-text);
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 6px;
+}
+
+.assistant-bubble.is-user {
+  align-self: flex-end;
+  background: var(--color-primary);
+  color: #ffffff;
+  border-bottom-right-radius: 6px;
+}
+
+.assistant-typing {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.assistant-typing::before,
+.assistant-typing::after {
+  content: "";
+}
+
+.assistant-typing::before,
+.assistant-typing::after {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: assistant-bounce 1.2s infinite ease-in-out;
+  display: block;
+}
+
+.assistant-typing::before {
+  animation-delay: -0.3s;
+}
+
+.assistant-typing::after {
+  animation-delay: 0.3s;
+}
+
+.assistant-composer {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.assistant-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.assistant-suggestion {
+  padding: 8px 14px;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.assistant-suggestion:hover {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.assistant-divider {
+  height: 1px;
+  background: var(--color-line);
+}
+
+.assistant-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.assistant-input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  background: #fff8f5;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.assistant-input::placeholder {
+  color: var(--color-dim);
+}
+
+.assistant-input:focus {
+  border-color: var(--color-primary);
+  background: #ffffff;
+}
+
+.assistant-send {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(242, 102, 75, 0.35);
+  transition: background 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+}
+
+.assistant-send:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+  transform: translateY(-2px);
+}
+
+.assistant-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+  box-shadow: none;
+}
+
+.assistant-send-icon {
+  transform: rotate(-45deg);
+}
+
+@keyframes assistant-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes assistant-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes assistant-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
   }
 }

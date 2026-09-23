@@ -11,6 +11,7 @@ import {
   ShareOutlined,
 } from "@mui/icons-material";
 import TripActivityCard from "../components/trip/TripActivityCard";
+import TripAssistant from "../components/trip/TripAssistant";
 import TripBudgetCard from "../components/trip/TripBudgetCard";
 import TripMap from "../components/trip/TripMap";
 import TripPreferencesCard from "../components/trip/TripPreferencesCard";
@@ -181,6 +182,7 @@ export default function TripPage() {
           </div>
         </div>
       </div>
+      <TripAssistant key={id} city={city} />
     </div>
   );
 }
