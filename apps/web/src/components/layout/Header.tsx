@@ -42,12 +42,12 @@ export default function Header() {
           <button type="button" className="header-icon" aria-label="Notifications">
             <NotificationsNoneOutlined />
           </button>
-          <button type="button" className="user-btn">
+          <Link to="/profile" className="user-btn">
             <span className="user-icon">
               <PersonOutlineOutlined />
             </span>
             <span className="user-email">{USER_EMAIL}</span>
-          </button>
+          </Link>
         </div>
       </div>
     </header>

@@ -5,6 +5,7 @@ import ExplorePage from "./pages/ExplorePage";
 import HomePage from "./pages/HomePage";
 import MyTripsPage from "./pages/MyTripsPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
+import ProfilePage from "./pages/ProfilePage";
 
 export default function App() {
   return (
@@ -16,7 +17,7 @@ export default function App() {
           <Route path="/trips" element={<MyTripsPage />} />
           <Route path="/explore" element={<ExplorePage />} />
           <Route path="/saved" element={<PlaceholderPage title="Saved" />} />
-          <Route path="/profile" element={<PlaceholderPage title="Profile" />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
