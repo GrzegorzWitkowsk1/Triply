@@ -90,7 +90,7 @@ export default function SavedPage() {
           <button
             type="button"
             className="btn btn-primary explore-cta-btn"
-            onClick={() => navigate("/home")}
+            onClick={() => navigate("/home", { state: { focusPrompt: true } })}
           >
             Plan a trip
             <ArrowForwardOutlined fontSize="small" />

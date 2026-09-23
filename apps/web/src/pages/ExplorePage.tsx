@@ -86,7 +86,7 @@ export default function ExplorePage() {
           <button
             type="button"
             className="btn btn-primary explore-cta-btn"
-            onClick={() => navigate("/home")}
+            onClick={() => navigate("/home", { state: { focusPrompt: true } })}
           >
             Plan my trip
             <ArrowForwardOutlined fontSize="small" />

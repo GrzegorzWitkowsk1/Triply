@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowForwardOutlined,
   AttachFileOutlined,
@@ -6,6 +6,7 @@ import {
   MicOutlined,
 } from "@mui/icons-material";
 import { TextField } from "@mui/material";
+import { useLocation } from "react-router-dom";
 import { HOME_BADGES, TRIPS } from "../config/home";
 import TripCard from "../components/trips/TripCard";
 
@@ -28,14 +29,25 @@ function getRecognition(): SpeechRecognition | null {
 }
 
 export default function HomePage() {
+  const location = useLocation();
   const [prompt, setPrompt] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [listening, setListening] = useState(false);
   const [voiceHint, setVoiceHint] = useState<VoiceHint | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const promptInputRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const interimRef = useRef("");
   const hadErrorRef = useRef(false);
+
+  useEffect(() => {
+    const shouldFocus = (location.state as { focusPrompt?: boolean } | null)
+      ?.focusPrompt;
+    if (shouldFocus) {
+      window.scrollTo({ top: 0, behavior: "auto" });
+      promptInputRef.current?.focus();
+    }
+  }, [location.state]);
 
   const getOrCreateRecognition = (): SpeechRecognition | null => {
     if (recognitionRef.current) return recognitionRef.current;
@@ -181,7 +193,10 @@ export default function HomePage() {
             placeholder="4 days in Barcelona, €500 budget, I love food and architecture, relaxed place..."
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            slotProps={{ input: { disableUnderline: true } }}
+            slotProps={{
+              input: { disableUnderline: true },
+              htmlInput: { ref: promptInputRef },
+            }}
           />
           <div className="prompt-divider" />
           <div className="prompt-tools">
