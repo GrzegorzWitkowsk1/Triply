@@ -39,6 +39,12 @@ bun run dev:web  # frontend only on http://localhost:5173
 
 The Vite dev server proxies `/health` and `/api` to the backend.
 
+## Authentication
+
+Authentication uses an HttpOnly `triply.sid` cookie backed by MongoDB. Set a unique `SESSION_SECRET` of at least 32 characters in `apps/api/.env`. The compiled API start command forces production mode; production deployments should set `WEB_ORIGIN`, configure `TRUST_PROXY` for the reverse proxy, and forward `/api` to the API with an SPA fallback for frontend routes.
+
+Public web routes are `/login` and `/register`; authenticated app routes are protected in the client and by the API session middleware.
+
 ## Useful commands
 
 ```bash

@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { PublicOnlyRoute, RequireAuth } from "./auth/RouteGuards";
 import AppLayout from "./components/layout/AppLayout";
 import ScrollToTop from "./components/layout/ScrollToTop";
 import LoginPage from "./components/LoginPage";
@@ -15,8 +16,37 @@ export default function App() {
     <BrowserRouter>
       <ScrollToTop />
       <Routes>
-        <Route path="/" element={<LoginPage />} />
-        <Route element={<AppLayout />}>
+        <Route
+          path="/"
+          element={
+            <PublicOnlyRoute>
+              <Navigate to="/login" replace />
+            </PublicOnlyRoute>
+          }
+        />
+        <Route
+          path="/login"
+          element={
+            <PublicOnlyRoute>
+              <LoginPage mode="login" />
+            </PublicOnlyRoute>
+          }
+        />
+        <Route
+          path="/register"
+          element={
+            <PublicOnlyRoute>
+              <LoginPage mode="register" />
+            </PublicOnlyRoute>
+          }
+        />
+        <Route
+          element={
+            <RequireAuth>
+              <AppLayout />
+            </RequireAuth>
+          }
+        >
           <Route path="/home" element={<HomePage />} />
           <Route path="/trips" element={<MyTripsPage />} />
           <Route path="/trips/:id" element={<TripPage />} />
@@ -24,7 +54,7 @@ export default function App() {
           <Route path="/saved" element={<SavedPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/home" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -3,6 +3,7 @@ import { PersonOutlineOutlined, UploadOutlined } from "@mui/icons-material";
 import { TextField } from "@mui/material";
 import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
+import { useAuth } from "../../auth/AuthProvider";
 import {
   ACCEPTED_IMAGE_TYPES,
   MAX_IMAGE_SIZE,
@@ -11,6 +12,7 @@ import {
 import { profileSchema, type ProfileFormValues } from "../../schemas/profile";
 
 export default function ProfileSettingsCard() {
+  const { user } = useAuth();
   const {
     register,
     handleSubmit,
@@ -21,7 +23,7 @@ export default function ProfileSettingsCard() {
     defaultValues: {
       name: PROFILE_FORM_DEFAULTS.name,
       surname: PROFILE_FORM_DEFAULTS.surname,
-      email: PROFILE_FORM_DEFAULTS.email,
+      email: user?.email ?? "",
     },
   });
 
@@ -107,7 +109,7 @@ export default function ProfileSettingsCard() {
       <TextField
         label="Email"
         fullWidth
-        value={PROFILE_FORM_DEFAULTS.email}
+        value={user?.email ?? ""}
         slotProps={{ input: { readOnly: true } }}
       />
 

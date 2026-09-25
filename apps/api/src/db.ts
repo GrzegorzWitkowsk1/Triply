@@ -9,7 +9,7 @@ export async function connectDb(uri: string): Promise<void> {
   });
 
   await mongoose.connect(uri);
-  console.log(`[db] connected to ${uri}`);
+  console.log("[db] connected");
 }
 
 export function isDbConnected(): boolean {

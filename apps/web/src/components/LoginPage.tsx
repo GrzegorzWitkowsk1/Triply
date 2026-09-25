@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { IconButton, InputAdornment, TextField } from "@mui/material";
 import {
   CheckCircle,
@@ -6,43 +7,33 @@ import {
   VisibilityOffOutlined,
   VisibilityOutlined,
 } from "@mui/icons-material";
+import { useAuth } from "../auth/AuthProvider";
 import Logo from "./Logo";
 
-type AuthView = "login" | "register";
+export type AuthView = "login" | "register";
 
-function GoogleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="#4285F4"
-        d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
-      />
-      <path
-        fill="#34A853"
-        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.29A11.99 11.99 0 0 0 0 12c0 1.94.47 3.77 1.29 5.38l3.98-3.09z"
-      />
-      <path
-        fill="#EA4335"
-        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09C6.22 6.86 8.87 4.75 12 4.75z"
-      />
-    </svg>
-  );
+interface LoginPageProps {
+  mode: AuthView;
 }
 
 interface FormState {
   email: string;
   password: string;
   showPassword: boolean;
-  setEmail: (v: string) => void;
-  setPassword: (v: string) => void;
-  setShowPassword: (v: boolean) => void;
+  setEmail: (value: string) => void;
+  setPassword: (value: string) => void;
+  setShowPassword: (value: boolean) => void;
 }
 
-function Fields({ email, password, showPassword, setEmail, setPassword, setShowPassword }: FormState) {
+function Fields({
+  mode,
+  email,
+  password,
+  showPassword,
+  setEmail,
+  setPassword,
+  setShowPassword,
+}: FormState & { mode: AuthView }) {
   return (
     <>
       <TextField
@@ -50,7 +41,9 @@ function Fields({ email, password, showPassword, setEmail, setPassword, setShowP
         fullWidth
         type="email"
         value={email}
-        onChange={(e) => setEmail(e.target.value)}
+        onChange={(event) => setEmail(event.target.value)}
+        autoComplete="email"
+        required
       />
 
       <TextField
@@ -58,8 +51,14 @@ function Fields({ email, password, showPassword, setEmail, setPassword, setShowP
         fullWidth
         type={showPassword ? "text" : "password"}
         value={password}
-        onChange={(e) => setPassword(e.target.value)}
+        onChange={(event) => setPassword(event.target.value)}
+        autoComplete={mode === "register" ? "new-password" : "current-password"}
+        required
         slotProps={{
+          htmlInput: {
+            minLength: mode === "register" ? 12 : undefined,
+            maxLength: 128,
+          },
           input: {
             endAdornment: (
               <InputAdornment position="end">
@@ -79,11 +78,47 @@ function Fields({ email, password, showPassword, setEmail, setPassword, setShowP
   );
 }
 
-export default function LoginPage() {
-  const [view, setView] = useState<AuthView>("login");
+export default function LoginPage({ mode }: LoginPageProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { login, register, isSubmitting } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isRegister = mode === "register";
+
+  useEffect(() => {
+    setError(null);
+  }, [mode]);
+
+  const getDestination = () => {
+    const state = location.state as
+      | { from?: { pathname: string; search?: string; hash?: string } }
+      | null;
+    const from = state?.from;
+
+    return from
+      ? `${from.pathname}${from.search ?? ""}${from.hash ?? ""}`
+      : "/home";
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+
+    try {
+      if (isRegister) {
+        await register({ email, password });
+      } else {
+        await login({ email, password });
+      }
+
+      navigate(getDestination(), { replace: true });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Authentication failed. Try again.");
+    }
+  };
 
   const formState = { email, password, showPassword, setEmail, setPassword, setShowPassword };
 
@@ -122,89 +157,61 @@ export default function LoginPage() {
           <div className="auth-switch" role="group" aria-label="Auth view">
             <button
               type="button"
-              className={`auth-switch-btn${view === "login" ? " is-active" : ""}`}
-              onClick={() => setView("login")}
+              className={`auth-switch-btn${!isRegister ? " is-active" : ""}`}
+              onClick={() => navigate("/login")}
+              aria-pressed={!isRegister}
             >
               Sign in
             </button>
             <button
               type="button"
-              className={`auth-switch-btn${view === "register" ? " is-active" : ""}`}
-              onClick={() => setView("register")}
+              className={`auth-switch-btn${isRegister ? " is-active" : ""}`}
+              onClick={() => navigate("/register")}
+              aria-pressed={isRegister}
             >
               Register
             </button>
           </div>
 
-          {view === "login" ? (
-            <form
-              className="auth-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-              }}
-            >
-              <h3 className="auth-heading">Welcome back</h3>
-              <p className="auth-subtitle">
-                Sign in to continue planning your next adventure.
+          <form className="auth-form" onSubmit={(event) => void handleSubmit(event)}>
+            <h3 className="auth-heading">
+              {isRegister ? "Create your account" : "Welcome back"}
+            </h3>
+            <p className="auth-subtitle">
+              {isRegister
+                ? "Join Triply and keep every thoughtful itinerary in one place."
+                : "Sign in to continue planning your next adventure."}
+            </p>
+
+            {error && (
+              <p className="auth-error" role="alert">
+                {error}
               </p>
+            )}
 
-              <button type="button" className="btn btn-google" onClick={() => {}}>
-                <GoogleIcon />
-                Continue with Google
+            <Fields mode={mode} {...formState} />
+
+            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+              {isSubmitting
+                ? isRegister
+                  ? "Creating account..."
+                  : "Signing in..."
+                : isRegister
+                  ? "Create account"
+                  : "Sign in"}
+            </button>
+
+            <p className="auth-switch-link">
+              {isRegister ? "Already have an account? " : "New to Triply? "}
+              <button
+                type="button"
+                className="auth-link"
+                onClick={() => navigate(isRegister ? "/login" : "/register")}
+              >
+                {isRegister ? "Sign in" : "Create an account"}
               </button>
-
-              <div className="login-divider">
-                <span>or continue with email</span>
-              </div>
-
-              <Fields {...formState} />
-
-              <button type="submit" className="btn btn-primary">
-                Sign in
-              </button>
-
-              <p className="auth-switch-link">
-                New to Triply?{" "}
-                <button type="button" className="auth-link" onClick={() => setView("register")}>
-                  Create an account
-                </button>
-              </p>
-            </form>
-          ) : (
-            <form
-              className="auth-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-              }}
-            >
-              <h3 className="auth-heading">Create your account</h3>
-              <p className="auth-subtitle">
-                Join Triply and keep every thoughtful itinerary in one place.
-              </p>
-
-              <button type="button" className="btn btn-google" onClick={() => {}}>
-                <GoogleIcon />
-                Continue with Google
-              </button>
-
-              <div className="login-divider">
-                <span>or continue with email</span>
-              </div>
-
-              <Fields {...formState} />
-
-              <button type="submit" className="btn btn-primary">
-                Create account
-              </button>
-
-              <p className="auth-switch-link">
-                Already have an account?{" "}
-                <button type="button" className="auth-link" onClick={() => setView("login")}>
-                  Sign In
-                </button>
-              </p>
-            </form>
-          )}
+            </p>
+          </form>
         </div>
       </div>
     </div>

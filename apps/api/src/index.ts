@@ -1,23 +1,21 @@
 import "dotenv/config";
-import express from "express";
-import cors from "cors";
+import { createApp } from "./app.js";
+import { env } from "./config/env.js";
 import { connectDb } from "./db.js";
-import { healthRouter } from "./routes/health.js";
 
-const PORT = Number(process.env.PORT ?? 4000);
-const MONGODB_URI = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27018/triply";
+async function start(): Promise<void> {
+  try {
+    await connectDb(env.MONGODB_URI);
+    const app = createApp();
 
-const app = express();
+    app.listen(env.PORT, () => {
+      console.log(`[api] listening on http://localhost:${env.PORT}`);
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[api] failed to start: ${message}`);
+    process.exitCode = 1;
+  }
+}
 
-app.use(cors());
-app.use(express.json());
-
-app.use(healthRouter);
-
-connectDb(MONGODB_URI).catch((err) => {
-  console.error("[db] initial connection failed:", err.message);
-});
-
-app.listen(PORT, () => {
-  console.log(`[api] listening on http://localhost:${PORT}`);
-});
+void start();

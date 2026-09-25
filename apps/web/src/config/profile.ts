@@ -10,7 +10,7 @@ export interface ProfileFormDefaults {
 export const PROFILE_FORM_DEFAULTS: ProfileFormDefaults = {
   name: "John",
   surname: "Doe",
-  email: "user@triply.app",
+  email: "",
 };
 
 export type LanguageCode = "pl" | "en";

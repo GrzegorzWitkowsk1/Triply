@@ -1,15 +1,12 @@
 import {
-  ExploreOutlined,
-  FavoriteBorderOutlined,
-  MapOutlined,
+  LogoutOutlined,
   NotificationsNoneOutlined,
   PersonOutlineOutlined,
 } from "@mui/icons-material";
 import { NavLink, Link } from "react-router-dom";
 import { useNotifications } from "../../hooks/useNotifications";
+import { useAuth } from "../../auth/AuthProvider";
 import Logo from "../Logo";
-
-const USER_EMAIL = "user@triply.app";
 
 const TABS = [
   { to: "/trips", label: "My Trips" },
@@ -19,6 +16,7 @@ const TABS = [
 
 export default function Header() {
   const { data: notifications } = useNotifications();
+  const { user, logout, isLoggingOut } = useAuth();
   const unreadCount =
     notifications?.filter((notification) => !notification.isRead).length ?? 0;
 
@@ -56,8 +54,19 @@ export default function Header() {
             <span className="user-icon">
               <PersonOutlineOutlined />
             </span>
-            <span className="user-email">{USER_EMAIL}</span>
+            <span className="user-email">{user?.email}</span>
           </Link>
+          <button
+            type="button"
+            className="header-icon logout-btn"
+            aria-label="Sign out"
+            onClick={() => {
+              void logout().catch(() => undefined);
+            }}
+            disabled={isLoggingOut}
+          >
+            <LogoutOutlined />
+          </button>
         </div>
       </div>
     </header>
