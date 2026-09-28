@@ -16,7 +16,9 @@ export async function requireAuth(
   }
 
   try {
-    const user = await UserModel.findById(userId).select("_id email").exec();
+    const user = await UserModel.findById(userId)
+      .select("_id email name surname avatarFileId")
+      .exec();
 
     if (!user) {
       await destroySession(req);

@@ -12,17 +12,12 @@ import {
 } from "../config/session.js";
 import { requireAuth } from "../middleware/auth.js";
 import { UserModel, toPublicUser } from "../models/User.js";
+import { passwordSchema } from "../schemas/password.js";
 
 const emailSchema = z.string().trim().email().max(254);
 const registerSchema = z.object({
   email: emailSchema,
-  password: z
-    .string()
-    .min(12)
-    .max(128)
-    .regex(/[A-Z]/, "Password must contain an uppercase letter")
-    .regex(/[0-9]/, "Password must contain a number")
-    .regex(/[^A-Za-z0-9]/, "Password must contain a special character"),
+  password: passwordSchema,
 });
 const loginSchema = z.object({
   email: emailSchema,

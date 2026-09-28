@@ -1,17 +1,19 @@
 export const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 export const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png"];
+export const ACCEPTED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png"];
 
-export interface ProfileFormDefaults {
-  name: string;
-  surname: string;
-  email: string;
+export const ACCEPTED_IMAGE_INPUT = [
+  ...ACCEPTED_IMAGE_EXTENSIONS,
+  ...ACCEPTED_IMAGE_TYPES,
+].join(",");
+
+export const MAX_IMAGE_SIZE_LABEL = `${Math.round(MAX_IMAGE_SIZE / 1024 / 1024)} MB`;
+
+export function isAcceptedImageType(file: File): boolean {
+  const type = file.type.trim().toLowerCase();
+
+  return ACCEPTED_IMAGE_TYPES.includes(type === "image/jpg" ? "image/jpeg" : type);
 }
-
-export const PROFILE_FORM_DEFAULTS: ProfileFormDefaults = {
-  name: "John",
-  surname: "Doe",
-  email: "",
-};
 
 export type LanguageCode = "pl" | "en";
 

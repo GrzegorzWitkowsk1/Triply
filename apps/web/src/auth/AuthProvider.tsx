@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useMemo,
   type PropsWithChildren,
@@ -26,6 +27,7 @@ interface AuthContextValue {
   register: (credentials: AuthCredentials) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refetchSession: () => Promise<unknown>;
+  applyUser: (user: AuthUser) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -66,6 +68,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
     },
   });
 
+  const applyUser = useCallback(
+    (user: AuthUser) => {
+      queryClient.setQueryData(SESSION_QUERY_KEY, user);
+    },
+    [queryClient],
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user: sessionQuery.data ?? null,
@@ -77,6 +86,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       register: registerMutation.mutateAsync,
       logout: logoutMutation.mutateAsync,
       refetchSession: sessionQuery.refetch,
+      applyUser,
     }),
     [
       loginMutation.isPending,
@@ -89,6 +99,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       sessionQuery.error,
       sessionQuery.isPending,
       sessionQuery.refetch,
+      applyUser,
     ],
   );
 

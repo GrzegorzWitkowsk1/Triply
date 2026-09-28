@@ -5,17 +5,14 @@ export const profileSchema = z.object({
     .string()
     .trim()
     .min(3, "Name must be at least 3 characters")
+    .max(80, "Name must be at most 80 characters")
     .regex(/^\p{L}+$/u, "Name can only contain letters"),
   surname: z
     .string()
     .trim()
     .min(3, "Surname must be at least 3 characters")
+    .max(80, "Surname must be at most 80 characters")
     .regex(/^\p{L}+$/u, "Surname can only contain letters"),
-  email: z
-    .string()
-    .trim()
-    .min(1, "Email is required")
-    .email("Enter a valid email address"),
 });
 
 export type ProfileFormValues = z.infer<typeof profileSchema>;

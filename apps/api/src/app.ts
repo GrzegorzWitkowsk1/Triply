@@ -7,6 +7,8 @@ import { errorHandler } from "./middleware/error.js";
 import { requireAuth } from "./middleware/auth.js";
 import { healthRouter } from "./routes/health.js";
 import { authRouter } from "./routes/auth.js";
+import { avatarRouter } from "./routes/avatars.js";
+import { profileRouter } from "./routes/profile.js";
 
 const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -38,8 +40,10 @@ export function createApp() {
   app.use(createSessionMiddleware());
 
   app.use(healthRouter);
+  app.use("/api/avatars", avatarRouter);
   app.use("/api/auth", authRouter);
   app.use("/api", requireAuth);
+  app.use("/api/profile", profileRouter);
   app.use(errorHandler);
 
   return app;

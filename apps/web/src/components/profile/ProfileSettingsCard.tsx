@@ -1,55 +1,96 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { PersonOutlineOutlined, UploadOutlined } from "@mui/icons-material";
-import { TextField } from "@mui/material";
-import { useRef, useState } from "react";
+import { CircularProgress, TextField } from "@mui/material";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useAuth } from "../../auth/AuthProvider";
 import {
-  ACCEPTED_IMAGE_TYPES,
+  ACCEPTED_IMAGE_INPUT,
+  isAcceptedImageType,
   MAX_IMAGE_SIZE,
-  PROFILE_FORM_DEFAULTS,
+  MAX_IMAGE_SIZE_LABEL,
 } from "../../config/profile";
+import { useUpdateProfile, useUploadAvatar } from "../../hooks/useProfile";
 import { profileSchema, type ProfileFormValues } from "../../schemas/profile";
+import { useToast } from "../ui/Toast";
 
 export default function ProfileSettingsCard() {
   const { user } = useAuth();
+  const { showToast } = useToast();
+  const updateProfileMutation = useUpdateProfile();
+  const uploadAvatarMutation = useUploadAvatar();
+
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors, isValid },
   } = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     mode: "onChange",
     defaultValues: {
-      name: PROFILE_FORM_DEFAULTS.name,
-      surname: PROFILE_FORM_DEFAULTS.surname,
-      email: user?.email ?? "",
+      name: user?.name ?? "",
+      surname: user?.surname ?? "",
     },
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [avatar, setAvatar] = useState<string | null>(null);
+  const [avatarSrc, setAvatarSrc] = useState<string | null>(user?.avatarUrl ?? null);
   const [imageError, setImageError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAvatarSrc(user?.avatarUrl ?? null);
+  }, [user?.avatarUrl]);
+
+  const isUploading = uploadAvatarMutation.isPending;
 
   const onFilePicked = (list: FileList | null) => {
     setImageError(null);
-    const file = list?.[0];
-    if (!file) return;
 
-    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+    const file = list?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    if (!isAcceptedImageType(file)) {
       setImageError("Only JPG and PNG images are allowed.");
       return;
     }
+
     if (file.size > MAX_IMAGE_SIZE) {
-      setImageError("Image is too large. Maximum size is 5 MB.");
+      setImageError(`Image is too large. Maximum size is ${MAX_IMAGE_SIZE_LABEL}.`);
       return;
     }
 
-    setAvatar(URL.createObjectURL(file));
+    const objectUrl = URL.createObjectURL(file);
+    setAvatarSrc(objectUrl);
+
+    uploadAvatarMutation.mutate(file, {
+      onSuccess: () => {
+        URL.revokeObjectURL(objectUrl);
+        setImageError(null);
+      },
+      onError: (error: Error) => {
+        URL.revokeObjectURL(objectUrl);
+        setAvatarSrc(user?.avatarUrl ?? null);
+        setImageError(
+          error.message || "The avatar could not be uploaded. Try again.",
+        );
+      },
+    });
   };
 
   const onSubmit = (values: ProfileFormValues) => {
-    void values;
+    updateProfileMutation.mutate(values, {
+      onSuccess: () => {
+        showToast("Profile saved.");
+        reset(values);
+      },
+      onError: (error: Error) => {
+        showToast(error.message || "The profile could not be saved.", "error");
+      },
+    });
   };
 
   return (
@@ -57,29 +98,48 @@ export default function ProfileSettingsCard() {
       <input
         ref={fileInputRef}
         type="file"
-        accept={ACCEPTED_IMAGE_TYPES.join(",")}
+        name="avatar"
+        accept={ACCEPTED_IMAGE_INPUT}
         hidden
-        onChange={(e) => {
-          onFilePicked(e.target.files);
-          e.target.value = "";
+        onChange={(event) => {
+          onFilePicked(event.target.files);
+          event.target.value = "";
         }}
       />
 
       <div className="avatar-row">
         <div
-          className="avatar-upload"
-          onClick={() => fileInputRef.current?.click()}
+          className={`avatar-upload${isUploading ? " is-uploading" : ""}`}
+          onClick={() => {
+            if (!isUploading) {
+              fileInputRef.current?.click();
+            }
+          }}
           role="button"
+          tabIndex={0}
           aria-label="Upload profile image"
+          aria-busy={isUploading}
+          onKeyDown={(event) => {
+            if ((event.key === "Enter" || event.key === " ") && !isUploading) {
+              event.preventDefault();
+              fileInputRef.current?.click();
+            }
+          }}
         >
-          {avatar ? (
-            <img src={avatar} alt="Profile" />
+          {avatarSrc ? (
+            <img src={avatarSrc} alt="Profile" />
           ) : (
             <PersonOutlineOutlined className="avatar-upload-icon" />
           )}
           <div className="avatar-upload-overlay">
-            <UploadOutlined />
-            <span>Upload Image</span>
+            {isUploading ? (
+              <CircularProgress size={20} color="primary" />
+            ) : (
+              <>
+                <UploadOutlined />
+                <span>Upload Image</span>
+              </>
+            )}
           </div>
         </div>
         <p className="avatar-hint">
@@ -87,7 +147,11 @@ export default function ProfileSettingsCard() {
         </p>
       </div>
 
-      {imageError && <p className="avatar-error">{imageError}</p>}
+      {imageError && (
+        <p className="avatar-error" role="alert">
+          {imageError}
+        </p>
+      )}
 
       <div className="settings-form-row">
         <TextField
@@ -117,9 +181,9 @@ export default function ProfileSettingsCard() {
         <button
           type="submit"
           className="btn btn-primary settings-submit"
-          disabled={!isValid}
+          disabled={!isValid || updateProfileMutation.isPending}
         >
-          Save
+          {updateProfileMutation.isPending ? "Saving..." : "Save"}
         </button>
       </div>
     </form>

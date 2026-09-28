@@ -1378,6 +1378,94 @@ body {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
+.avatar-upload.is-uploading {
+  cursor: progress;
+}
+
+.avatar-upload.is-uploading .avatar-upload-overlay {
+  opacity: 1;
+}
+
+.btn-secondary {
+  background: #ffffff;
+  color: var(--color-muted);
+  box-shadow: var(--shadow-soft);
+}
+
+.btn-secondary:hover {
+  color: var(--color-text);
+  filter: none;
+}
+
+.btn-secondary:disabled {
+  color: var(--color-dim);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.btn-secondary:disabled:hover {
+  color: var(--color-dim);
+}
+
+.dialog-backdrop {
+  background-color: rgba(28, 28, 28, 0.45);
+}
+
+.MuiPaper-root.dialog-paper {
+  background: #ffffff;
+  border-radius: 20px;
+  margin: 16px;
+  box-shadow:
+    0 8px 24px rgba(242, 102, 75, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.MuiDialogTitle-root.dialog-title {
+  color: var(--color-primary);
+  font-size: 20px;
+  font-weight: 700;
+  padding: 24px 24px 8px;
+}
+
+.MuiDialogContent-root.dialog-content {
+  padding: 8px 24px 0;
+  flex: 1;
+}
+
+.MuiDialogActions-root.dialog-footer {
+  padding: 16px 24px 24px;
+  gap: 12px;
+}
+
+.dialog-footer .btn {
+  width: auto;
+  flex: 1;
+  max-width: 180px;
+}
+
+.confirm-password-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 4px;
+}
+
+.confirm-password-hint {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+
+.MuiAlert-root.app-toast {
+  border-radius: 14px;
+  font-weight: 600;
+}
+
 @media (max-width: 600px) {
   .settings-card {
     padding: 20px;

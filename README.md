@@ -36,8 +36,21 @@ bun run dev:web  # frontend only on http://localhost:5173
 ## Endpoints
 
 - `GET /health` — service health, includes MongoDB connection status
+- `POST /api/auth/register` — create an account and start a session
+- `POST /api/auth/login` — start a session
+- `POST /api/auth/logout` — destroy the session
+- `GET /api/auth/session` — current user (requires a session)
+- `GET /api/profile` — profile settings for the current user
+- `PUT /api/profile` — update `name` and `surname` (email is read-only)
+- `PUT /api/profile/avatar` — upload a JPG/PNG avatar, multipart field `avatar`, up to `AVATAR_MAX_BYTES`
+- `POST /api/profile/password` — change password; body is `currentPassword`, `newPassword`, `repeatPassword`
+- `GET /api/avatars/:fileId` — public, immutable-cached avatar image (bytes are stored in MongoDB via GridFS)
 
 The Vite dev server proxies `/health` and `/api` to the backend.
+
+## Avatar storage
+
+Avatars are stored as GridFS files in the `AVATAR_BUCKET` collection (`avatars` by default) and referenced from the user document by `avatarFileId`. `GET /api/profile` and the auth responses return a ready-to-use `avatarUrl`, or `null` when no avatar is set. Uploading a new avatar deletes the previous file, so re-uploads do not accumulate orphans.
 
 ## Authentication
 

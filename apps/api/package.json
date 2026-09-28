@@ -19,12 +19,14 @@
     "express-session": "^1.19.0",
     "helmet": "^8.3.0",
     "mongoose": "^8.13.2",
+    "multer": "^2.4.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.2",
     "@types/express-session": "^1.19.0",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22.14.0",
     "typescript": "^5.8.3"
   }
