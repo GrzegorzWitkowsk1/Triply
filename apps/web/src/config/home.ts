@@ -22,6 +22,20 @@ export const HOME_BADGES: HomeBadge[] = [
   { id: "culture", label: "Culture & museums", icon: PaletteOutlined, color: "#a05bd5" },
 ];
 
+export type PlanStageStatus = "queue" | "active" | "done";
+
+export interface PlanStage {
+  id: string;
+  label: string;
+}
+
+export const PLAN_STAGES: PlanStage[] = [
+  { id: "places", label: "Finding places you'll love" },
+  { id: "route", label: "Optimizing your route" },
+  { id: "budget", label: "Balancing your budget" },
+  { id: "itinerary", label: "Building your itinerary" },
+];
+
 export interface Trip {
   id: string;
   city: string;

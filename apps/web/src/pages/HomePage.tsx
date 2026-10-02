@@ -9,6 +9,8 @@ import { TextField } from "@mui/material";
 import { useLocation, useNavigate } from "react-router-dom";
 import { HOME_BADGES, TRIPS } from "../config/home";
 import TripCard from "../components/trips/TripCard";
+import PlanProgressCard from "../components/home/PlanProgressCard";
+import { useTripPlanning } from "../hooks/useTripPlanning";
 
 interface VoiceHint {
   text: string;
@@ -41,6 +43,19 @@ export default function HomePage() {
   const interimRef = useRef("");
   const navigate = useNavigate()
   const hadErrorRef = useRef(false);
+  const planning = useTripPlanning();
+
+  const canPlan = prompt.trim().length > 0 || selectedBadges.length > 0;
+  const isPlanning = planning.hasStarted;
+
+  const planSummary = prompt.trim()
+    ? prompt.trim()
+    : selectedBadges
+        .map(
+          (id) => HOME_BADGES.find((badge) => badge.id === id)?.label ?? "",
+        )
+        .filter(Boolean)
+        .join(", ");
 
   useEffect(() => {
     const shouldFocus = (location.state as { focusPrompt?: boolean } | null)
@@ -173,78 +188,102 @@ export default function HomePage() {
         </p>
 
         <div className="prompt-card">
-          {files.length > 0 && (
-            <div className="attach-chips">
-              {files.map((file) => (
-                <span key={`${file.name}-${file.lastModified}`} className="attach-chip">
-                  <AttachFileOutlined fontSize="small" />
-                  {file.name}
-                  <button
-                    type="button"
-                    aria-label={`Remove ${file.name}`}
-                    onClick={() =>
-                      setFiles((prev) => prev.filter((f) => f !== file))
-                    }
-                  >
-                    <CloseOutlined />
-                  </button>
-                </span>
-              ))}
+          {isPlanning ? (
+            <div className="prompt-summary">
+              <span className="prompt-summary-text">{planSummary}</span>
+              <button
+                type="button"
+                className="prompt-summary-cancel"
+                onClick={planning.reset}
+              >
+                Cancel
+              </button>
             </div>
-          )}
+          ) : (
+            <>
+              {files.length > 0 && (
+                <div className="attach-chips">
+                  {files.map((file) => (
+                    <span key={`${file.name}-${file.lastModified}`} className="attach-chip">
+                      <AttachFileOutlined fontSize="small" />
+                      {file.name}
+                      <button
+                        type="button"
+                        aria-label={`Remove ${file.name}`}
+                        onClick={() =>
+                          setFiles((prev) => prev.filter((f) => f !== file))
+                        }
+                      >
+                        <CloseOutlined />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
 
-          <TextField
-            fullWidth
-            variant="standard"
-            multiline
-            rows={3}
-            placeholder="4 days in Barcelona, €500 budget, I love food and architecture, relaxed place..."
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            slotProps={{
-              input: { disableUnderline: true },
-              htmlInput: { ref: promptInputRef },
-            }}
-          />
-          <div className="prompt-divider" />
-          <div className="prompt-tools">
-            <div className="prompt-tools-left">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                hidden
-                onChange={(e) => {
-                  onFilesPicked(e.target.files);
-                  e.target.value = "";
+              <TextField
+                fullWidth
+                variant="standard"
+                multiline
+                rows={3}
+                placeholder="4 days in Barcelona, €500 budget, I love food and architecture, relaxed place..."
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                slotProps={{
+                  input: { disableUnderline: true },
+                  htmlInput: { ref: promptInputRef },
                 }}
               />
-              <button
-                type="button"
-                className="prompt-icon"
-                aria-label="Attachments"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <AttachFileOutlined />
-              </button>
-              <button
-                type="button"
-                className={`prompt-icon${listening ? " is-active" : ""}`}
-                aria-label={listening ? "Stop voice writing" : "Voice writing"}
-                onClick={toggleVoice}
-              >
-                <MicOutlined />
-              </button>
-            </div>
-            <button type="button" className="btn btn-primary prompt-submit">
-              Plan my trip
-              <ArrowForwardOutlined fontSize="small" />
-            </button>
-          </div>
-          {voiceHint && (
-            <p className={`prompt-hint is-${voiceHint.kind}`}>{voiceHint.text}</p>
+              <div className="prompt-divider" />
+              <div className="prompt-tools">
+                <div className="prompt-tools-left">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    hidden
+                    onChange={(e) => {
+                      onFilesPicked(e.target.files);
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="prompt-icon"
+                    aria-label="Attachments"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <AttachFileOutlined />
+                  </button>
+                  <button
+                    type="button"
+                    className={`prompt-icon${listening ? " is-active" : ""}`}
+                    aria-label={listening ? "Stop voice writing" : "Voice writing"}
+                    onClick={toggleVoice}
+                  >
+                    <MicOutlined />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary prompt-submit"
+                  disabled={!canPlan}
+                  onClick={planning.start}
+                >
+                  Plan my trip
+                  <ArrowForwardOutlined fontSize="small" />
+                </button>
+              </div>
+              {voiceHint && (
+                <p className={`prompt-hint is-${voiceHint.kind}`}>{voiceHint.text}</p>
+              )}
+            </>
           )}
         </div>
+
+        {isPlanning && (
+          <PlanProgressCard statuses={planning.statuses} isDone={planning.isDone} />
+        )}
 
         <div className="home-badges">
           {HOME_BADGES.map((badge) => {
@@ -254,6 +293,7 @@ export default function HomePage() {
               <button
                 key={badge.id}
                 type="button"
+                disabled={isPlanning}
                 className={`home-badge${selected ? " is-active" : ""}`}
                 aria-pressed={selected}
                 style={{ "--badge-color": badge.color } as CSSProperties}
