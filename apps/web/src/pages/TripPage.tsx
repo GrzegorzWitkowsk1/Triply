@@ -103,7 +103,7 @@ export default function TripPage() {
               className="trip-action"
               onClick={() => navigate(`/trips/${id}/equipment`)}
             >
-              <BackpackOutlined /> Equipment
+              <BackpackOutlined />
             </button>
             <button type="button" className="trip-action">
               <EditOutlined /> Edit
