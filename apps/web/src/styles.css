@@ -727,8 +727,21 @@ body {
 
 .home-badge:hover {
   transform: translateY(-3px);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--badge-color);
+  color: var(--badge-color);
+  box-shadow: 0 8px 20px rgba(242, 102, 75, 0.18);
+}
+
+.home-badge.is-active {
+  background: var(--badge-color);
+  border-color: var(--badge-color);
+  color: #ffffff;
+}
+
+.home-badge.is-active:hover {
+  background: var(--badge-color);
+  border-color: var(--badge-color);
+  color: #ffffff;
   box-shadow: 0 8px 20px rgba(242, 102, 75, 0.18);
 }
 

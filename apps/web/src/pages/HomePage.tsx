@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowForwardOutlined,
   AttachFileOutlined,
@@ -31,6 +31,7 @@ function getRecognition(): SpeechRecognition | null {
 export default function HomePage() {
   const location = useLocation();
   const [prompt, setPrompt] = useState("");
+  const [selectedBadges, setSelectedBadges] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [listening, setListening] = useState(false);
   const [voiceHint, setVoiceHint] = useState<VoiceHint | null>(null);
@@ -155,6 +156,12 @@ export default function HomePage() {
     setFiles((prev) => [...prev, ...Array.from(list)]);
   };
 
+  const toggleBadge = (id: string) => {
+    setSelectedBadges((prev) =>
+      prev.includes(id) ? prev.filter((badgeId) => badgeId !== id) : [...prev, id],
+    );
+  };
+
   return (
     <div className="home-page">
       <div className="home-inner">
@@ -242,14 +249,17 @@ export default function HomePage() {
         <div className="home-badges">
           {HOME_BADGES.map((badge) => {
             const Icon = badge.icon;
+            const selected = selectedBadges.includes(badge.id);
             return (
               <button
                 key={badge.id}
                 type="button"
-                className="home-badge"
-                onClick={() => setPrompt(badge.label)}
+                className={`home-badge${selected ? " is-active" : ""}`}
+                aria-pressed={selected}
+                style={{ "--badge-color": badge.color } as CSSProperties}
+                onClick={() => toggleBadge(badge.id)}
               >
-                <Icon sx={{ color: badge.color }} fontSize="small" />
+                <Icon sx={{ color: selected ? "#ffffff" : badge.color }} fontSize="small" />
                 {badge.label}
               </button>
             );
