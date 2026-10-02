@@ -3,6 +3,7 @@ import { Navigate, useParams } from "react-router-dom";
 import {
   AccountBalanceWalletOutlined,
   AutoFixHighOutlined,
+  BackpackOutlined,
   ChevronLeftOutlined,
   ChevronRightOutlined,
   DirectionsWalkOutlined,
@@ -10,6 +11,7 @@ import {
   PlaceOutlined,
   ShareOutlined,
 } from "@mui/icons-material";
+import { useNavigate } from "react-router-dom";
 import TripActivityCard from "../components/trip/TripActivityCard";
 import TripAssistant from "../components/trip/TripAssistant";
 import TripBudgetCard from "../components/trip/TripBudgetCard";
@@ -19,6 +21,7 @@ import { getTripDetail } from "../config/trip";
 
 export default function TripPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const detail = id ? getTripDetail(id) : undefined;
 
   const [activeDay, setActiveDay] = useState(0);
@@ -95,6 +98,13 @@ export default function TripPage() {
             </div>
           </div>
           <div className="trip-hero-actions">
+            <button
+              type="button"
+              className="trip-action"
+              onClick={() => navigate(`/trips/${id}/equipment`)}
+            >
+              <BackpackOutlined /> Equipment
+            </button>
             <button type="button" className="trip-action">
               <EditOutlined /> Edit
             </button>
