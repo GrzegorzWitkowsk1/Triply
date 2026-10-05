@@ -217,12 +217,11 @@ export async function saveTripRequirements(
   let analysis = mergeRequirements(draft.analysis, answers);
 
   if (!analysis.location && (analysis.destination || (analysis as any).city || analysis.country)) {
-    const query = [
-      analysis.destination,
-      analysis.country,
-    ]
-      .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
-      .join(", ");
+    const parts: string[] = [];
+    if (analysis.destination) parts.push(analysis.destination);
+    if ((analysis as any).city) parts.push((analysis as any).city);
+    if (analysis.country) parts.push(analysis.country);
+    const query = parts.filter((p): p is string => typeof p === "string" && p.trim().length > 0).join(", ");
 
     const geo = await geocodeLocation(query || analysis.destination || "");
 
@@ -234,8 +233,13 @@ export async function saveTripRequirements(
   const confirmed = mergeConfirmedFields(draft.confirmedFields, confirmedFields, answers);
 
   draft.set("analysis", analysis);
+  const gaps = missingFields(analysis, confirmed);
   draft.confirmedFields = confirmed;
-  draft.missingFields = missingFields(analysis, confirmed);
+  draft.missingFields = gaps;
+
+  if (gaps.length === 0) {
+    draft.status = "confirmed";
+  }
 
   return draft.save();
 }
