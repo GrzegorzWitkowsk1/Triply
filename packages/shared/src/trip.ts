@@ -1,16 +1,10 @@
-export const tripEquipmentItemSchema = z.object({
-  id: z.string().trim().min(1).max(64),
-  name: z.string().trim().min(1).max(120),
-  count: z.number().int().positive().max(999),
-});
-
-export type TripEquipmentItem = z.infer<typeof tripEquipmentItemSchema>;
-
-export const tripEquipmentSchema = z.array(tripEquipmentItemSchema);
-
-export type TripEquipment = z.infer<typeof tripEquipmentSchema>;
 import { z } from "zod";
 import { addDays, diffDaysInclusive, isAfter, isIsoDate } from "./dates.js";
+
+export const TRIP_STATUS_VALUES = ["draft", "confirmed"] as const;
+export type TripStatus = (typeof TRIP_STATUS_VALUES)[number];
+
+export const tripStatusSchema = z.enum(TRIP_STATUS_VALUES);
 
 export const PACE_VALUES = ["relaxed", "balanced", "packed"] as const;
 export type Pace = (typeof PACE_VALUES)[number];
@@ -52,6 +46,7 @@ export const LIMITS = {
   maxWalkingDistanceKm: 100,
   interests: 24,
   notes: 2000,
+  equipment: 100,
 } as const;
 
 export const tripLocationSchema = z.object({
@@ -151,6 +146,77 @@ export interface TripAnalysisResult {
   analysis: TripAnalysis;
   missingFields: AskableField[];
   requirementsComplete: boolean;
+}
+
+export const tripEquipmentItemSchema = z.object({
+  id: z.string().trim().min(1).max(64),
+  name: z.string().trim().min(1).max(120),
+  count: z.number().int().positive().max(999),
+});
+
+export type TripEquipmentItem = z.infer<typeof tripEquipmentItemSchema>;
+
+export const tripEquipmentSchema = z.array(tripEquipmentItemSchema);
+
+export type TripEquipment = z.infer<typeof tripEquipmentSchema>;
+
+export const createTripEquipmentItemSchema = z.object({
+  name: tripEquipmentItemSchema.shape.name,
+  count: tripEquipmentItemSchema.shape.count.default(1),
+});
+
+export type CreateTripEquipmentItem = z.infer<typeof createTripEquipmentItemSchema>;
+
+export const updateTripEquipmentItemSchema = z
+  .object({
+    name: tripEquipmentItemSchema.shape.name.optional(),
+    count: tripEquipmentItemSchema.shape.count.optional(),
+  })
+  .refine((value) => value.name !== undefined || value.count !== undefined, {
+    message: "Provide a name or a count to update",
+  });
+
+export type UpdateTripEquipmentItem = z.infer<typeof updateTripEquipmentItemSchema>;
+
+export const tripEquipmentResponseSchema = z.object({
+  equipment: tripEquipmentSchema,
+});
+
+export type TripEquipmentResponse = z.infer<typeof tripEquipmentResponseSchema>;
+
+export const tripListQuerySchema = z.object({
+  status: tripStatusSchema.optional(),
+});
+
+export type TripListQuery = z.infer<typeof tripListQuerySchema>;
+
+export interface TripSummary {
+  id: string;
+  status: TripStatus;
+  prompt: string;
+  badges: string[];
+  destination: string | null;
+  country: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  durationDays: number | null;
+  travelers: number | null;
+  budget: TripBudget;
+  location: TripLocation | null;
+  fixtureKey: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TripDetail extends TripAnalysisResult {
+  id: string;
+  status: TripStatus;
+  prompt: string;
+  badges: string[];
+  equipment: TripEquipmentItem[];
+  fixtureKey: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export function findInterestOption(id: string): InterestOption | undefined {

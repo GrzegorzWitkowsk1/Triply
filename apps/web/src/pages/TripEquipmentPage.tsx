@@ -8,94 +8,193 @@ import {
   DeleteOutlineOutlined,
   AutoAwesomeOutlined,
 } from "@mui/icons-material";
-import { getTripDetail } from "../config/trip";
+import {
+  useCreateEquipmentItem,
+  useDeleteEquipmentItem,
+  useTripEquipment,
+  useUpdateEquipmentItem,
+} from "../hooks/useTripEquipment";
+import { useTrip } from "../hooks/useTrips";
 
-interface EquipmentItem {
+interface EquipmentRow {
   id: string;
   name: string;
   count: number;
 }
 
+function EquipmentRowEditor({
+  item,
+  disabled,
+  onCommit,
+  onCount,
+  onRemove,
+}: {
+  item: EquipmentRow;
+  disabled: boolean;
+  onCommit: (itemId: string, name: string) => void;
+  onCount: (itemId: string, count: number) => void;
+  onRemove: (itemId: string) => void;
+}) {
+  const [name, setName] = useState(item.name);
+  const [count, setCount] = useState(String(item.count));
+
+  useEffect(() => {
+    setName(item.name);
+  }, [item.name]);
+
+  useEffect(() => {
+    setCount(String(item.count));
+  }, [item.count]);
+
+  const commitName = () => {
+    const trimmed = name.trim();
+
+    if (trimmed.length === 0 || trimmed === item.name) {
+      setName(item.name);
+      return;
+    }
+
+    onCommit(item.id, trimmed);
+  };
+
+  const commitCount = (next: number) => {
+    const clamped = Math.min(999, Math.max(1, next));
+    setCount(String(clamped));
+
+    if (clamped !== item.count) {
+      onCount(item.id, clamped);
+    }
+  };
+
+  return (
+    <div className="equipment-item-row">
+      <div className="equipment-item-left">
+        <input
+          type="text"
+          className="equipment-item-input"
+          value={name}
+          disabled={disabled}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.currentTarget.blur();
+            }
+          }}
+          placeholder="Item name"
+        />
+      </div>
+      <div className="equipment-item-right">
+        <div className="equipment-counter">
+          <button
+            type="button"
+            className="equipment-counter-btn"
+            disabled={disabled || item.count <= 1}
+            onClick={() => commitCount(item.count - 1)}
+            aria-label="Decrease count"
+          >
+            <RemoveOutlined />
+          </button>
+          <input
+            type="number"
+            className="equipment-count-input"
+            value={count}
+            disabled={disabled}
+            min="1"
+            max="999"
+            onChange={(e) => {
+              const parsed = Number.parseInt(e.target.value, 10);
+              setCount(e.target.value);
+
+              if (Number.isFinite(parsed)) {
+                onCount(item.id, Math.min(999, Math.max(1, parsed)));
+              }
+            }}
+            onBlur={() => {
+              const parsed = Number.parseInt(count, 10);
+
+              if (!Number.isFinite(parsed) || parsed < 1) {
+                setCount(String(item.count));
+                return;
+              }
+
+              commitCount(parsed);
+            }}
+          />
+          <button
+            type="button"
+            className="equipment-counter-btn"
+            disabled={disabled || item.count >= 999}
+            onClick={() => commitCount(item.count + 1)}
+            aria-label="Increase count"
+          >
+            <AddOutlined />
+          </button>
+        </div>
+        <button
+          type="button"
+          className="equipment-trash-btn"
+          disabled={disabled}
+          onClick={() => onRemove(item.id)}
+          aria-label="Remove item"
+        >
+          <DeleteOutlineOutlined />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function TripEquipmentPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const detail = id ? getTripDetail(id) : undefined;
 
-  const [items, setItems] = useState<EquipmentItem[]>([
-    { id: "1", name: "Passport & ID", count: 1 },
-    { id: "2", name: "Toiletries", count: 2 },
-    { id: "3", name: "Power bank", count: 1 },
-  ]);
+  const trip = useTrip(id);
+  const equipment = useTripEquipment(id);
+
+  const createItem = useCreateEquipmentItem(id ?? "");
+  const updateItem = useUpdateEquipmentItem(id ?? "");
+  const deleteItem = useDeleteEquipmentItem(id ?? "");
 
   const [newItemName, setNewItemName] = useState("");
   const [newItemCount, setNewItemCount] = useState("1");
 
+  const items = equipment.data ?? [];
   const itemCount = items.length;
+  const busy = createItem.isPending || updateItem.isPending || deleteItem.isPending;
 
   const handleAddItem = () => {
-    const count = parseInt(newItemCount, 10);
-    if (!newItemName.trim() || isNaN(count) || count < 1) {
+    const count = Number.parseInt(newItemCount, 10);
+
+    if (!newItemName.trim() || !Number.isFinite(count) || count < 1) {
       return;
     }
-    const newItem: EquipmentItem = {
-      id: Date.now().toString(),
-      name: newItemName.trim(),
-      count,
-    };
-    setItems((prev) => [...prev, newItem]);
-    setNewItemName("");
-    setNewItemCount("1");
-  };
 
-  const handleIncrement = (itemId: string) => {
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === itemId ? { ...item, count: item.count + 1 } : item
-      )
+    createItem.mutate(
+      { name: newItemName.trim(), count: Math.min(999, count) },
+      {
+        onSuccess: () => {
+          setNewItemName("");
+          setNewItemCount("1");
+        },
+      },
     );
   };
 
-  const handleDecrement = (itemId: string) => {
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === itemId
-          ? { ...item, count: Math.max(1, item.count - 1) }
-          : item
-      )
-    );
-  };
-
-  const handleItemNameChange = (itemId: string, name: string) => {
-    setItems((prev) =>
-      prev.map((item) => (item.id === itemId ? { ...item, name } : item))
-    );
-  };
-
-  const handleItemCountChange = (itemId: string, countStr: string) => {
-    const count = parseInt(countStr, 10);
-    if (isNaN(count) || count < 1) {
-      setItems((prev) =>
-        prev.map((item) => (item.id === itemId ? { ...item, count: 1 } : item))
-      );
-      return;
-    }
-    setItems((prev) =>
-      prev.map((item) => (item.id === itemId ? { ...item, count } : item))
-    );
-  };
-
-  const handleRemoveItem = (itemId: string) => {
-    setItems((prev) => prev.filter((item) => item.id !== itemId));
-  };
-
+  const parsedCount = Number.parseInt(newItemCount, 10);
   const isAddButtonDisabled =
-    !newItemName.trim() ||
-    isNaN(parseInt(newItemCount, 10)) ||
-    parseInt(newItemCount, 10) < 1;
+    busy ||
+    newItemName.trim().length === 0 ||
+    !Number.isFinite(parsedCount) ||
+    parsedCount < 1;
 
-  if (!detail) return <Navigate to="/trips" replace />;
+  if (trip.isError) {
+    return <Navigate to="/trips" replace />;
+  }
 
-  const { city, country, days } = detail;
+  const destination = trip.data?.analysis.destination ?? "Your trip";
+  const country = trip.data?.analysis.country;
+  const days = trip.data?.analysis.durationDays;
 
   return (
     <div className="equipment-page">
@@ -116,7 +215,9 @@ export default function TripEquipmentPage() {
                 <BackpackOutlined />
               </div>
               <p className="equipment-hero-location">
-                {city} · {days} days
+                {[country ? `${destination} · ${country}` : destination, days ? `${days} days` : null]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
               <h1 className="equipment-hero-title">What to bring</h1>
               <p className="equipment-hero-subtitle">
@@ -147,59 +248,43 @@ export default function TripEquipmentPage() {
           </div>
 
           <div className="equipment-list-items">
+            {equipment.isPending && <p className="equipment-list-subtitle">Loading…</p>}
+
+            {equipment.isError && (
+              <p className="equipment-list-subtitle">
+                {equipment.error.message}
+              </p>
+            )}
+
+            {!equipment.isPending && !equipment.isError && items.length === 0 && (
+              <p className="equipment-list-subtitle">
+                Nothing packed yet. Add your first item below.
+              </p>
+            )}
+
             {items.map((item) => (
-              <div key={item.id} className="equipment-item-row">
-                <div className="equipment-item-left">
-                  <input
-                    type="text"
-                    className="equipment-item-input"
-                    value={item.name}
-                    onChange={(e) =>
-                      handleItemNameChange(item.id, e.target.value)
-                    }
-                    placeholder="Item name"
-                  />
-                </div>
-                <div className="equipment-item-right">
-                  <div className="equipment-counter">
-                    <button
-                      type="button"
-                      className="equipment-counter-btn"
-                      onClick={() => handleDecrement(item.id)}
-                      aria-label="Decrease count"
-                    >
-                      <RemoveOutlined />
-                    </button>
-                    <input
-                      type="number"
-                      className="equipment-count-input"
-                      value={item.count}
-                      onChange={(e) =>
-                        handleItemCountChange(item.id, e.target.value)
-                      }
-                      min="1"
-                    />
-                    <button
-                      type="button"
-                      className="equipment-counter-btn"
-                      onClick={() => handleIncrement(item.id)}
-                      aria-label="Increase count"
-                    >
-                      <AddOutlined />
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    className="equipment-trash-btn"
-                    onClick={() => handleRemoveItem(item.id)}
-                    aria-label="Remove item"
-                  >
-                    <DeleteOutlineOutlined />
-                  </button>
-                </div>
-              </div>
+              <EquipmentRowEditor
+                key={item.id}
+                item={item}
+                disabled={busy}
+                onCommit={(itemId, name) => updateItem.mutate({ itemId, input: { name } })}
+                onCount={(itemId, count) => updateItem.mutate({ itemId, input: { count } })}
+                onRemove={(itemId) => deleteItem.mutate(itemId)}
+              />
             ))}
           </div>
+
+          {createItem.isError && (
+            <p className="equipment-list-subtitle">{createItem.error.message}</p>
+          )}
+
+          {updateItem.isError && (
+            <p className="equipment-list-subtitle">{updateItem.error.message}</p>
+          )}
+
+          {deleteItem.isError && (
+            <p className="equipment-list-subtitle">{deleteItem.error.message}</p>
+          )}
 
           <div className="equipment-list-footer">
             <div className="equipment-add-form">
@@ -208,6 +293,11 @@ export default function TripEquipmentPage() {
                 className="equipment-add-input equipment-add-name"
                 value={newItemName}
                 onChange={(e) => setNewItemName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !isAddButtonDisabled) {
+                    handleAddItem();
+                  }
+                }}
                 placeholder="Rain Jacket"
               />
               <input
@@ -217,6 +307,7 @@ export default function TripEquipmentPage() {
                 onChange={(e) => setNewItemCount(e.target.value)}
                 placeholder="1"
                 min="1"
+                max="999"
               />
               <button
                 type="button"

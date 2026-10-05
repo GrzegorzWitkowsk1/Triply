@@ -17,50 +17,106 @@ import TripAssistant from "../components/trip/TripAssistant";
 import TripBudgetCard from "../components/trip/TripBudgetCard";
 import TripMap from "../components/trip/TripMap";
 import TripPreferencesCard from "../components/trip/TripPreferencesCard";
-import { getTripDetail } from "../config/trip";
+import { EMPTY_BUDGET_BREAKDOWN, findTripDetailByKey } from "../config/trip";
+import { useTrip } from "../hooks/useTrips";
+
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+function formatRange(startDate: string | null, endDate: string | null): string {
+  if (!startDate) {
+    return "Dates to be decided";
+  }
+
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+
+  if (Number.isNaN(start.getTime())) {
+    return "Dates to be decided";
+  }
+
+  const startLabel = `${MONTHS[start.getUTCMonth()]} ${start.getUTCDate()}`;
+
+  if (!endDate) {
+    return startLabel;
+  }
+
+  const end = new Date(`${endDate}T00:00:00.000Z`);
+
+  if (Number.isNaN(end.getTime()) || endDate === startDate) {
+    return startLabel;
+  }
+
+  const endLabel =
+    start.getUTCMonth() === end.getUTCMonth()
+      ? String(end.getUTCDate())
+      : `${MONTHS[end.getUTCMonth()]} ${end.getUTCDate()}`;
+
+  return `${startLabel}-${endLabel}`;
+}
 
 export default function TripPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const detail = id ? getTripDetail(id) : undefined;
+  const trip = useTrip(id);
+
+  const analysis = trip.data?.analysis;
+  const fixture = findTripDetailByKey(trip.data?.fixtureKey ?? null);
 
   const [activeDay, setActiveDay] = useState(0);
   const [activeActivity, setActiveActivity] = useState(0);
-  const [tags, setTags] = useState<string[]>(detail?.prefDefaults.tags ?? []);
-  const [pace, setPace] = useState(detail?.prefDefaults.pace ?? 1);
-  const [walking, setWalking] = useState(detail?.prefDefaults.walking ?? 1);
+  const [tags, setTags] = useState<string[]>(fixture?.prefDefaults.tags ?? []);
+  const [pace, setPace] = useState(fixture?.prefDefaults.pace ?? 1);
+  const [walking, setWalking] = useState(fixture?.prefDefaults.walking ?? 1);
 
   useEffect(() => {
-    if (!detail) return;
+    if (!fixture) return;
     setActiveDay(0);
     setActiveActivity(0);
-    setTags(detail.prefDefaults.tags);
-    setPace(detail.prefDefaults.pace);
-    setWalking(detail.prefDefaults.walking);
-  }, [id, detail]);
+    setTags(fixture.prefDefaults.tags);
+    setPace(fixture.prefDefaults.pace);
+    setWalking(fixture.prefDefaults.walking);
+  }, [id, fixture]);
 
-  if (!detail) return <Navigate to="/trips" replace />;
+  if (trip.isPending) {
+    return (
+      <div className="trip-page">
+        <div className="trip-inner">
+          <p className="trip-eyebrow">Loading trip…</p>
+        </div>
+      </div>
+    );
+  }
 
-  const {
-    city,
-    country,
-    days,
-    dateLabel,
-    stepsKm,
-    weather,
-    center,
-    dayRoutes,
-    tripDays,
-    budget,
-  } = detail;
+  if (trip.isError || !trip.data) {
+    return <Navigate to="/trips" replace />;
+  }
 
-  const WeatherIcon = weather.icon;
+  const city = analysis?.destination ?? fixture?.city ?? "Untitled trip";
+  const country = analysis?.country ?? fixture?.country ?? "";
+  const days = analysis?.durationDays ?? fixture?.days ?? 0;
+  const dateLabel = formatRange(analysis?.startDate ?? null, analysis?.endDate ?? null);
+
+  const weather = fixture?.weather ?? null;
+  const stepsKm = fixture?.stepsKm ?? null;
+  const center =
+    analysis?.location ??
+    (fixture ? { lat: fixture.center[0], lng: fixture.center[1] } : null);
+  const tripDays = fixture?.tripDays ?? [];
+  const dayRoutes = fixture?.dayRoutes ?? [];
+  const budgetSpent = fixture?.budget.spent ?? analysis?.budget.amount ?? 0;
+  const budgetWhole = fixture?.budget.whole ?? analysis?.budget.amount ?? 0;
+
+  const WeatherIcon = weather?.icon ?? null;
   const totalActivities = tripDays.reduce((sum, day) => sum + day.activities.length, 0);
-  const spent = budget.spent;
-  const whole = budget.whole;
+  const spent = budgetSpent;
+  const whole = budgetWhole;
   const budgetLevel = spent > whole ? "is-over" : whole - spent <= 50 ? "is-close" : "is-ok";
   const day = tripDays[activeDay];
-  const stops = dayRoutes[activeDay] ?? [];
+  const stops = center && dayRoutes[activeDay]
+    ? dayRoutes[activeDay].map(([lat, lng]) => [lat, lng] as [number, number])
+    : [];
 
   const toggleTag = (tagId: string) => {
     setTags((current) =>
@@ -83,18 +139,22 @@ export default function TripPage() {
               {dateLabel} · {days} days
             </p>
             <div className="trip-hero-badges">
-              <span className="trip-badge">
-                <WeatherIcon /> {weather.temp}° {weather.label}
-              </span>
+              {WeatherIcon && weather && (
+                <span className="trip-badge">
+                  <WeatherIcon /> {weather.temp}° {weather.label}
+                </span>
+              )}
               <span className={`trip-badge is-budget ${budgetLevel}`}>
                 <AccountBalanceWalletOutlined /> €{spent} / €{whole}
               </span>
               <span className="trip-badge">
                 <PlaceOutlined /> {totalActivities} activities
               </span>
-              <span className="trip-badge">
-                <DirectionsWalkOutlined /> {stepsKm} km walking
-              </span>
+              {stepsKm !== null && (
+                <span className="trip-badge">
+                  <DirectionsWalkOutlined /> {stepsKm} km walking
+                </span>
+              )}
             </div>
           </div>
           <div className="trip-hero-actions">
@@ -151,7 +211,7 @@ export default function TripPage() {
               </div>
             </div>
             <div className="trip-activity-list">
-              {day.activities.map((activity, i) => (
+              {day?.activities.map((activity, i) => (
                 <TripActivityCard
                   key={`${i}-${activity.name}`}
                   activity={activity}
@@ -160,26 +220,33 @@ export default function TripPage() {
                   onSelect={() => setActiveActivity(i)}
                 />
               ))}
+              {!day && (
+                <p className="trip-eyebrow">
+                  The itinerary for this trip has not been generated yet.
+                </p>
+              )}
             </div>
           </div>
 
           <div className="trip-right">
-            <div className="trip-map-wrap">
-              <TripMap
-                center={center}
-                stops={stops}
-                active={activeActivity}
-                onSelect={setActiveActivity}
-              />
-              <p className="trip-map-caption">
-                Every stop sits within a short walk — less time in transit, more
-                time enjoying {city}.
-              </p>
-            </div>
+            {center && (
+              <div className="trip-map-wrap">
+                <TripMap
+                  center={[center.lat, center.lng]}
+                  stops={stops}
+                  active={activeActivity}
+                  onSelect={setActiveActivity}
+                />
+                <p className="trip-map-caption">
+                  Every stop sits within a short walk — less time in transit, more
+                  time enjoying {city}.
+                </p>
+              </div>
+            )}
             <TripBudgetCard
               spent={spent}
               whole={whole}
-              breakdown={budget.breakdown}
+              breakdown={fixture?.budget.breakdown ?? EMPTY_BUDGET_BREAKDOWN}
             />
             <TripPreferencesCard
               tags={tags}

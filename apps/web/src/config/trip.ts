@@ -281,3 +281,15 @@ const TRIP_DETAILS: TripDetail[] = [
 export function getTripDetail(id: string): TripDetail | undefined {
   return TRIP_DETAILS.find((trip) => trip.id === id);
 }
+
+export function findTripDetailByKey(fixtureKey: string | null): TripDetail | undefined {
+  if (!fixtureKey) {
+    return undefined;
+  }
+
+  return getTripDetail(fixtureKey);
+}
+
+export const EMPTY_BUDGET_BREAKDOWN: BudgetSlice[] = [
+  { label: "Remaining", amount: 0, color: "#5d7bd5" },
+];

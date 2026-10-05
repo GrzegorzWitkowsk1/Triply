@@ -3,24 +3,36 @@ import {
   Add,
   ArrowForwardOutlined,
 } from "@mui/icons-material";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import type { TripStatus } from "@triply/shared";
 import MyTripCard from "../components/trips/MyTripCard";
-import {
-  TRIP_FILTERS,
-  TRIPS_LIST,
-  TRIP_SUMMARY,
-  type TripFilter,
-} from "../config/trips";
+import { buildTripCards } from "../config/tripCards";
+import { TRIP_FILTERS, type TripFilter } from "../config/trips";
+import { useTrips } from "../hooks/useTrips";
+
+const FILTER_STATUS: Record<TripFilter, TripStatus | undefined> = {
+  "All trips": undefined,
+  Ready: "confirmed",
+  Planning: "draft",
+};
 
 export default function MyTripsPage() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState<TripFilter>("All trips");
 
-  const trips =
-    filter === "All trips"
-      ? TRIPS_LIST
-      : TRIPS_LIST.filter((trip) => trip.status === filter);
+  const status = FILTER_STATUS[filter];
+  const tripsQuery = useTrips(status);
+
+  const trips = useMemo(
+    () => buildTripCards(tripsQuery.data ?? []),
+    [tripsQuery.data],
+  );
+
+  const spendTotal = trips.reduce(
+    (total, trip) => total + (trip.budgetUsed ?? 0),
+    0,
+  );
 
   return (
     <div className="my-trips-page">
@@ -58,6 +70,24 @@ export default function MyTripsPage() {
         </div>
 
         <div className="my-trips-grid">
+          {tripsQuery.isPending && <p className="my-trips-subtitle">Loading trips…</p>}
+
+          {tripsQuery.isError && (
+            <p className="my-trips-subtitle">{tripsQuery.error.message}</p>
+          )}
+
+          {!tripsQuery.isPending &&
+            !tripsQuery.isError &&
+            trips.length === 0 && (
+              <p className="my-trips-subtitle">
+                No trips here yet. Plan your first one.
+              </p>
+            )}
+
+          {tripsQuery.isFetching && !tripsQuery.isPending && (
+            <p className="my-trips-subtitle">Refreshing…</p>
+          )}
+
           {trips.map((trip, i) => (
             <MyTripCard key={trip.id} trip={trip} isFirst={i === 0} />
           ))}
@@ -85,13 +115,12 @@ export default function MyTripsPage() {
             <div className="spend-copy">
               <span className="spend-title">Total planned spend</span>
               <span className="spend-sub">
-                Across {TRIP_SUMMARY.upcoming} upcoming trips
+                Across {trips.length} upcoming trips
               </span>
             </div>
           </div>
           <div className="spend-total">
-            <span className="spend-used">{`€${TRIP_SUMMARY.spent}`} / </span>
-            <span className="spend-whole">{`€${TRIP_SUMMARY.whole}`}</span>
+            <span className="spend-used">{`€${spendTotal}`}</span>
           </div>
         </div>
       </div>

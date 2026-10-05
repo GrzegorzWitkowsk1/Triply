@@ -7,8 +7,10 @@ import {
   type AskableField,
   type TripAnalysis,
   type TripAnalysisResult,
-  type TripRequirementsAnswers,
+type TripRequirementsAnswers,
   type TripEquipmentItem,
+  type TripDetail,
+  type TripSummary,
 } from "@triply/shared";
 import { Types } from "mongoose";
 import { geocodeLocation } from "./location.js";
@@ -255,29 +257,14 @@ export function toTripAnalysisResult(draft: TripDocument): TripAnalysisResult {
     missingFields: gaps,
     requirementsComplete: gaps.length === 0,
   };
-}export interface TripSummary {
-  id: string;
-  status: "draft" | "confirmed";
-  prompt: string;
-  badges: string[];
-  destination: string | null;
-  country: string | null;
-  startDate: string | null;
-  endDate: string | null;
-  durationDays: number | null;
-  location: TripAnalysis["location"] | null;
-  createdAt: string | null;
-  updatedAt: string | null;
 }
 
-export interface TripDetail extends TripAnalysisResult {
-  id: string;
-  status: "draft" | "confirmed";
-  prompt: string;
-  badges: string[];
-  equipment: TripEquipmentItem[];
-  createdAt: string | null;
-  updatedAt: string | null;
+export function toTripEquipment(trip: TripDocument): TripEquipmentItem[] {
+  return trip.equipment.map((item) => ({
+    id: item._id.toString(),
+    name: item.name,
+    count: item.count,
+  }));
 }
 
 export function toTripSummary(trip: TripDocument): TripSummary {
@@ -293,7 +280,14 @@ export function toTripSummary(trip: TripDocument): TripSummary {
     startDate: analysis.startDate,
     endDate: analysis.endDate,
     durationDays: analysis.durationDays,
+    travelers: analysis.travelers ?? null,
+    budget: {
+      amount: analysis.budget.amount ?? null,
+      currency: analysis.budget.currency ?? null,
+      type: analysis.budget.type ?? null,
+    },
     location: analysis.location ?? null,
+    fixtureKey: trip.fixtureKey ?? null,
     createdAt: (trip as any).createdAt ? (trip as any).createdAt.toISOString() : null,
     updatedAt: (trip as any).updatedAt ? (trip as any).updatedAt.toISOString() : null,
   };
@@ -308,7 +302,8 @@ export function toTripDetail(trip: TripDocument): TripDetail {
     status: trip.status,
     prompt: trip.prompt,
     badges: trip.badges,
-    equipment: Array.isArray((trip as any).equipment) ? (trip as any).equipment : [],
+    equipment: toTripEquipment(trip),
+    fixtureKey: trip.fixtureKey ?? null,
     createdAt: (trip as any).createdAt ? (trip as any).createdAt.toISOString() : null,
     updatedAt: (trip as any).updatedAt ? (trip as any).updatedAt.toISOString() : null,
   };

@@ -1,3 +1,26 @@
+import { model, Schema, type HydratedDocument, type Types } from "mongoose";
+import type { AskableField, TripAnalysis, TripStatus } from "@triply/shared";
+import { TRIP_STATUS_VALUES } from "@triply/shared";
+
+export interface EquipmentRecord {
+  name: string;
+  count: number;
+}
+
+export interface TripRecord {
+  user: Types.ObjectId;
+  status: TripStatus;
+  prompt: string;
+  badges: string[];
+  analysis: TripAnalysis;
+  confirmedFields: AskableField[];
+  missingFields: AskableField[];
+  equipment: Types.DocumentArray<EquipmentRecord>;
+  fixtureKey: string | null;
+}
+
+export type TripDocument = HydratedDocument<TripRecord>;
+
 const locationSchema = new Schema<TripAnalysis["location"]>(
   {
     lat: { type: Number },
@@ -7,20 +30,14 @@ const locationSchema = new Schema<TripAnalysis["location"]>(
   },
   { _id: false },
 );
-import { model, Schema, type HydratedDocument, type Types } from "mongoose";
-import type { AskableField, TripAnalysis } from "@triply/shared";
 
-export interface TripRecord {
-  user: Types.ObjectId;
-  status: "draft" | "confirmed";
-  prompt: string;
-  badges: string[];
-  analysis: TripAnalysis;
-  confirmedFields: AskableField[];
-  missingFields: AskableField[];
-}
-
-export type TripDocument = HydratedDocument<TripRecord>;
+const equipmentItemSchema = new Schema<EquipmentRecord>(
+  {
+    name: { type: String, required: true, trim: true, maxlength: 120 },
+    count: { type: Number, required: true, min: 1, max: 999, default: 1 },
+  },
+  { _id: true },
+);
 
 const budgetSchema = new Schema<TripAnalysis["budget"]>(
   {
@@ -59,7 +76,7 @@ const tripSchema = new Schema<TripRecord>(
     },
     status: {
       type: String,
-      enum: ["draft", "confirmed"],
+      enum: TRIP_STATUS_VALUES,
       default: "draft",
     },
     prompt: { type: String, default: "", trim: true },
@@ -67,10 +84,13 @@ const tripSchema = new Schema<TripRecord>(
     analysis: { type: analysisSchema, required: true },
     confirmedFields: { type: [String], default: [] },
     missingFields: { type: [String], default: [] },
+    equipment: { type: [equipmentItemSchema], default: [] },
+    fixtureKey: { type: String, default: null, trim: true },
   },
   { timestamps: true },
 );
 
 tripSchema.index({ user: 1, status: 1 });
+tripSchema.index({ user: 1, fixtureKey: 1 });
 
 export const TripModel = model<TripRecord>("Trip", tripSchema);
