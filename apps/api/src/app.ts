@@ -8,6 +8,7 @@ import { requireAuth } from "./middleware/auth.js";
 import { healthRouter } from "./routes/health.js";
 import { authRouter } from "./routes/auth.js";
 import { tripsRouter } from "./routes/trips.js";
+import { locationRouter } from "./routes/location.js";
 
 const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
 

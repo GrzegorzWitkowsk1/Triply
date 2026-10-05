@@ -43,6 +43,15 @@ export const LIMITS = {
   notes: 2000,
 } as const;
 
+export const tripLocationSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  city: z.string().trim().min(1).max(120).nullable().optional(),
+  country: z.string().trim().min(1).max(120).nullable().optional(),
+});
+
+export type TripLocation = z.infer<typeof tripLocationSchema>;
+
 const isoDateSchema = z.string().refine(isIsoDate, "Use the YYYY-MM-DD format");
 
 export const tripBudgetSchema = z.object({
@@ -65,6 +74,7 @@ export const tripAnalysisSchema = z.object({
   pace: z.enum(PACE_VALUES).nullable(),
   maxWalkingDistanceKm: z.number().nonnegative().max(LIMITS.maxWalkingDistanceKm).nullable(),
   notes: z.string().trim().max(LIMITS.notes).nullable(),
+  location: tripLocationSchema.nullable().optional(),
 });
 
 export type TripAnalysis = z.infer<typeof tripAnalysisSchema>;
@@ -113,6 +123,7 @@ export const tripRequirementsAnswersSchema = z.object({
   pace: z.enum(PACE_VALUES).nullish(),
   maxWalkingDistanceKm: z.number().nonnegative().max(LIMITS.maxWalkingDistanceKm).nullish(),
   notes: z.string().trim().max(LIMITS.notes).nullish(),
+  location: tripLocationSchema.nullish(),
 });
 
 export type TripRequirementsAnswers = z.infer<typeof tripRequirementsAnswersSchema>;

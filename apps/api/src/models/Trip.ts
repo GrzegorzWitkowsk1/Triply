@@ -1,3 +1,12 @@
+const locationSchema = new Schema<TripAnalysis["location"]>(
+  {
+    lat: { type: Number },
+    lng: { type: Number },
+    city: { type: String, default: null, trim: true },
+    country: { type: String, default: null, trim: true },
+  },
+  { _id: false },
+);
 import { model, Schema, type HydratedDocument, type Types } from "mongoose";
 import type { AskableField, TripAnalysis } from "@triply/shared";
 
@@ -35,6 +44,7 @@ const analysisSchema = new Schema<TripAnalysis>(
     pace: { type: String, enum: ["relaxed", "balanced", "packed", null], default: null },
     maxWalkingDistanceKm: { type: Number, default: null },
     notes: { type: String, default: null, trim: true },
+    location: { type: locationSchema, default: null },
   },
   { _id: false },
 );

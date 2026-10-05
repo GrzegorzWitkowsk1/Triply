@@ -10,6 +10,7 @@ import {
   type TripRequirementsAnswers,
 } from "@triply/shared";
 import { Types } from "mongoose";
+import { geocodeLocation } from "./location.js";
 import { TripModel, type TripDocument } from "../models/Trip.js";
 
 function normalizeText(value: string): string | null {
@@ -64,6 +65,14 @@ function toPlainAnalysis(stored: TripDocument["analysis"]): TripAnalysis {
     pace: stored.pace,
     maxWalkingDistanceKm: stored.maxWalkingDistanceKm,
     notes: stored.notes,
+    location: stored.location
+      ? {
+          lat: stored.location.lat,
+          lng: stored.location.lng,
+          city: stored.location.city ?? null,
+          country: stored.location.country ?? null,
+        }
+      : null,
   };
 }
 
@@ -124,6 +133,10 @@ export function mergeRequirements(
   }
 
   next.notes = applyText(next.notes, answers.notes);
+
+  if (answers.location !== undefined) {
+    next.location = answers.location === null ? null : answers.location;
+  }
 
   return deriveTripSchedule(next);
 }
@@ -201,7 +214,23 @@ export async function saveTripRequirements(
   answers: TripRequirementsAnswers,
   confirmedFields: AskableField[],
 ): Promise<TripDocument> {
-  const analysis = mergeRequirements(draft.analysis, answers);
+  let analysis = mergeRequirements(draft.analysis, answers);
+
+  if (!analysis.location && (analysis.destination || (analysis as any).city || analysis.country)) {
+    const query = [
+      analysis.destination,
+      analysis.country,
+    ]
+      .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+      .join(", ");
+
+    const geo = await geocodeLocation(query || analysis.destination || "");
+
+    if (geo) {
+      analysis = { ...analysis, location: geo };
+    }
+  }
+
   const confirmed = mergeConfirmedFields(draft.confirmedFields, confirmedFields, answers);
 
   draft.set("analysis", analysis);
