@@ -13,6 +13,8 @@ import type { PublicUser } from "../models/User.js";
 import {
   saveTripRequirements,
   toTripAnalysisResult,
+  toTripDetail,
+  toTripSummary,
   upsertTripDraft,
 } from "../services/tripDraft.js";
 
@@ -114,5 +116,66 @@ tripsRouter.patch(
     );
 
     res.json(toTripAnalysisResult(saved));
+  }),
+);tripsRouter.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    const trips = await TripModel.find({
+      user: new Types.ObjectId(currentUserId(res)),
+    })
+      .sort({ createdAt: -1 })
+      .exec();
+
+    res.json(trips.map((trip) => toTripSummary(trip)));
+  }),
+);
+
+tripsRouter.get(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const rawId = req.params.id;
+    const id = (Array.isArray(rawId) ? rawId[0] : rawId) ?? "";
+
+    if (!Types.ObjectId.isValid(id)) {
+      res.status(404).json({ error: "Trip not found" });
+      return;
+    }
+
+    const trip = await TripModel.findOne({
+      _id: new Types.ObjectId(id),
+      user: new Types.ObjectId(currentUserId(res)),
+    }).exec();
+
+    if (!trip) {
+      res.status(404).json({ error: "Trip not found" });
+      return;
+    }
+
+    res.json(toTripDetail(trip));
+  }),
+);
+
+tripsRouter.get(
+  "/:id/equipment",
+  asyncHandler(async (req, res) => {
+    const rawId = req.params.id;
+    const id = (Array.isArray(rawId) ? rawId[0] : rawId) ?? "";
+
+    if (!Types.ObjectId.isValid(id)) {
+      res.status(404).json({ error: "Trip not found" });
+      return;
+    }
+
+    const trip = await TripModel.findOne({
+      _id: new Types.ObjectId(id),
+      user: new Types.ObjectId(currentUserId(res)),
+    }).exec();
+
+    if (!trip) {
+      res.status(404).json({ error: "Trip not found" });
+      return;
+    }
+
+    res.json({ equipment: Array.isArray((trip as any).equipment) ? (trip as any).equipment : [] });
   }),
 );

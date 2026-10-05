@@ -1,3 +1,14 @@
+export const tripEquipmentItemSchema = z.object({
+  id: z.string().trim().min(1).max(64),
+  name: z.string().trim().min(1).max(120),
+  count: z.number().int().positive().max(999),
+});
+
+export type TripEquipmentItem = z.infer<typeof tripEquipmentItemSchema>;
+
+export const tripEquipmentSchema = z.array(tripEquipmentItemSchema);
+
+export type TripEquipment = z.infer<typeof tripEquipmentSchema>;
 import { z } from "zod";
 import { addDays, diffDaysInclusive, isAfter, isIsoDate } from "./dates.js";
 

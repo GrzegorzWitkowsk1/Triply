@@ -8,6 +8,7 @@ import {
   type TripAnalysis,
   type TripAnalysisResult,
   type TripRequirementsAnswers,
+  type TripEquipmentItem,
 } from "@triply/shared";
 import { Types } from "mongoose";
 import { geocodeLocation } from "./location.js";
@@ -253,5 +254,62 @@ export function toTripAnalysisResult(draft: TripDocument): TripAnalysisResult {
     analysis,
     missingFields: gaps,
     requirementsComplete: gaps.length === 0,
+  };
+}export interface TripSummary {
+  id: string;
+  status: "draft" | "confirmed";
+  prompt: string;
+  badges: string[];
+  destination: string | null;
+  country: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  durationDays: number | null;
+  location: TripAnalysis["location"] | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TripDetail extends TripAnalysisResult {
+  id: string;
+  status: "draft" | "confirmed";
+  prompt: string;
+  badges: string[];
+  equipment: TripEquipmentItem[];
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export function toTripSummary(trip: TripDocument): TripSummary {
+  const analysis = trip.analysis;
+
+  return {
+    id: trip._id.toString(),
+    status: trip.status,
+    prompt: trip.prompt,
+    badges: trip.badges,
+    destination: analysis.destination,
+    country: analysis.country,
+    startDate: analysis.startDate,
+    endDate: analysis.endDate,
+    durationDays: analysis.durationDays,
+    location: analysis.location ?? null,
+    createdAt: (trip as any).createdAt ? (trip as any).createdAt.toISOString() : null,
+    updatedAt: (trip as any).updatedAt ? (trip as any).updatedAt.toISOString() : null,
+  };
+}
+
+export function toTripDetail(trip: TripDocument): TripDetail {
+  const result = toTripAnalysisResult(trip);
+
+  return {
+    ...result,
+    id: trip._id.toString(),
+    status: trip.status,
+    prompt: trip.prompt,
+    badges: trip.badges,
+    equipment: Array.isArray((trip as any).equipment) ? (trip as any).equipment : [],
+    createdAt: (trip as any).createdAt ? (trip as any).createdAt.toISOString() : null,
+    updatedAt: (trip as any).updatedAt ? (trip as any).updatedAt.toISOString() : null,
   };
 }
