@@ -12,6 +12,7 @@
       "name": "@triply/api",
       "version": "0.1.0",
       "dependencies": {
+        "@triply/shared": "workspace:*",
         "argon2": "^0.45.1",
         "connect-mongo": "^6.0.0",
         "cors": "^2.8.5",
@@ -41,6 +42,7 @@
         "@mui/icons-material": "^9.4.0",
         "@mui/material": "^9.4.0",
         "@tanstack/react-query": "^5.103.2",
+        "@triply/shared": "workspace:*",
         "leaflet": "^1.9.4",
         "react": "^19.1.0",
         "react-dom": "^19.1.0",
@@ -55,6 +57,16 @@
         "@vitejs/plugin-react": "^4.4.1",
         "typescript": "^5.8.3",
         "vite": "^6.3.2",
+      },
+    },
+    "packages/shared": {
+      "name": "@triply/shared",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^4.6.5",
+      },
+      "devDependencies": {
+        "typescript": "^5.8.3",
       },
     },
   },
@@ -274,6 +286,8 @@
     "@tanstack/react-query": ["@tanstack/react-query@5.103.2", "", { "dependencies": { "@tanstack/query-core": "5.103.2" }, "peerDependencies": { "react": "^18 || ^19" } }, "sha512-B+fWiYZBc+0uUD5zDZAeLw9dKj7XEsdnuu6zRZ+no6LNKpeE3P3bJ+N6HINjcIlWR6fW3vUoTneEaGa2V6ehqw=="],
 
     "@triply/api": ["@triply/api@workspace:apps/api"],
+
+    "@triply/shared": ["@triply/shared@workspace:packages/shared"],
 
     "@triply/web": ["@triply/web@workspace:apps/web"],
 

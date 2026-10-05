@@ -13,6 +13,15 @@ function getHttpStatus(error: unknown): number | undefined {
   return undefined;
 }
 
+function isExposed(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "expose" in error &&
+    (error as { expose?: unknown }).expose === true
+  );
+}
+
 export const errorHandler: ErrorRequestHandler = (error, _req, res, next) => {
   if (res.headersSent) {
     next(error);
@@ -20,6 +29,14 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, next) => {
   }
 
   const status = getHttpStatus(error);
+
+  if (isExposed(error) && typeof error === "object" && error !== null && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    res.status(status ?? 500).json({
+      error: typeof message === "string" ? message : "Request could not be processed",
+    });
+    return;
+  }
 
   if (status && status >= 400 && status < 500) {
     res.status(status).json({

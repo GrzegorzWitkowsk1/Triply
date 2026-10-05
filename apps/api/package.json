@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@triply/shared": "workspace:*",
     "argon2": "^0.45.1",
     "connect-mongo": "^6.0.0",
     "cors": "^2.8.5",

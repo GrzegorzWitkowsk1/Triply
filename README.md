@@ -10,6 +10,8 @@ Brand color: `#f2664b`
 apps/
   api/   Express + Mongoose backend (port 4000)
   web/   Vite + React frontend (port 5173)
+packages/
+  shared/   Shared types, zod schemas and trip helpers
 ```
 
 ## Prerequisites
@@ -25,6 +27,17 @@ cp .env.example apps/api/.env
 docker compose up -d
 ```
 
+## AI
+
+Trip planning calls the Gemini API from the backend. Create an API key in Google AI Studio and set it in `apps/api/.env`:
+
+```
+GEMINI_API_KEY=your-key
+GEMINI_MODEL=gemini-3.8-flash
+```
+
+`GEMINI_MODEL` is optional and defaults to `gemini-3.8-flash`. Without a key the analyze endpoint answers with a `500` and an explanatory message.
+
 ## Run
 
 ```bash
@@ -36,6 +49,10 @@ bun run dev:web  # frontend only on http://localhost:5173
 ## Endpoints
 
 - `GET /health` — service health, includes MongoDB connection status
+- `POST /api/trips/analyze` — `{ prompt, badges }` → Gemini analysis, stored as a draft trip. Returns `{ draftId, analysis, missingFields, requirementsComplete }`
+- `PATCH /api/trips/:id/requirements` — merges answers into the draft, returns the same payload
+
+Both trip endpoints require an authenticated session. The analyze endpoint is rate limited to 20 requests per 10 minutes.
 
 The Vite dev server proxies `/health` and `/api` to the backend.
 

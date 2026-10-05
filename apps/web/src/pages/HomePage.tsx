@@ -7,14 +7,27 @@ import {
 } from "@mui/icons-material";
 import { TextField } from "@mui/material";
 import { useLocation, useNavigate } from "react-router-dom";
+import type { TripAnalysisResult, UpdateTripRequirements } from "@triply/shared";
 import { HOME_BADGES, TRIPS } from "../config/home";
 import TripCard from "../components/trips/TripCard";
 import PlanProgressCard from "../components/home/PlanProgressCard";
+import TripPlanSummaryCard from "../components/home/TripPlanSummaryCard";
+import TripRequirementsDialog from "../components/home/TripRequirementsDialog";
+import {
+  useAnalyzeTrip,
+  useUpdateTripRequirements,
+} from "../hooks/useTripAnalysis";
 import { useTripPlanning } from "../hooks/useTripPlanning";
 
 interface VoiceHint {
   text: string;
   kind: "info" | "error";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "Something went wrong. Please try again.";
 }
 
 const VOICE_ERRORS: Record<string, string> = {
@@ -44,9 +57,15 @@ export default function HomePage() {
   const navigate = useNavigate()
   const hadErrorRef = useRef(false);
   const planning = useTripPlanning();
+  const analyze = useAnalyzeTrip();
+  const saveRequirements = useUpdateTripRequirements();
+  const [draft, setDraft] = useState<TripAnalysisResult | null>(null);
+  const [isDialogOpen, setDialogOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const canPlan = prompt.trim().length > 0 || selectedBadges.length > 0;
   const isPlanning = planning.hasStarted;
+  const showProgress = planning.hasStarted && !planning.isDone;
 
   const planSummary = prompt.trim()
     ? prompt.trim()
@@ -177,6 +196,59 @@ export default function HomePage() {
     );
   };
 
+  const cancelPlan = () => {
+    planning.reset();
+    setDraft(null);
+    setDialogOpen(false);
+    setSaveError(null);
+  };
+
+  const startPlan = () => {
+    setSaveError(null);
+    setDraft(null);
+    setVoiceHint(null);
+    planning.start();
+
+    analyze.mutate(
+      { prompt: prompt.trim(), badges: selectedBadges },
+      {
+        onSuccess: (result) => {
+          setDraft(result);
+          planning.finish();
+
+          if (result.missingFields.length > 0) {
+            setDialogOpen(true);
+          }
+        },
+        onError: (error) => {
+          planning.reset();
+          setVoiceHint({ text: errorMessage(error), kind: "error" });
+        },
+      },
+    );
+  };
+
+  const saveAnswers = (payload: UpdateTripRequirements) => {
+    if (!draft) return;
+
+    setSaveError(null);
+
+    saveRequirements.mutate(
+      {
+        draftId: draft.draftId,
+        answers: payload.answers,
+        confirmedFields: payload.confirmedFields,
+      },
+      {
+        onSuccess: (result) => {
+          setDraft(result);
+          setDialogOpen(false);
+        },
+        onError: (error) => setSaveError(errorMessage(error)),
+      },
+    );
+  };
+
   return (
     <div className="home-page">
       <div className="home-inner">
@@ -194,7 +266,7 @@ export default function HomePage() {
               <button
                 type="button"
                 className="prompt-summary-cancel"
-                onClick={planning.reset}
+                onClick={cancelPlan}
               >
                 Cancel
               </button>
@@ -268,7 +340,7 @@ export default function HomePage() {
                   type="button"
                   className="btn btn-primary prompt-submit"
                   disabled={!canPlan}
-                  onClick={planning.start}
+                  onClick={startPlan}
                 >
                   Plan my trip
                   <ArrowForwardOutlined fontSize="small" />
@@ -281,8 +353,17 @@ export default function HomePage() {
           )}
         </div>
 
-        {isPlanning && (
+        {showProgress && (
           <PlanProgressCard statuses={planning.statuses} isDone={planning.isDone} />
+        )}
+
+        {draft && (
+          <TripPlanSummaryCard
+            analysis={draft.analysis}
+            missingFields={draft.missingFields}
+            requirementsComplete={draft.requirementsComplete}
+            onEdit={() => setDialogOpen(true)}
+          />
         )}
 
         <div className="home-badges">
@@ -323,6 +404,19 @@ export default function HomePage() {
           </div>
         </section>
       </div>
+
+      {draft && (
+        <TripRequirementsDialog
+          key={draft.missingFields.join(",")}
+          open={isDialogOpen}
+          analysis={draft.analysis}
+          missingFields={draft.missingFields}
+          isSaving={saveRequirements.isPending}
+          error={saveError}
+          onSave={saveAnswers}
+          onClose={() => setDialogOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { errorHandler } from "./middleware/error.js";
 import { requireAuth } from "./middleware/auth.js";
 import { healthRouter } from "./routes/health.js";
 import { authRouter } from "./routes/auth.js";
+import { tripsRouter } from "./routes/trips.js";
 
 const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -40,6 +41,7 @@ export function createApp() {
   app.use(healthRouter);
   app.use("/api/auth", authRouter);
   app.use("/api", requireAuth);
+  app.use("/api/trips", tripsRouter);
   app.use(errorHandler);
 
   return app;

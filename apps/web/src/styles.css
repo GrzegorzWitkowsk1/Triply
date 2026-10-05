@@ -3857,3 +3857,282 @@ body {
     font-size: 34px;
   }
 }
+
+/* Trip planning: requirements dialog + plan summary */
+
+.requirements-dialog .MuiDialog-paper {
+  border-radius: 20px;
+  background: var(--color-primary-tint);
+  margin: 16px;
+}
+
+.requirements-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.requirements-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 22px 24px 6px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.requirements-close {
+  margin: -6px -8px 0 0;
+  color: var(--color-muted);
+}
+
+.requirements-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 24px 4px;
+}
+
+.requirements-lead {
+  font-size: 14px;
+  color: var(--color-muted);
+}
+
+.requirements-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.requirements-row {
+  display: flex;
+  gap: 12px;
+}
+
+.requirements-legend {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.requirements-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.requirements-option {
+  padding: 9px 16px;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.requirements-option:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.requirements-option.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
+}
+
+.requirements-budget-custom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.requirements-budget-custom > * {
+  flex: 1 1 140px;
+}
+
+.requirements-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.requirements-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.requirements-tag .MuiSvgIcon-root {
+  font-size: 16px;
+}
+
+.requirements-tag:hover {
+  border-color: var(--color-primary);
+}
+
+.requirements-tag.is-active {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.requirements-interest-add {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.requirements-interest-add > .MuiTextField-root {
+  flex: 1;
+}
+
+.requirements-interest-add > .MuiButton-root {
+  margin-top: 8px;
+}
+
+.requirements-chosen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.requirements-chosen-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 12px;
+  border-radius: 999px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.requirements-chosen-tag button {
+  display: inline-flex;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.requirements-hint {
+  font-size: 12px;
+  color: var(--color-dim);
+}
+
+.requirements-error {
+  font-size: 12px;
+  font-weight: 600;
+  color: #d54e34;
+}
+
+.requirements-error.is-server {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--color-primary-light);
+}
+
+.requirements-actions {
+  gap: 8px;
+  padding: 12px 24px 22px;
+}
+
+.plan-summary-facts {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.plan-summary-facts li {
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: #fafafa;
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.plan-summary-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.plan-summary-tag {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.plan-summary-notes {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fafafa;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.plan-summary-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.plan-summary-actions .btn {
+  width: auto;
+  flex: 1;
+}
+
+.plan-summary-actions .btn:not(.btn-primary) {
+  background: #ffffff;
+  color: var(--color-text);
+  box-shadow: var(--shadow-soft);
+}
+
+.plan-summary-block {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--color-dim);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+@media (max-width: 600px) {
+  .requirements-row,
+  .requirements-budget-custom,
+  .requirements-interest-add {
+    flex-direction: column;
+  }
+
+  .requirements-title {
+    font-size: 18px;
+  }
+}

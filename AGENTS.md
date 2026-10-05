@@ -15,12 +15,15 @@ apps/web:
 - TypeScript
 
 apps/api:
-- Fastify
+- Express
 - MongoDB
 - Mongoose
+- Gemini API (AI trip analysis, no SDK — plain `fetch`)
 
 packages/shared:
 - Shared TypeScript types
+- Shared zod schemas for the API contracts
+- Built with `tsc` to `dist`; consumed as `@triply/shared`
 
 ## Rules
 
