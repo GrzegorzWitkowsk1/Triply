@@ -188,8 +188,27 @@ export interface UpsertTripDraftInput {
   analysis: TripAnalysis;
 }
 
+async function ensureLocation(analysis: TripAnalysis): Promise<TripAnalysis> {
+  if (analysis.location) {
+    return analysis;
+  }
+
+  const query = [analysis.destination, analysis.country]
+    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+    .join(", ");
+
+  if (!query) {
+    return analysis;
+  }
+
+  const geo = await geocodeLocation(query);
+
+  return geo ? { ...analysis, location: geo } : analysis;
+}
+
 export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<TripDocument> {
-  const gaps = missingFields(input.analysis);
+  const analysis = await ensureLocation(input.analysis);
+  const gaps = missingFields(analysis);
 
   const draft = await TripModel.findOneAndUpdate(
     { user: new Types.ObjectId(input.userId), status: "draft" },
@@ -197,7 +216,7 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
       $set: {
         prompt: input.prompt,
         badges: input.badges,
-        analysis: input.analysis,
+        analysis: analysis,
         confirmedFields: [],
         missingFields: gaps,
       },
@@ -217,21 +236,8 @@ export async function saveTripRequirements(
   answers: TripRequirementsAnswers,
   confirmedFields: AskableField[],
 ): Promise<TripDocument> {
-  let analysis = mergeRequirements(draft.analysis, answers);
-
-  if (!analysis.location && (analysis.destination || (analysis as any).city || analysis.country)) {
-    const parts: string[] = [];
-    if (analysis.destination) parts.push(analysis.destination);
-    if ((analysis as any).city) parts.push((analysis as any).city);
-    if (analysis.country) parts.push(analysis.country);
-    const query = parts.filter((p): p is string => typeof p === "string" && p.trim().length > 0).join(", ");
-
-    const geo = await geocodeLocation(query || analysis.destination || "");
-
-    if (geo) {
-      analysis = { ...analysis, location: geo };
-    }
-  }
+  const merged = mergeRequirements(draft.analysis, answers);
+  const analysis = await ensureLocation(merged);
 
   const confirmed = mergeConfirmedFields(draft.confirmedFields, confirmedFields, answers);
 

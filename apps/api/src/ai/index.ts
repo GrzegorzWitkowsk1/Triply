@@ -1,2 +1,10 @@
-export { analyzeTrip, type AnalyzeTripInput } from "./analyzeTrip.js";
-export { AiError, generateJson, type GeminiJsonSchema } from "./gemini.js";
+export { aiService, createAiService, type AiService } from "./aiService.js";
+export { AiError, type AiErrorCode } from "./errors.js";
+export { createAIProvider, type AIProviderConfig } from "./providers/factory.js";
+export type {
+  AIProvider,
+  AIProviderName,
+  AIRequest,
+  AISchema,
+  AnalyzeTripInput,
+} from "./types.js";

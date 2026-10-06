@@ -29,14 +29,18 @@ docker compose up -d
 
 ## AI
 
-Trip planning calls the Gemini API from the backend. Create an API key in Google AI Studio and set it in `apps/api/.env`:
+Trip parsing (free-form request → structured trip preferences) runs through a provider-agnostic AI layer in `apps/api/src/ai/`. Configure it in `apps/api/.env`:
 
 ```
-GEMINI_API_KEY=your-key
-GEMINI_MODEL=gemini-3.8-flash
+AI_PROVIDER=gemini        # gemini (default) or openrouter
+AI_TIMEOUT_MS=45000
+GEMINI_API_KEY=your-google-ai-studio-key
+OPENROUTER_API_KEY=your-openrouter-key
 ```
 
-`GEMINI_MODEL` is optional and defaults to `gemini-3.8-flash`. Without a key the analyze endpoint answers with a `500` and an explanatory message.
+- `AI_PROVIDER` selects the provider; any other value fails at startup with a clear error.
+- `AI_MODEL` is the model for the selected provider. Gemini defaults to `gemini-flash-latest`; `openrouter` requires an explicit `AI_MODEL` (e.g. `google/gemma-4-26b-a4b-it:free`).
+- Only the selected provider's API key is required; missing credentials answer the analyze endpoint with a `500` and an explanatory message.
 
 ## Run
 
@@ -49,7 +53,7 @@ bun run dev:web  # frontend only on http://localhost:5173
 ## Endpoints
 
 - `GET /health` — service health, includes MongoDB connection status
-- `POST /api/trips/analyze` — `{ prompt, badges }` → Gemini analysis, stored as a draft trip. Returns `{ draftId, analysis, missingFields, requirementsComplete }`
+- `POST /api/trips/analyze` — `{ prompt, badges }` → AI-parsed trip analysis, stored as a draft trip. Returns `{ draftId, analysis, missingFields, requirementsComplete }`
 - `PATCH /api/trips/:id/requirements` — merges answers into the draft, returns the same payload
 
 Both trip endpoints require an authenticated session. The analyze endpoint is rate limited to 20 requests per 10 minutes.
@@ -66,6 +70,7 @@ Public web routes are `/login` and `/register`; authenticated app routes are pro
 
 ```bash
 bun run typecheck   # typecheck both apps (turborepo)
+bun run test        # run tests (turborepo)
 bun run build       # build both apps (turborepo, cached)
 docker compose down  # stop database (data kept in volume)
 ```

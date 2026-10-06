@@ -10,7 +10,7 @@ import {
   type AnalyzeTripRequest,
   type UpdateTripRequirements,
 } from "@triply/shared";
-import { analyzeTrip } from "../ai/analyzeTrip.js";
+import { aiService } from "../ai/index.js";
 import { TripModel } from "../models/Trip.js";
 import type { PublicUser } from "../models/User.js";
 import {
@@ -78,7 +78,7 @@ tripsRouter.post(
     }
 
     const request: AnalyzeTripRequest = parsed.data;
-    const analysis = await analyzeTrip({ prompt: request.prompt, badges: request.badges });
+    const analysis = await aiService.parseTrip({ prompt: request.prompt, badges: request.badges });
 
     const draft = await upsertTripDraft({
       userId: currentUserId(res),

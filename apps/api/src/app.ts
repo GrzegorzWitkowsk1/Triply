@@ -43,6 +43,7 @@ export function createApp() {
   app.use("/api/auth", authRouter);
   app.use("/api", requireAuth);
   app.use("/api/trips", tripsRouter);
+  app.use("/api/location", locationRouter);
   app.use(errorHandler);
 
   return app;

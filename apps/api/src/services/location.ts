@@ -41,7 +41,9 @@ export async function geocodeLocation(
     url.searchParams.set("count", "1");
     url.searchParams.set("language", "en");
 
-    const response = await fetch(url.toString());
+    const response = await fetch(url.toString(), {
+      signal: AbortSignal.timeout(5_000),
+    });
 
     if (!response.ok) {
       return null;

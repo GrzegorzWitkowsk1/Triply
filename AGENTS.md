@@ -18,7 +18,7 @@ apps/api:
 - Express
 - MongoDB
 - Mongoose
-- Gemini API (AI trip analysis, no SDK — plain `fetch`)
+- AI provider layer (Gemini/OpenRouter for trip parsing, no SDK — plain `fetch`)
 
 packages/shared:
 - Shared TypeScript types
