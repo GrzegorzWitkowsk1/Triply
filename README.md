@@ -42,6 +42,13 @@ OPENROUTER_API_KEY=your-openrouter-key
 - `AI_MODEL` is the model for the selected provider. Gemini defaults to `gemini-flash-latest`; `openrouter` requires an explicit `AI_MODEL` (e.g. `google/gemma-4-26b-a4b-it:free`).
 - Only the selected provider's API key is required; missing credentials answer the analyze endpoint with a `500` and an explanatory message.
 
+## Weather
+
+Per-day forecast (daily max temperature + WMO weather code) is fetched from the free Open-Meteo API (no key required) in `apps/api/src/services/weather.ts`, stored on the trip, and served with `GET /api/trips/:id`.
+
+- Fetched alongside geocoding when a draft is saved or requirements change; the trip detail endpoint backfills it on load.
+- Forecast coverage is limited to about 16 days ahead — trips starting further out get weather automatically once they enter range. Stored weather refreshes at most once per 24 hours.
+
 ## Run
 
 ```bash

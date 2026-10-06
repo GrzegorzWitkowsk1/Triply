@@ -9,12 +9,16 @@ import {
   type TripAnalysisResult,
 type TripRequirementsAnswers,
   type TripEquipmentItem,
+  type TripDayWeather,
   type TripDetail,
   type TripSummary,
 } from "@triply/shared";
 import { Types } from "mongoose";
 import { geocodeLocation } from "./location.js";
+import { coversForecastRange, fetchDailyWeather } from "./weather.js";
 import { TripModel, type TripDocument } from "../models/Trip.js";
+
+const WEATHER_TTL_MS = 24 * 60 * 60 * 1000;
 
 function normalizeText(value: string): string | null {
   const trimmed = value.trim();
@@ -206,9 +210,82 @@ async function ensureLocation(analysis: TripAnalysis): Promise<TripAnalysis> {
   return geo ? { ...analysis, location: geo } : analysis;
 }
 
+export interface WeatherState {
+  days: TripDayWeather[];
+  fetchedAt: Date | null;
+}
+
+export async function ensureWeather(
+  analysis: TripAnalysis,
+  current: TripDayWeather[],
+  fetchedAt: Date | null,
+): Promise<WeatherState> {
+  const { location, startDate, endDate } = analysis;
+
+  if (!location || !startDate || !endDate) {
+    return current.length === 0 ? { days: current, fetchedAt } : { days: [], fetchedAt: null };
+  }
+
+  const isFresh = fetchedAt !== null && Date.now() - fetchedAt.getTime() < WEATHER_TTL_MS;
+
+  if (isFresh && coversForecastRange(current, startDate, endDate)) {
+    return { days: current, fetchedAt };
+  }
+
+  const fresh = await fetchDailyWeather(location.lat, location.lng, startDate, endDate);
+
+  if (fresh) {
+    return { days: fresh, fetchedAt: new Date() };
+  }
+
+  if (coversForecastRange(current, startDate, endDate)) {
+    return { days: current, fetchedAt };
+  }
+
+  return { days: [], fetchedAt: null };
+}
+
+function sameWeather(a: TripDayWeather[], b: TripDayWeather[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (day, index) =>
+        day.date === b[index].date &&
+        day.weatherCode === b[index].weatherCode &&
+        day.temperatureMax === b[index].temperatureMax,
+    )
+  );
+}
+
+export async function backfillTripWeather(trip: TripDocument): Promise<void> {
+  const weather = await ensureWeather(trip.analysis, trip.weather, trip.weatherFetchedAt);
+
+  if (
+    sameWeather(weather.days, trip.weather) &&
+    weather.fetchedAt === trip.weatherFetchedAt
+  ) {
+    return;
+  }
+
+  trip.set("weather", weather.days);
+  trip.set("weatherFetchedAt", weather.fetchedAt);
+  await trip.save();
+}
+
 export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<TripDocument> {
   const analysis = await ensureLocation(input.analysis);
   const gaps = missingFields(analysis);
+
+  const existing = await TripModel.findOne({
+    user: new Types.ObjectId(input.userId),
+    status: "draft",
+  }).exec();
+
+  const weather = await ensureWeather(
+    analysis,
+    existing?.weather ?? [],
+    existing?.weatherFetchedAt ?? null,
+  );
 
   const draft = await TripModel.findOneAndUpdate(
     { user: new Types.ObjectId(input.userId), status: "draft" },
@@ -219,6 +296,8 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
         analysis: analysis,
         confirmedFields: [],
         missingFields: gaps,
+        weather: weather.days,
+        weatherFetchedAt: weather.fetchedAt,
       },
     },
     { new: true, upsert: true, setDefaultsOnInsert: true },
@@ -238,10 +317,13 @@ export async function saveTripRequirements(
 ): Promise<TripDocument> {
   const merged = mergeRequirements(draft.analysis, answers);
   const analysis = await ensureLocation(merged);
+  const weather = await ensureWeather(analysis, draft.weather, draft.weatherFetchedAt);
 
   const confirmed = mergeConfirmedFields(draft.confirmedFields, confirmedFields, answers);
 
   draft.set("analysis", analysis);
+  draft.set("weather", weather.days);
+  draft.set("weatherFetchedAt", weather.fetchedAt);
   const gaps = missingFields(analysis, confirmed);
   draft.confirmedFields = confirmed;
   draft.missingFields = gaps;
@@ -309,6 +391,11 @@ export function toTripDetail(trip: TripDocument): TripDetail {
     prompt: trip.prompt,
     badges: trip.badges,
     equipment: toTripEquipment(trip),
+    weather: trip.weather.map((day) => ({
+      date: day.date,
+      weatherCode: day.weatherCode,
+      temperatureMax: day.temperatureMax,
+    })),
     fixtureKey: trip.fixtureKey ?? null,
     createdAt: (trip as any).createdAt ? (trip as any).createdAt.toISOString() : null,
     updatedAt: (trip as any).updatedAt ? (trip as any).updatedAt.toISOString() : null,

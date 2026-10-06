@@ -18,6 +18,7 @@ import TripBudgetCard from "../components/trip/TripBudgetCard";
 import TripMap from "../components/trip/TripMap";
 import TripPreferencesCard from "../components/trip/TripPreferencesCard";
 import { EMPTY_BUDGET_BREAKDOWN, findTripDetailByKey } from "../config/trip";
+import { toTripWeather } from "../config/weather";
 import { useTrip } from "../hooks/useTrips";
 
 const MONTHS = [
@@ -70,6 +71,17 @@ export default function TripPage() {
   const [pace, setPace] = useState(fixture?.prefDefaults.pace ?? 1);
   const [walking, setWalking] = useState(fixture?.prefDefaults.walking ?? 1);
 
+  const dayCountHint = Math.max(
+    trip.data?.analysis?.durationDays ?? fixture?.days ?? 0,
+    trip.data?.weather?.length ?? 0,
+    fixture?.tripDays.length ?? 0,
+    1,
+  );
+
+  useEffect(() => {
+    setActiveDay((current) => Math.min(current, dayCountHint - 1));
+  }, [dayCountHint]);
+
   useEffect(() => {
     if (!fixture) return;
     setActiveDay(0);
@@ -98,7 +110,9 @@ export default function TripPage() {
   const days = analysis?.durationDays ?? fixture?.days ?? 0;
   const dateLabel = formatRange(analysis?.startDate ?? null, analysis?.endDate ?? null);
 
-  const weather = fixture?.weather ?? null;
+  const weatherDays = trip.data.weather;
+  const dayWeather = weatherDays[activeDay];
+  const weather = dayWeather ? toTripWeather(dayWeather) : fixture?.weather ?? null;
   const stepsKm = fixture?.stepsKm ?? null;
   const center =
     analysis?.location ??
@@ -108,6 +122,7 @@ export default function TripPage() {
   const budgetSpent = fixture?.budget.spent ?? analysis?.budget.amount ?? 0;
   const budgetWhole = fixture?.budget.whole ?? analysis?.budget.amount ?? 0;
 
+  const dayCount = dayCountHint;
   const WeatherIcon = weather?.icon ?? null;
   const totalActivities = tripDays.reduce((sum, day) => sum + day.activities.length, 0);
   const spent = budgetSpent;
@@ -181,7 +196,7 @@ export default function TripPage() {
           <div className="trip-left">
             <div className="trip-day-header">
               <span className="trip-day-label">
-                Day {activeDay + 1} of {days}
+                Day {activeDay + 1} of {dayCount}
               </span>
               <div className="trip-day-nav">
                 <button
@@ -198,10 +213,10 @@ export default function TripPage() {
                 <button
                   type="button"
                   aria-label="Next day"
-                  disabled={activeDay === dayRoutes.length - 1}
+                  disabled={activeDay >= dayCount - 1}
                   onClick={() => {
                     setActiveDay((dayIndex) =>
-                      Math.min(dayRoutes.length - 1, dayIndex + 1)
+                      Math.min(dayCount - 1, dayIndex + 1)
                     );
                     setActiveActivity(0);
                   }}

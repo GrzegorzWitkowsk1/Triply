@@ -1,5 +1,5 @@
 import { model, Schema, type HydratedDocument, type Types } from "mongoose";
-import type { AskableField, TripAnalysis, TripStatus } from "@triply/shared";
+import type { AskableField, TripAnalysis, TripDayWeather, TripStatus } from "@triply/shared";
 import { TRIP_STATUS_VALUES } from "@triply/shared";
 
 export interface EquipmentRecord {
@@ -16,6 +16,8 @@ export interface TripRecord {
   confirmedFields: AskableField[];
   missingFields: AskableField[];
   equipment: Types.DocumentArray<EquipmentRecord>;
+  weather: TripDayWeather[];
+  weatherFetchedAt: Date | null;
   fixtureKey: string | null;
 }
 
@@ -44,6 +46,15 @@ const budgetSchema = new Schema<TripAnalysis["budget"]>(
     amount: { type: Number, default: null },
     currency: { type: String, default: null, trim: true },
     type: { type: String, enum: ["total", "per_person", null], default: null },
+  },
+  { _id: false },
+);
+
+const dayWeatherSchema = new Schema<TripDayWeather>(
+  {
+    date: { type: String, required: true, trim: true },
+    weatherCode: { type: Number, required: true, min: 0, max: 99 },
+    temperatureMax: { type: Number, required: true },
   },
   { _id: false },
 );
@@ -85,6 +96,8 @@ const tripSchema = new Schema<TripRecord>(
     confirmedFields: { type: [String], default: [] },
     missingFields: { type: [String], default: [] },
     equipment: { type: [equipmentItemSchema], default: [] },
+    weather: { type: [dayWeatherSchema], default: [] },
+    weatherFetchedAt: { type: Date, default: null },
     fixtureKey: { type: String, default: null, trim: true },
   },
   { timestamps: true },

@@ -298,7 +298,7 @@ export default function HomePage() {
                 variant="standard"
                 multiline
                 rows={3}
-                placeholder="4 days in Barcelona, €500 budget, I love food and architecture, relaxed place..."
+                placeholder={`4 days in Barcelona, starting at ${(new Date(new Date().getTime() + 24 * 60 * 60 * 1000)).toLocaleDateString()}, €500 budget, I love food and architecture, relaxed place...`}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 slotProps={{

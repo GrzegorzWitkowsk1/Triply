@@ -85,6 +85,14 @@ export const tripAnalysisSchema = z.object({
 
 export type TripAnalysis = z.infer<typeof tripAnalysisSchema>;
 
+export const tripDayWeatherSchema = z.object({
+  date: isoDateSchema,
+  weatherCode: z.number().int().min(0).max(99),
+  temperatureMax: z.number(),
+});
+
+export type TripDayWeather = z.infer<typeof tripDayWeatherSchema>;
+
 export const ASKABLE_FIELDS = [
   "destination",
   "country",
@@ -214,6 +222,7 @@ export interface TripDetail extends TripAnalysisResult {
   prompt: string;
   badges: string[];
   equipment: TripEquipmentItem[];
+  weather: TripDayWeather[];
   fixtureKey: string | null;
   createdAt: string | null;
   updatedAt: string | null;

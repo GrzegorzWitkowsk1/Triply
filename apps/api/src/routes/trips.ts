@@ -14,6 +14,7 @@ import { aiService } from "../ai/index.js";
 import { TripModel } from "../models/Trip.js";
 import type { PublicUser } from "../models/User.js";
 import {
+  backfillTripWeather,
   saveTripRequirements,
   toTripAnalysisResult,
   toTripDetail,
@@ -174,6 +175,8 @@ tripsRouter.get(
       res.status(404).json({ error: "Trip not found" });
       return;
     }
+
+    await backfillTripWeather(trip);
 
     res.json(toTripDetail(trip));
   }),
