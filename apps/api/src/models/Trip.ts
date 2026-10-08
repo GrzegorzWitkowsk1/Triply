@@ -80,6 +80,7 @@ const attractionSchema = new Schema<TripAttraction>(
     category: { type: String, required: true, trim: true, maxlength: 60 },
     lat: { type: Number, required: true, min: -90, max: 90 },
     lng: { type: Number, required: true, min: -180, max: 180 },
+    score: { type: Number, min: 0, max: 100 },
   },
   { _id: false },
 );

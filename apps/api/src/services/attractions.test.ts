@@ -1,9 +1,31 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { TripAttraction } from "@triply/shared";
 import {
   buildOverpassQuery,
   fetchAttractions,
   selectFilters,
 } from "./attractions.js";
+
+function withoutScores(result: TripAttraction[] | null): TripAttraction[] | null {
+  if (result === null) {
+    return null;
+  }
+
+  return result.map(({ score: _score, ...rest }) => rest);
+}
+
+function hasValidScores(result: TripAttraction[] | null): boolean {
+  return (
+    result !== null &&
+    result.every(
+      (attraction) =>
+        typeof attraction.score === "number" &&
+        Number.isInteger(attraction.score) &&
+        attraction.score >= 0 &&
+        attraction.score <= 100,
+    )
+  );
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -158,11 +180,12 @@ describe("fetchAttractions", () => {
       fastOptions(),
     );
 
-    expect(result).toEqual([
+    expect(withoutScores(result)).toEqual([
       { name: "Café de Flore", category: "food", lat: 48.852, lng: 2.349 },
       { name: "Le Louvre", category: "culture", lat: 48.86, lng: 2.34 },
       { name: "Notre-Dame", category: "architecture", lat: 48.84, lng: 2.36 },
     ]);
+    expect(hasValidScores(result)).toBe(true);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -183,7 +206,9 @@ describe("fetchAttractions", () => {
 
     const result = await fetchAttractions(48.85, 2.35, ["food"], fastOptions());
 
-    expect(result).toEqual([{ name: "Spot", category: "food", lat: 48.85, lng: 2.35 }]);
+    expect(withoutScores(result)).toEqual([
+      { name: "Spot", category: "food", lat: 48.85, lng: 2.35 },
+    ]);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
@@ -214,7 +239,7 @@ describe("fetchAttractions", () => {
       timeoutMs: 5_000,
     });
 
-    expect(result).toEqual([
+    expect(withoutScores(result)).toEqual([
       { name: "Mirror Spot", category: "culture", lat: 48.85, lng: 2.35 },
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(4);
@@ -257,7 +282,7 @@ describe("fetchAttractions", () => {
 
     const result = await fetchAttractions(48.85, 2.35, ["food"], fastOptions());
 
-    expect(result).toEqual([
+    expect(withoutScores(result)).toEqual([
       { name: "Recovered", category: "food", lat: 48.85, lng: 2.35 },
     ]);
     expect(mock).toHaveBeenCalledTimes(2);
@@ -272,7 +297,7 @@ describe("fetchAttractions", () => {
 
     const result = await fetchAttractions(48.85, 2.35, ["gardening"], fastOptions());
 
-    expect(result).toEqual([
+    expect(withoutScores(result)).toEqual([
       { name: "Nice Viewpoint", category: "attraction", lat: 48.85, lng: 2.35 },
     ]);
   });
@@ -305,7 +330,7 @@ describe("fetchAttractions", () => {
 
     const result = await fetchAttractions(48.85, 2.35, ["food"], fastOptions());
 
-    expect(result).toEqual([
+    expect(withoutScores(result)).toEqual([
       { name: "Good node", category: "food", lat: 48.85, lng: 2.35 },
     ]);
   });

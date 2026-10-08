@@ -1,4 +1,7 @@
-import type { TripAttraction } from "@triply/shared";
+import type { TripAttraction, TripDayWeather } from "@triply/shared";
+import { INTEREST_FILTERS, type TagValuesFilter } from "./poiCategories.js";
+import { normalizeInterests, normalizePois, type RawPoiCandidate } from "./poiFiltering.js";
+import { scorePois } from "./poiScoring.js";
 
 const DEFAULT_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
@@ -13,40 +16,6 @@ const ATTRACTIONS_RESULT_CAP = 60;
 const SERVER_TIMEOUT_S = 20;
 const USER_AGENT = "Triply/0.1 (trip planning)";
 
-interface TagValuesFilter {
-  key: string;
-  values: string[];
-}
-
-const INTEREST_FILTERS: Record<string, TagValuesFilter[]> = {
-  food: [{ key: "amenity", values: ["restaurant", "cafe", "fast_food", "food_court", "ice_cream"] }],
-  architecture: [
-    {
-      key: "historic",
-      values: ["castle", "palace", "ruins", "monument", "memorial", "archaeological_site", "manor"],
-    },
-    { key: "building", values: ["cathedral", "church", "mosque", "synagogue", "temple"] },
-  ],
-  beach: [
-    { key: "natural", values: ["beach"] },
-    { key: "leisure", values: ["beach_resort"] },
-  ],
-  nature: [
-    { key: "leisure", values: ["park", "garden", "nature_reserve"] },
-    { key: "natural", values: ["peak", "waterfall", "volcano", "spring"] },
-  ],
-  culture: [
-    { key: "tourism", values: ["museum", "gallery", "artwork"] },
-    { key: "amenity", values: ["theatre", "arts_centre", "library"] },
-  ],
-  shopping: [
-    { key: "amenity", values: ["marketplace"] },
-    { key: "shop", values: ["mall", "department_store", "gift", "souvenir", "clothes", "books"] },
-  ],
-  nightlife: [{ key: "amenity", values: ["bar", "pub", "nightclub", "biergarten", "casino"] }],
-};
-
-const FALLBACK_CATEGORY = "attraction";
 const FALLBACK_FILTERS: TagValuesFilter[] = [{ key: "tourism", values: ["attraction"] }];
 
 const ELEMENT_TYPES = ["node", "way", "relation"] as const;
@@ -56,6 +25,7 @@ export interface FetchAttractionsOptions {
   timeoutMs?: number;
   backoffMs?: readonly number[];
   totalBudgetMs?: number;
+  weather?: readonly TripDayWeather[] | null;
 }
 
 interface OverpassPayload {
@@ -63,6 +33,7 @@ interface OverpassPayload {
 }
 
 interface OverpassElement {
+  id?: unknown;
   type: "node" | "way" | "relation";
   lat?: unknown;
   lon?: unknown;
@@ -73,24 +44,6 @@ interface OverpassElement {
 type AttemptOutcome =
   | { ok: true; payload: unknown }
   | { ok: false; retryable: boolean; reason: string };
-
-function normalizeInterests(interests: readonly string[]): string[] {
-  const normalized: string[] = [];
-  const seen = new Set<string>();
-
-  for (const interest of interests) {
-    const value = interest.trim().toLowerCase();
-
-    if (!value || seen.has(value)) {
-      continue;
-    }
-
-    seen.add(value);
-    normalized.push(value);
-  }
-
-  return normalized;
-}
 
 export function selectFilters(interests: readonly string[]): TagValuesFilter[] {
   const byKey = new Map<string, string[]>();
@@ -144,69 +97,12 @@ export function buildOverpassQuery(lat: number, lng: number, interests: readonly
   ].join("\n");
 }
 
-function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const toRad = Math.PI / 180;
-  const dLat = (lat2 - lat1) * toRad;
-  const dLng = (lng2 - lng1) * toRad;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLng / 2) ** 2;
-
-  return 2 * 6_371_000 * Math.asin(Math.sqrt(a));
-}
-
-function matchCategory(
-  tags: Record<string, unknown>,
-  interests: readonly string[],
-): string | null {
-  for (const interest of interests) {
-    for (const filter of INTEREST_FILTERS[interest] ?? []) {
-      const value = tags[filter.key];
-
-      if (typeof value === "string" && filter.values.includes(value)) {
-        return interest;
-      }
-    }
-  }
-
-  return null;
-}
-
-function toAttraction(
-  element: OverpassElement,
-  lat: number,
-  lng: number,
-  interests: readonly string[],
-  isFallback: boolean,
-): TripAttraction | null {
-  const tags = element.tags ?? {};
-  const name = typeof tags.name === "string" ? tags.name.trim() : "";
-
-  if (!name) {
-    return null;
-  }
-
-  const category = isFallback ? FALLBACK_CATEGORY : matchCategory(tags, interests);
-
-  if (category === null) {
-    return null;
-  }
-
-  return { name: name.slice(0, 200), category, lat, lng };
-}
-
-function parseElements(
-  payload: OverpassPayload,
-  lat: number,
-  lng: number,
-  interests: readonly string[],
-  isFallback: boolean,
-): TripAttraction[] {
+function parseCandidates(payload: OverpassPayload): RawPoiCandidate[] {
   if (!Array.isArray(payload.elements)) {
     return [];
   }
 
-  const attractions: (TripAttraction & { distance: number })[] = [];
+  const candidates: RawPoiCandidate[] = [];
 
   for (const raw of payload.elements) {
     if (!raw || typeof raw !== "object") {
@@ -231,30 +127,40 @@ function parseElements(
         : element.center
           ? element.center.lon
           : undefined;
+    const tags =
+      element.tags && typeof element.tags === "object" ? element.tags : {};
+    const osmKey =
+      typeof element.id === "number" && Number.isFinite(element.id)
+        ? `${element.type}/${element.id}`
+        : null;
 
-    if (typeof elLat !== "number" || typeof elLng !== "number") {
-      continue;
-    }
-
-    if (!Number.isFinite(elLat) || !Number.isFinite(elLng)) {
-      continue;
-    }
-
-    const attraction = toAttraction(element, elLat, elLng, interests, isFallback);
-
-    if (!attraction) {
-      continue;
-    }
-
-    attractions.push({
-      ...attraction,
-      distance: distanceMeters(lat, lng, elLat, elLng),
-    });
+    candidates.push({ osmKey, lat: elLat, lng: elLng, tags });
   }
 
-  attractions.sort((a, b) => a.distance - b.distance);
+  return candidates;
+}
 
-  return attractions.slice(0, ATTRACTIONS_RESULT_CAP).map(({ distance: _distance, ...rest }) => rest);
+function toAttractions(
+  payload: OverpassPayload,
+  lat: number,
+  lng: number,
+  interests: readonly string[],
+  weather: readonly TripDayWeather[] | null,
+): TripAttraction[] {
+  const pois = normalizePois(parseCandidates(payload), { lat, lng, interests });
+  const scored = scorePois(pois, {
+    interests,
+    weather,
+    radiusMeters: ATTRACTIONS_RADIUS_M,
+  });
+
+  return scored.slice(0, ATTRACTIONS_RESULT_CAP).map((poi) => ({
+    name: poi.name,
+    category: poi.category,
+    lat: poi.lat,
+    lng: poi.lng,
+    score: poi.score,
+  }));
 }
 
 function sleep(ms: number): Promise<void> {
@@ -313,9 +219,9 @@ export async function fetchAttractions(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const backoffMs = options.backoffMs ?? DEFAULT_BACKOFF_MS;
   const totalBudgetMs = options.totalBudgetMs ?? DEFAULT_TOTAL_BUDGET_MS;
+  const weather = options.weather ?? null;
 
   const normalized = normalizeInterests(interests);
-  const isFallback = selectFilters(normalized) === FALLBACK_FILTERS;
   const query = buildOverpassQuery(lat, lng, normalized);
   const startedAt = Date.now();
   let lastReason = "not attempted";
@@ -347,7 +253,13 @@ export async function fetchAttractions(
           );
         }
 
-        return parseElements(outcome.payload as OverpassPayload, lat, lng, normalized, isFallback);
+        return toAttractions(
+          outcome.payload as OverpassPayload,
+          lat,
+          lng,
+          normalized,
+          weather,
+        );
       }
 
       lastReason = `${new URL(endpoint).host}: ${outcome.reason}`;

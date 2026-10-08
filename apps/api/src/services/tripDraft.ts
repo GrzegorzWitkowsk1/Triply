@@ -319,7 +319,8 @@ function sameAttractions(a: TripAttraction[], b: TripAttraction[]): boolean {
         attraction.name === b[index].name &&
         attraction.category === b[index].category &&
         attraction.lat === b[index].lat &&
-        attraction.lng === b[index].lng,
+        attraction.lng === b[index].lng &&
+        attraction.score === b[index].score,
     )
   );
 }
@@ -329,6 +330,7 @@ export async function ensureAttractions(
   current: TripAttraction[],
   fetchedAt: Date | null,
   query: AttractionsQueryRecord | null,
+  weather: readonly TripDayWeather[],
 ): Promise<AttractionsState> {
   const nextQuery = buildAttractionsQuery(analysis);
 
@@ -343,7 +345,9 @@ export async function ensureAttractions(
     return { attractions: current, fetchedAt, query };
   }
 
-  const fresh = await fetchAttractions(nextQuery.lat, nextQuery.lng, nextQuery.interests);
+  const fresh = await fetchAttractions(nextQuery.lat, nextQuery.lng, nextQuery.interests, {
+    weather,
+  });
 
   if (fresh) {
     return { attractions: fresh, fetchedAt: new Date(), query: nextQuery };
@@ -362,6 +366,7 @@ export async function backfillTripAttractions(trip: TripDocument): Promise<void>
     trip.attractions,
     trip.attractionsFetchedAt,
     trip.attractionsQuery,
+    trip.weather,
   );
 
   if (
@@ -398,6 +403,7 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
     existing?.attractions ?? [],
     existing?.attractionsFetchedAt ?? null,
     existing?.attractionsQuery ?? null,
+    weather.days,
   );
 
   const draft = await TripModel.findOneAndUpdate(
@@ -439,6 +445,7 @@ export async function saveTripRequirements(
     draft.attractions,
     draft.attractionsFetchedAt,
     draft.attractionsQuery,
+    weather.days,
   );
 
   const confirmed = mergeConfirmedFields(draft.confirmedFields, confirmedFields, answers);

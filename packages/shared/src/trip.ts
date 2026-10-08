@@ -98,6 +98,7 @@ export const tripAttractionSchema = z.object({
   category: z.string().trim().min(1).max(60),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
+  score: z.number().min(0).max(100).nullish(),
 });
 
 export type TripAttraction = z.infer<typeof tripAttractionSchema>;
