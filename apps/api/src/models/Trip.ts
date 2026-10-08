@@ -1,12 +1,13 @@
 import { model, Schema, type HydratedDocument, type Types } from "mongoose";
 import type {
   AskableField,
+  PoiCluster,
   TripAnalysis,
   TripAttraction,
   TripDayWeather,
   TripStatus,
 } from "@triply/shared";
-import { TRIP_STATUS_VALUES } from "@triply/shared";
+import { PACE_VALUES, TRIP_STATUS_VALUES } from "@triply/shared";
 
 export interface EquipmentRecord {
   name: string;
@@ -17,6 +18,13 @@ export interface AttractionsQueryRecord {
   lat: number;
   lng: number;
   interests: string[];
+}
+
+export interface ClusteringRecord {
+  days: number;
+  pace: string | null;
+  clusters: PoiCluster[];
+  unassigned: TripAttraction[];
 }
 
 export interface TripRecord {
@@ -33,6 +41,7 @@ export interface TripRecord {
   attractions: TripAttraction[];
   attractionsFetchedAt: Date | null;
   attractionsQuery: AttractionsQueryRecord | null;
+  clustering: ClusteringRecord | null;
   fixtureKey: string | null;
 }
 
@@ -94,6 +103,37 @@ const attractionsQuerySchema = new Schema<AttractionsQueryRecord>(
   { _id: false },
 );
 
+const poiCenterSchema = new Schema<{ lat: number; lng: number }>(
+  {
+    lat: { type: Number, required: true, min: -90, max: 90 },
+    lng: { type: Number, required: true, min: -180, max: 180 },
+  },
+  { _id: false },
+);
+
+const clusterSchema = new Schema<PoiCluster>(
+  {
+    day: { type: Number, required: true, min: 1 },
+    pois: { type: [attractionSchema], default: [] },
+    center: { type: poiCenterSchema, default: null },
+    medoid: { type: attractionSchema, default: null },
+    count: { type: Number, required: true, min: 0 },
+    avgScore: { type: Number, required: true, min: 0, max: 100 },
+    spreadMeters: { type: Number, required: true, min: 0 },
+  },
+  { _id: false },
+);
+
+const clusteringSchema = new Schema<ClusteringRecord>(
+  {
+    days: { type: Number, required: true, min: 1, max: 365 },
+    pace: { type: String, enum: [...PACE_VALUES, null], default: null },
+    clusters: { type: [clusterSchema], default: [] },
+    unassigned: { type: [attractionSchema], default: [] },
+  },
+  { _id: false },
+);
+
 const analysisSchema = new Schema<TripAnalysis>(
   {
     destination: { type: String, default: null, trim: true },
@@ -136,6 +176,7 @@ const tripSchema = new Schema<TripRecord>(
     attractions: { type: [attractionSchema], default: [] },
     attractionsFetchedAt: { type: Date, default: null },
     attractionsQuery: { type: attractionsQuerySchema, default: null },
+    clustering: { type: clusteringSchema, default: null },
     fixtureKey: { type: String, default: null, trim: true },
   },
   { timestamps: true },

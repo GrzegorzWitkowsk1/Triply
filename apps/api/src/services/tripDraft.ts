@@ -17,8 +17,14 @@ type TripRequirementsAnswers,
 import { Types } from "mongoose";
 import { fetchAttractions } from "./attractions.js";
 import { geocodeLocation } from "./location.js";
+import { clusterPois, normalizeDays } from "./poiClustering.js";
 import { coversForecastRange, fetchDailyWeather } from "./weather.js";
-import { TripModel, type AttractionsQueryRecord, type TripDocument } from "../models/Trip.js";
+import {
+  TripModel,
+  type AttractionsQueryRecord,
+  type ClusteringRecord,
+  type TripDocument,
+} from "../models/Trip.js";
 
 const WEATHER_TTL_MS = 24 * 60 * 60 * 1000;
 const ATTRACTIONS_TTL_MS = 24 * 60 * 60 * 1000;
@@ -325,6 +331,34 @@ function sameAttractions(a: TripAttraction[], b: TripAttraction[]): boolean {
   );
 }
 
+function buildClustering(analysis: TripAnalysis, attractions: TripAttraction[]): ClusteringRecord {
+  const result = clusterPois(attractions, {
+    days: analysis.durationDays,
+    pace: analysis.pace,
+  });
+
+  return {
+    days: result.days,
+    pace: analysis.pace ?? null,
+    clusters: result.clusters,
+    unassigned: result.unassigned,
+  };
+}
+
+function isClusteringStale(
+  clustering: ClusteringRecord | null | undefined,
+  analysis: TripAnalysis,
+): boolean {
+  if (clustering === null || clustering === undefined) {
+    return true;
+  }
+
+  return (
+    clustering.days !== normalizeDays(analysis.durationDays) ||
+    clustering.pace !== (analysis.pace ?? null)
+  );
+}
+
 export async function ensureAttractions(
   analysis: TripAnalysis,
   current: TripAttraction[],
@@ -369,17 +403,23 @@ export async function backfillTripAttractions(trip: TripDocument): Promise<void>
     trip.weather,
   );
 
-  if (
+  const attractionsUnchanged =
     sameAttractions(attractions.attractions, trip.attractions) &&
     attractions.fetchedAt === trip.attractionsFetchedAt &&
-    sameAttractionsQuery(attractions.query, trip.attractionsQuery)
-  ) {
+    sameAttractionsQuery(attractions.query, trip.attractionsQuery);
+  const staleClustering = isClusteringStale(trip.clustering, trip.analysis);
+
+  if (attractionsUnchanged && !staleClustering) {
     return;
   }
 
-  trip.set("attractions", attractions.attractions);
-  trip.set("attractionsFetchedAt", attractions.fetchedAt);
-  trip.set("attractionsQuery", attractions.query);
+  if (!attractionsUnchanged) {
+    trip.set("attractions", attractions.attractions);
+    trip.set("attractionsFetchedAt", attractions.fetchedAt);
+    trip.set("attractionsQuery", attractions.query);
+  }
+
+  trip.set("clustering", buildClustering(trip.analysis, attractions.attractions));
   await trip.save();
 }
 
@@ -420,6 +460,7 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
         attractions: attractions.attractions,
         attractionsFetchedAt: attractions.fetchedAt,
         attractionsQuery: attractions.query,
+        clustering: buildClustering(analysis, attractions.attractions),
       },
     },
     { new: true, upsert: true, setDefaultsOnInsert: true },
@@ -456,6 +497,7 @@ export async function saveTripRequirements(
   draft.set("attractions", attractions.attractions);
   draft.set("attractionsFetchedAt", attractions.fetchedAt);
   draft.set("attractionsQuery", attractions.query);
+  draft.set("clustering", buildClustering(analysis, attractions.attractions));
   const gaps = missingFields(analysis, confirmed);
   draft.confirmedFields = confirmed;
   draft.missingFields = gaps;
