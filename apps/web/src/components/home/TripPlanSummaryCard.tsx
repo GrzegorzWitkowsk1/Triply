@@ -116,7 +116,11 @@ export default function TripPlanSummaryCard({
         <button type="button" className="btn" onClick={onEdit}>
           {missingFields.length > 0 ? "Fill in details" : "Adjust details"}
         </button>
-        <button type="button" className="btn btn-primary" disabled>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={!requirementsComplete}
+        >
           Continue
         </button>
       </div>

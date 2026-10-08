@@ -1,10 +1,22 @@
 import { model, Schema, type HydratedDocument, type Types } from "mongoose";
-import type { AskableField, TripAnalysis, TripDayWeather, TripStatus } from "@triply/shared";
+import type {
+  AskableField,
+  TripAnalysis,
+  TripAttraction,
+  TripDayWeather,
+  TripStatus,
+} from "@triply/shared";
 import { TRIP_STATUS_VALUES } from "@triply/shared";
 
 export interface EquipmentRecord {
   name: string;
   count: number;
+}
+
+export interface AttractionsQueryRecord {
+  lat: number;
+  lng: number;
+  interests: string[];
 }
 
 export interface TripRecord {
@@ -18,6 +30,9 @@ export interface TripRecord {
   equipment: Types.DocumentArray<EquipmentRecord>;
   weather: TripDayWeather[];
   weatherFetchedAt: Date | null;
+  attractions: TripAttraction[];
+  attractionsFetchedAt: Date | null;
+  attractionsQuery: AttractionsQueryRecord | null;
   fixtureKey: string | null;
 }
 
@@ -55,6 +70,25 @@ const dayWeatherSchema = new Schema<TripDayWeather>(
     date: { type: String, required: true, trim: true },
     weatherCode: { type: Number, required: true, min: 0, max: 99 },
     temperatureMax: { type: Number, required: true },
+  },
+  { _id: false },
+);
+
+const attractionSchema = new Schema<TripAttraction>(
+  {
+    name: { type: String, required: true, trim: true, maxlength: 200 },
+    category: { type: String, required: true, trim: true, maxlength: 60 },
+    lat: { type: Number, required: true, min: -90, max: 90 },
+    lng: { type: Number, required: true, min: -180, max: 180 },
+  },
+  { _id: false },
+);
+
+const attractionsQuerySchema = new Schema<AttractionsQueryRecord>(
+  {
+    lat: { type: Number, required: true },
+    lng: { type: Number, required: true },
+    interests: { type: [String], default: [] },
   },
   { _id: false },
 );
@@ -98,6 +132,9 @@ const tripSchema = new Schema<TripRecord>(
     equipment: { type: [equipmentItemSchema], default: [] },
     weather: { type: [dayWeatherSchema], default: [] },
     weatherFetchedAt: { type: Date, default: null },
+    attractions: { type: [attractionSchema], default: [] },
+    attractionsFetchedAt: { type: Date, default: null },
+    attractionsQuery: { type: attractionsQuerySchema, default: null },
     fixtureKey: { type: String, default: null, trim: true },
   },
   { timestamps: true },

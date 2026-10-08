@@ -10,15 +10,18 @@ import {
 type TripRequirementsAnswers,
   type TripEquipmentItem,
   type TripDayWeather,
+  type TripAttraction,
   type TripDetail,
   type TripSummary,
 } from "@triply/shared";
 import { Types } from "mongoose";
+import { fetchAttractions } from "./attractions.js";
 import { geocodeLocation } from "./location.js";
 import { coversForecastRange, fetchDailyWeather } from "./weather.js";
-import { TripModel, type TripDocument } from "../models/Trip.js";
+import { TripModel, type AttractionsQueryRecord, type TripDocument } from "../models/Trip.js";
 
 const WEATHER_TTL_MS = 24 * 60 * 60 * 1000;
+const ATTRACTIONS_TTL_MS = 24 * 60 * 60 * 1000;
 
 function normalizeText(value: string): string | null {
   const trimmed = value.trim();
@@ -272,6 +275,109 @@ export async function backfillTripWeather(trip: TripDocument): Promise<void> {
   await trip.save();
 }
 
+export interface AttractionsState {
+  attractions: TripAttraction[];
+  fetchedAt: Date | null;
+  query: AttractionsQueryRecord | null;
+}
+
+function buildAttractionsQuery(analysis: TripAnalysis): AttractionsQueryRecord | null {
+  const { location, interests } = analysis;
+
+  if (!location) {
+    return null;
+  }
+
+  return {
+    lat: location.lat,
+    lng: location.lng,
+    interests: [...interests],
+  };
+}
+
+function sameAttractionsQuery(
+  a: AttractionsQueryRecord | null,
+  b: AttractionsQueryRecord | null,
+): boolean {
+  if (a === null || b === null) {
+    return a === b;
+  }
+
+  return (
+    a.lat === b.lat &&
+    a.lng === b.lng &&
+    a.interests.length === b.interests.length &&
+    a.interests.every((interest, index) => interest === b.interests[index])
+  );
+}
+
+function sameAttractions(a: TripAttraction[], b: TripAttraction[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (attraction, index) =>
+        attraction.name === b[index].name &&
+        attraction.category === b[index].category &&
+        attraction.lat === b[index].lat &&
+        attraction.lng === b[index].lng,
+    )
+  );
+}
+
+export async function ensureAttractions(
+  analysis: TripAnalysis,
+  current: TripAttraction[],
+  fetchedAt: Date | null,
+  query: AttractionsQueryRecord | null,
+): Promise<AttractionsState> {
+  const nextQuery = buildAttractionsQuery(analysis);
+
+  if (!nextQuery) {
+    return { attractions: [], fetchedAt: null, query: null };
+  }
+
+  const isFresh =
+    fetchedAt !== null && Date.now() - fetchedAt.getTime() < ATTRACTIONS_TTL_MS;
+
+  if (isFresh && sameAttractionsQuery(query, nextQuery)) {
+    return { attractions: current, fetchedAt, query };
+  }
+
+  const fresh = await fetchAttractions(nextQuery.lat, nextQuery.lng, nextQuery.interests);
+
+  if (fresh) {
+    return { attractions: fresh, fetchedAt: new Date(), query: nextQuery };
+  }
+
+  if (sameAttractionsQuery(query, nextQuery)) {
+    return { attractions: current, fetchedAt, query };
+  }
+
+  return { attractions: [], fetchedAt: null, query: null };
+}
+
+export async function backfillTripAttractions(trip: TripDocument): Promise<void> {
+  const attractions = await ensureAttractions(
+    trip.analysis,
+    trip.attractions,
+    trip.attractionsFetchedAt,
+    trip.attractionsQuery,
+  );
+
+  if (
+    sameAttractions(attractions.attractions, trip.attractions) &&
+    attractions.fetchedAt === trip.attractionsFetchedAt &&
+    sameAttractionsQuery(attractions.query, trip.attractionsQuery)
+  ) {
+    return;
+  }
+
+  trip.set("attractions", attractions.attractions);
+  trip.set("attractionsFetchedAt", attractions.fetchedAt);
+  trip.set("attractionsQuery", attractions.query);
+  await trip.save();
+}
+
 export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<TripDocument> {
   const analysis = await ensureLocation(input.analysis);
   const gaps = missingFields(analysis);
@@ -287,6 +393,13 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
     existing?.weatherFetchedAt ?? null,
   );
 
+  const attractions = await ensureAttractions(
+    analysis,
+    existing?.attractions ?? [],
+    existing?.attractionsFetchedAt ?? null,
+    existing?.attractionsQuery ?? null,
+  );
+
   const draft = await TripModel.findOneAndUpdate(
     { user: new Types.ObjectId(input.userId), status: "draft" },
     {
@@ -298,6 +411,9 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
         missingFields: gaps,
         weather: weather.days,
         weatherFetchedAt: weather.fetchedAt,
+        attractions: attractions.attractions,
+        attractionsFetchedAt: attractions.fetchedAt,
+        attractionsQuery: attractions.query,
       },
     },
     { new: true, upsert: true, setDefaultsOnInsert: true },
@@ -318,19 +434,24 @@ export async function saveTripRequirements(
   const merged = mergeRequirements(draft.analysis, answers);
   const analysis = await ensureLocation(merged);
   const weather = await ensureWeather(analysis, draft.weather, draft.weatherFetchedAt);
+  const attractions = await ensureAttractions(
+    analysis,
+    draft.attractions,
+    draft.attractionsFetchedAt,
+    draft.attractionsQuery,
+  );
 
   const confirmed = mergeConfirmedFields(draft.confirmedFields, confirmedFields, answers);
 
   draft.set("analysis", analysis);
   draft.set("weather", weather.days);
   draft.set("weatherFetchedAt", weather.fetchedAt);
+  draft.set("attractions", attractions.attractions);
+  draft.set("attractionsFetchedAt", attractions.fetchedAt);
+  draft.set("attractionsQuery", attractions.query);
   const gaps = missingFields(analysis, confirmed);
   draft.confirmedFields = confirmed;
   draft.missingFields = gaps;
-
-  if (gaps.length === 0) {
-    draft.status = "confirmed";
-  }
 
   return draft.save();
 }

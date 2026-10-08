@@ -14,6 +14,7 @@ import { aiService } from "../ai/index.js";
 import { TripModel } from "../models/Trip.js";
 import type { PublicUser } from "../models/User.js";
 import {
+  backfillTripAttractions,
   backfillTripWeather,
   saveTripRequirements,
   toTripAnalysisResult,
@@ -177,6 +178,7 @@ tripsRouter.get(
     }
 
     await backfillTripWeather(trip);
+    await backfillTripAttractions(trip);
 
     res.json(toTripDetail(trip));
   }),

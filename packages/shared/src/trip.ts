@@ -93,6 +93,15 @@ export const tripDayWeatherSchema = z.object({
 
 export type TripDayWeather = z.infer<typeof tripDayWeatherSchema>;
 
+export const tripAttractionSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  category: z.string().trim().min(1).max(60),
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+});
+
+export type TripAttraction = z.infer<typeof tripAttractionSchema>;
+
 export const ASKABLE_FIELDS = [
   "destination",
   "country",
