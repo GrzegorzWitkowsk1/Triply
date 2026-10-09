@@ -3,7 +3,10 @@ import {
   CalendarMonthOutlined,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
+import { findCityPhoto } from "../../config/cityPhotos";
 import type { TripCardModel } from "../../config/tripCards";
+import MediaFallback from "./MediaFallback";
+import PhotoAttribution from "./PhotoAttribution";
 
 interface MyTripCardProps {
   trip: TripCardModel;
@@ -12,9 +15,20 @@ interface MyTripCardProps {
 
 export default function MyTripCard({ trip, isFirst }: MyTripCardProps) {
   const navigate = useNavigate();
+  const photo = findCityPhoto(trip.city, trip.country);
 
   return (
     <article className="my-trip-card">
+      <div className="my-trip-media">
+        {photo ? (
+          <>
+            <img src={photo.imageUrl} alt={`${trip.city}, ${trip.country}`} />
+            <PhotoAttribution photo={photo} />
+          </>
+        ) : (
+          <MediaFallback alt={`${trip.city}, ${trip.country}`} />
+        )}
+      </div>
       <div className="my-trip-body">
         <div className="trip-row">
           <div className="my-trip-title">

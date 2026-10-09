@@ -1025,6 +1025,8 @@ body {
   z-index: 1;
   display: flex;
   flex-direction: column;
+  max-width: calc(50% - 20px);
+  overflow-wrap: anywhere;
 }
 
 .trip-city {
@@ -4135,4 +4137,68 @@ body {
   .requirements-title {
     font-size: 18px;
   }
+}
+
+.trip-card-media .photo-attribution,
+.my-trip-media .photo-attribution {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  left: auto;
+  z-index: 1;
+  max-width: calc(100% - 24px);
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.trip-card-media .photo-attribution {
+  max-width: calc(50% - 20px);
+  overflow-wrap: anywhere;
+}
+
+.trip-card-media .photo-attribution a,
+.my-trip-media .photo-attribution a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.trip-card-media .photo-attribution a:hover,
+.my-trip-media .photo-attribution a:hover {
+  color: #ffffff;
+}
+
+.media-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(90deg, var(--color-primary-light), #e7f7fe);
+  opacity: 0.75;
+}
+
+.media-fallback-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  opacity: 0.45;
+}
+
+.media-fallback-name {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  color: var(--color-text);
+  opacity: 0.4;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowForwardOutlined,
   AttachFileOutlined,
@@ -8,11 +8,13 @@ import {
 import { TextField } from "@mui/material";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { TripAnalysisResult, UpdateTripRequirements } from "@triply/shared";
-import { HOME_BADGES, TRIPS } from "../config/home";
+import { HOME_BADGES } from "../config/home";
+import { buildHomeTripCards } from "../config/tripCards";
 import TripCard from "../components/trips/TripCard";
 import PlanProgressCard from "../components/home/PlanProgressCard";
 import TripPlanSummaryCard from "../components/home/TripPlanSummaryCard";
 import TripRequirementsDialog from "../components/home/TripRequirementsDialog";
+import { useTrips } from "../hooks/useTrips";
 import {
   useAnalyzeTrip,
   useUpdateTripRequirements,
@@ -59,6 +61,11 @@ export default function HomePage() {
   const planning = useTripPlanning();
   const analyze = useAnalyzeTrip();
   const saveRequirements = useUpdateTripRequirements();
+  const tripsQuery = useTrips();
+  const myTrips = useMemo(
+    () => buildHomeTripCards(tripsQuery.data ?? []),
+    [tripsQuery.data],
+  );
   const [draft, setDraft] = useState<TripAnalysisResult | null>(null);
   const [isDialogOpen, setDialogOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -398,7 +405,25 @@ export default function HomePage() {
           </div>
 
           <div className="trips-grid">
-            {TRIPS.map((trip, i) => (
+            {tripsQuery.isPending && (
+              <p className="my-trips-subtitle">Loading trips…</p>
+            )}
+
+            {tripsQuery.isError && (
+              <p className="my-trips-subtitle">
+                {errorMessage(tripsQuery.error)}
+              </p>
+            )}
+
+            {!tripsQuery.isPending &&
+              !tripsQuery.isError &&
+              myTrips.length === 0 && (
+                <p className="my-trips-subtitle">
+                  No trips here yet. Plan your first one.
+                </p>
+              )}
+
+            {myTrips.map((trip, i) => (
               <TripCard key={trip.id} trip={trip} isFirst={i === 0} />
             ))}
           </div>

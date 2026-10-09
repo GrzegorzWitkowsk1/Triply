@@ -69,3 +69,30 @@ export function toTripCardModel(summary: TripSummary): TripCardModel {
 export function buildTripCards(summaries: TripSummary[]): TripCardModel[] {
   return summaries.map(toTripCardModel);
 }
+
+export interface HomeTripCardModel {
+  id: string;
+  city: string;
+  country: string;
+  days: number;
+  dateLabel: string;
+  budgetUsed: number | null;
+  activities?: number;
+  completed?: number;
+  budgetExpected?: number;
+}
+
+export function toHomeTripCard(summary: TripSummary): HomeTripCardModel {
+  return {
+    id: summary.id,
+    city: summary.destination ?? "Untitled trip",
+    country: summary.country ?? "",
+    days: summary.durationDays ?? 0,
+    dateLabel: formatRange(summary.startDate, summary.endDate),
+    budgetUsed: summary.budget.amount ?? null,
+  };
+}
+
+export function buildHomeTripCards(summaries: TripSummary[]): HomeTripCardModel[] {
+  return summaries.map(toHomeTripCard);
+}
