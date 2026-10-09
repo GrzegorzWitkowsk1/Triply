@@ -64,7 +64,7 @@ export interface WeatherProfile {
   totalDays: number;
 }
 
-function isPrecipitationCode(code: number): boolean {
+export function isPrecipitationCode(code: number): boolean {
   return (
     (code >= 51 && code <= 67) ||
     (code >= 71 && code <= 77) ||
