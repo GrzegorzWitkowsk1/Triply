@@ -1,11 +1,25 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import { isTravelMode, type TravelMode } from "@triply/shared";
 
 function emptyToUndefined(value: unknown): unknown {
   return typeof value === "string" && value.trim() === "" ? undefined : value;
 }
 
 const optionalSecret = z.preprocess(emptyToUndefined, z.string().trim().min(1).optional());
+
+function parseEnabledModes(value: string): TravelMode[] {
+  const modes: TravelMode[] = [];
+
+  for (const part of value.split(",")) {
+    const mode = part.trim().toLowerCase();
+    if (isTravelMode(mode) && !modes.includes(mode)) {
+      modes.push(mode);
+    }
+  }
+
+  return modes;
+}
 
 const parsed = z
   .object({
@@ -22,6 +36,16 @@ const parsed = z
     ),
     GEMINI_API_KEY: optionalSecret,
     OPENROUTER_API_KEY: optionalSecret,
+    ROUTING_PROVIDER: z.preprocess(emptyToUndefined, z.string().trim().min(1).default("osrm")),
+    ROUTING_OSRM_URL: z
+      .preprocess(emptyToUndefined, z.string().url().default("https://router.project-osrm.org")),
+    ROUTING_ENABLED_MODES: z.preprocess(emptyToUndefined, z.string().default("driving")),
+    ROUTING_MODE: z.preprocess(emptyToUndefined, z.string().trim().min(1).default("walking")),
+    ROUTING_TIMEOUT_MS: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().positive().default(8_000),
+    ),
+    ROUTING_RETURN_TO_START: z.string().regex(/^(true|false)$/).default("false"),
   })
   .safeParse({
     NODE_ENV: process.env.NODE_ENV,
@@ -34,6 +58,12 @@ const parsed = z
     AI_TIMEOUT_MS: process.env.AI_TIMEOUT_MS,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    ROUTING_PROVIDER: process.env.ROUTING_PROVIDER,
+    ROUTING_OSRM_URL: process.env.ROUTING_OSRM_URL,
+    ROUTING_ENABLED_MODES: process.env.ROUTING_ENABLED_MODES,
+    ROUTING_MODE: process.env.ROUTING_MODE,
+    ROUTING_TIMEOUT_MS: process.env.ROUTING_TIMEOUT_MS,
+    ROUTING_RETURN_TO_START: process.env.ROUTING_RETURN_TO_START,
   });
 
 if (!parsed.success) {
@@ -74,4 +104,12 @@ export const env = {
   AI_TIMEOUT_MS: parsed.data.AI_TIMEOUT_MS,
   GEMINI_API_KEY: parsed.data.GEMINI_API_KEY ?? null,
   OPENROUTER_API_KEY: parsed.data.OPENROUTER_API_KEY ?? null,
+  ROUTING_PROVIDER: parsed.data.ROUTING_PROVIDER,
+  ROUTING_OSRM_URL: parsed.data.ROUTING_OSRM_URL,
+  ROUTING_ENABLED_MODES: parseEnabledModes(parsed.data.ROUTING_ENABLED_MODES),
+  ROUTING_MODE: isTravelMode(parsed.data.ROUTING_MODE)
+    ? parsed.data.ROUTING_MODE
+    : ("walking" as TravelMode),
+  ROUTING_TIMEOUT_MS: parsed.data.ROUTING_TIMEOUT_MS,
+  ROUTING_RETURN_TO_START: parsed.data.ROUTING_RETURN_TO_START === "true",
 };
