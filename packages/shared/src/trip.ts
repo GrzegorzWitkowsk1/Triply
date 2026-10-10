@@ -49,6 +49,7 @@ export const LIMITS = {
   interests: 24,
   notes: 2000,
   equipment: 100,
+  regenerationInstructions: 500,
 } as const;
 
 export const tripLocationSchema = z.object({

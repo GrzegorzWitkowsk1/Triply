@@ -8,14 +8,16 @@ import {
   tripAnalysisSchema,
   type BudgetType,
   type Pace,
+  type RegenerationPreferences,
   type TripAnalysis,
 } from "@triply/shared";
 import { AiError } from "./errors.js";
 import { createAIProvider } from "./providers/factory.js";
+import { buildRegenerationRequest } from "./prompts/parseRegeneration.js";
 import { buildTripAnalysisRequest } from "./prompts/parseTrip.js";
-import type { AIProvider, AnalyzeTripInput } from "./types.js";
+import type { AIProvider, AnalyzeTripInput, ParseRegenerationInput } from "./types.js";
 
-export type { AnalyzeTripInput } from "./types.js";
+export type { AnalyzeTripInput, ParseRegenerationInput } from "./types.js";
 
 const PER_DAY_ALIASES = new Set(["per_day", "per day", "daily", "day", "dziennie", "dzienny"]);
 
@@ -214,8 +216,42 @@ function normalizeAnalysis(raw: unknown, badges: string[]): TripAnalysis {
   return result.data;
 }
 
+function asBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const text = value.trim().toLowerCase();
+
+    if (text === "true" || text === "yes") {
+      return true;
+    }
+
+    if (text === "false" || text === "no") {
+      return false;
+    }
+  }
+
+  return null;
+}
+
+function normalizeRegenerationPreferences(raw: unknown): RegenerationPreferences {
+  const source = asRecord(raw);
+  const read = (key: keyof RegenerationPreferences): boolean => asBoolean(source[key]) === true;
+
+  return {
+    lessWalking: read("lessWalking"),
+    moreFood: read("moreFood"),
+    relaxedPace: read("relaxedPace"),
+    preferIndoor: read("preferIndoor"),
+    surpriseMe: read("surpriseMe"),
+  };
+}
+
 export interface AiService {
   parseTrip(input: AnalyzeTripInput): Promise<TripAnalysis>;
+  parseRegeneration(input: ParseRegenerationInput): Promise<RegenerationPreferences>;
 }
 
 export function createAiService(provider: AIProvider): AiService {
@@ -224,6 +260,12 @@ export function createAiService(provider: AIProvider): AiService {
       const raw = await provider.generate(buildTripAnalysisRequest(input));
 
       return normalizeAnalysis(raw, input.badges);
+    },
+
+    async parseRegeneration(input: ParseRegenerationInput): Promise<RegenerationPreferences> {
+      const raw = await provider.generate(buildRegenerationRequest(input));
+
+      return normalizeRegenerationPreferences(raw);
     },
   };
 }

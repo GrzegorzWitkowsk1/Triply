@@ -102,7 +102,7 @@ describe("buildOverpassQuery", () => {
   it("builds a 5km query with one clause per key and element type", () => {
     const query = buildOverpassQuery(48.85, 2.35, ["food", "beach"]);
 
-    expect(query).toContain("[out:json][timeout:20];");
+    expect(query).toContain("[out:json][timeout:15];");
     expect(query).toContain("(around:5000,48.85,2.35)");
     expect(query).toContain(
       'node["amenity"~"^(restaurant|cafe|fast_food|food_court|ice_cream)$"](around:5000,48.85,2.35);',
@@ -164,6 +164,77 @@ describe("selectFilters", () => {
 });
 
 describe("fetchAttractions", () => {
+  it("falls back when HTTP 200 contains an Overpass execution error", async () => {
+    const fetchMock = stubFetchSequence([
+      jsonResponse({ elements: [], remark: "runtime error: Query timed out" }),
+      jsonResponse({ elements: [element("node", 48.85, 2.35, { name: "Museum", tourism: "museum" })] }),
+    ]);
+    const result = await fetchAttractions(48.85, 2.35, ["culture"], fastOptions({
+      endpoints: ["https://primary.test/api/interpreter", "https://mirror.test/api/interpreter"],
+    }));
+    expect(result?.[0]?.name).toBe("Museum");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not treat a JSON error without elements as an empty result", async () => {
+    const fetchMock = stubFetchSequence([
+      jsonResponse({ error: "unavailable" }),
+      jsonResponse({ elements: [] }),
+    ]);
+    expect(await fetchAttractions(48.85, 2.35, [], fastOptions())).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reserves time for all three providers when earlier providers time out", async () => {
+    let now = 0;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    let calls = 0;
+    const fetchMock = vi.fn(async () => {
+      calls += 1;
+      if (calls < 3) {
+        now += 20_000;
+        throw new DOMException("Timed out", "TimeoutError");
+      }
+      return jsonResponse({ elements: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await fetchAttractions(48.85, 2.35, [], fastOptions({
+      endpoints: ["https://one.test", "https://two.test", "https://three.test"],
+      totalBudgetMs: 60_000, timeoutMs: 25_000,
+    }));
+    expect(result).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(timeoutSpy.mock.calls.map(([timeout]) => timeout)).toEqual([20_000, 20_000, 20_000]);
+  });
+
+  it("shares concurrent default requests and briefly caches a successful response", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({
+      elements: [element("node", 51.01, 20.01, { name: "Shared museum", tourism: "museum" })],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const first = fetchAttractions(51.01, 20.01, ["culture"]);
+    const second = fetchAttractions(51.01, 20.01, ["culture"]);
+    expect(first).toBe(second);
+    await first;
+    await fetchAttractions(51.01, 20.01, ["culture"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits before retrying a failed default request, then allows recovery", async () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const fetchMock = vi.fn(async () => jsonResponse({ error: "bad query" }, 400));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await fetchAttractions(51.02, 20.02, [])).toBeNull();
+    expect(await fetchAttractions(51.02, 20.02, [])).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    now += 15_001;
+    fetchMock.mockImplementation(async () => jsonResponse({ elements: [] }));
+    expect(await fetchAttractions(51.02, 20.02, [])).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("posts the query with a Triply user agent and returns categorized elements", async () => {
     const fetchMock = stubFetch(
       jsonResponse({
@@ -244,10 +315,8 @@ describe("fetchAttractions", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to the next endpoint after the primary is exhausted", async () => {
+  it("tries the next endpoint before retrying the primary", async () => {
     const fetchMock = stubFetchSequence([
-      jsonResponse({ error: "busy" }, 503),
-      jsonResponse({ error: "busy" }, 503),
       jsonResponse({ error: "busy" }, 503),
       jsonResponse({ elements: [element("node", 48.85, 2.35, { name: "Mirror Spot", tourism: "museum" })] }),
     ]);
@@ -265,14 +334,12 @@ describe("fetchAttractions", () => {
     expect(withoutScores(result)).toEqual([
       { name: "Mirror Spot", category: "culture", lat: 48.85, lng: 2.35 },
     ]);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     const urls = fetchMock.mock.calls.map(([url]) => url);
-    expect(urls.slice(0, 3)).toEqual([
+    expect(urls).toEqual([
       "https://primary.test/api/interpreter",
-      "https://primary.test/api/interpreter",
-      "https://primary.test/api/interpreter",
+      "https://mirror.test/api/interpreter",
     ]);
-    expect(urls[3]).toBe("https://mirror.test/api/interpreter");
   });
 
   it("gives up when the total time budget is exhausted", async () => {
@@ -399,9 +466,9 @@ describe("fetchAttractions", () => {
     expect(await fetchAttractions(48.85, 2.35, ["food"], fastOptions())).toBeNull();
   });
 
-  it("returns an empty list when elements is missing", async () => {
+  it("returns a provider failure when elements is missing", async () => {
     stubFetch(jsonResponse({}));
 
-    expect(await fetchAttractions(48.85, 2.35, ["food"], fastOptions())).toEqual([]);
+    expect(await fetchAttractions(48.85, 2.35, ["food"], fastOptions())).toBeNull();
   });
 });

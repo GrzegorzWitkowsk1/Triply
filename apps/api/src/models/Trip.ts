@@ -1,10 +1,13 @@
 import { model, Schema, type HydratedDocument, type Types } from "mongoose";
 import type {
   AskableField,
+  DayComparisonMetrics,
   GeoLineString,
   ItineraryDay,
   ItineraryStop,
   PoiCluster,
+  RegeneratedDayComparison,
+  RegenerationPreferences,
   RouteSegment,
   ScheduledActivity,
   TripAnalysis,
@@ -42,6 +45,26 @@ export interface TripGenerationRecord {
 
 export type TripItineraryRecord = Omit<TripItinerary, "generatedAt">;
 
+/**
+ * A server-side preview of a single regenerated day. It is kept on the trip
+ * document so the saved itinerary stays untouched until the user applies it.
+ */
+export interface TripRegenerationRecord {
+  previewId: string;
+  dayIndex: number;
+  baseItineraryVersion: number;
+  preferences: RegenerationPreferences;
+  customInstructions: string | null;
+  day: ItineraryDay;
+  unscheduled: TripUnscheduledPlace[];
+  warnings: string[];
+  comparison: RegeneratedDayComparison;
+  /** Newly discovered attractions the preview relies on, persisted on apply. */
+  newAttractions: TripAttraction[];
+  createdAt: Date;
+  expiresAt: Date;
+}
+
 export interface TripRecord {
   user: Types.ObjectId;
   status: TripStatus;
@@ -58,6 +81,9 @@ export interface TripRecord {
   attractionsQuery: AttractionsQueryRecord | null;
   clustering: ClusteringRecord | null;
   itinerary: TripItineraryRecord | null;
+  /** Bumped whenever the itinerary changes; used for optimistic concurrency. */
+  itineraryVersion: number;
+  regeneration: TripRegenerationRecord | null;
   generation: TripGenerationRecord;
   fixtureKey: string | null;
 }
@@ -257,6 +283,55 @@ const generationSchema = new Schema<TripGenerationRecord>(
   { _id: false },
 );
 
+const dayComparisonMetricsSchema = new Schema<DayComparisonMetrics>(
+  {
+    attractionCount: { type: Number, required: true, min: 0 },
+    walkingMeters: { type: Number, default: null },
+    travelMinutes: { type: Number, default: null },
+    visitMinutes: { type: Number, required: true, min: 0 },
+  },
+  { _id: false },
+);
+
+const regenerationComparisonSchema = new Schema<RegeneratedDayComparison>(
+  {
+    original: { type: dayComparisonMetricsSchema, required: true },
+    proposed: { type: dayComparisonMetricsSchema, required: true },
+    added: { type: [itineraryStopSchema], default: [] },
+    removed: { type: [itineraryStopSchema], default: [] },
+  },
+  { _id: false },
+);
+
+const regenerationPreferencesSchema = new Schema<RegenerationPreferences>(
+  {
+    lessWalking: { type: Boolean, default: false },
+    moreFood: { type: Boolean, default: false },
+    relaxedPace: { type: Boolean, default: false },
+    preferIndoor: { type: Boolean, default: false },
+    surpriseMe: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
+const regenerationSchema = new Schema<TripRegenerationRecord>(
+  {
+    previewId: { type: String, required: true, trim: true },
+    dayIndex: { type: Number, required: true },
+    baseItineraryVersion: { type: Number, required: true, min: 0 },
+    preferences: { type: regenerationPreferencesSchema, required: true },
+    customInstructions: { type: String, default: null, trim: true },
+    day: { type: itineraryDaySchema, required: true },
+    unscheduled: { type: [unscheduledPlaceSchema], default: [] },
+    warnings: { type: [String], default: [] },
+    comparison: { type: regenerationComparisonSchema, required: true },
+    newAttractions: { type: [attractionSchema], default: [] },
+    createdAt: { type: Date, required: true },
+    expiresAt: { type: Date, required: true },
+  },
+  { _id: false },
+);
+
 const analysisSchema = new Schema<TripAnalysis>(
   {
     destination: { type: String, default: null, trim: true },
@@ -301,6 +376,8 @@ const tripSchema = new Schema<TripRecord>(
     attractionsQuery: { type: attractionsQuerySchema, default: null },
     clustering: { type: clusteringSchema, default: null },
     itinerary: { type: itinerarySchema, default: null },
+    itineraryVersion: { type: Number, default: 0, min: 0 },
+    regeneration: { type: regenerationSchema, default: null },
     generation: {
       type: generationSchema,
       default: () => ({ startedAt: null, generatedAt: null, error: null }),

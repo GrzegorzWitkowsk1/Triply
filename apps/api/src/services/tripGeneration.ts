@@ -1,16 +1,32 @@
-import { addDays, type Coordinates, type SchedulablePoi, type TripAttraction } from "@triply/shared";
+import {
+  addDays,
+  type Coordinates,
+  type DailySchedule,
+  type ItineraryDay,
+  type ItineraryStop,
+  type OptimizedDayRoute,
+  type SchedulablePoi,
+  type TripAttraction,
+} from "@triply/shared";
 import { Types } from "mongoose";
 import { env } from "../config/env.js";
 import { TripModel, type TripDocument, type TripItineraryRecord } from "../models/Trip.js";
 import { ensureAttractions, ensureWeather } from "./tripDraft.js";
 import { planTrip, type PlanTripResult } from "./tripPlanner.js";
-import type { ItineraryStop } from "@triply/shared";
 
 /** A generation that has been running longer than this is considered abandoned. */
 export const STALE_GENERATION_MS = 2 * 60 * 1000;
 
 export const GENERIC_GENERATION_ERROR =
   "We couldn't finish generating your itinerary. Your trip details are saved, so you can try again.";
+
+export class GenerationSupersededError extends Error {
+  constructor() {
+    super("Another request has taken over itinerary generation.");
+  }
+}
+
+export class GenerationUnavailableError extends Error {}
 
 export function generationInputsReady(trip: TripDocument): boolean {
   const analysis = trip.analysis;
@@ -58,11 +74,16 @@ export async function markGenerationFailed(
   tripId: string,
   userId: string,
   message: string,
-): Promise<void> {
-  await TripModel.updateOne(
-    { _id: new Types.ObjectId(tripId), user: new Types.ObjectId(userId) },
+  startedAt: Date | null,
+): Promise<boolean> {
+  const result = await TripModel.updateOne(
+    {
+      _id: new Types.ObjectId(tripId), user: new Types.ObjectId(userId),
+      status: "generating", "generation.startedAt": startedAt,
+    },
     { $set: { status: "failed", "generation.error": message } },
   ).exec();
+  return result.matchedCount > 0;
 }
 
 export function toSchedulablePois(
@@ -114,30 +135,33 @@ function generationDates(trip: TripDocument): string[] | null {
   return Array.from({ length: durationDays }, (_, index) => addDays(startDate, index));
 }
 
+export function toItineraryDay(
+  day: DailySchedule<SchedulablePoi>,
+  route: OptimizedDayRoute<SchedulablePoi> | undefined,
+): ItineraryDay {
+  return {
+    dayIndex: day.dayIndex,
+    date: day.date,
+    timeZone: day.timeZone,
+    activities: day.activities,
+    stops: (route?.orderedPlaces ?? []).filter(isUsableStop).map(toItineraryStop),
+    geometry: route?.geometry ?? null,
+    segments: route?.segments ?? [],
+    totalVisitMinutes: day.totalVisitMinutes,
+    totalTravelMinutes: day.totalTravelMinutes,
+    totalDistanceMeters: day.totalDistanceMeters,
+    partiallyEstimated: day.partiallyEstimated,
+    warnings: day.warnings,
+  };
+}
+
 export function toItineraryRecord(
   result: PlanTripResult<SchedulablePoi>,
   generatedAt: Date,
 ): TripItineraryRecord {
   const routeByDay = new Map(result.routing.dayRoutes.map((route) => [route.dayIndex, route]));
 
-  const days = result.days.map((day) => {
-    const route = routeByDay.get(day.dayIndex);
-
-    return {
-      dayIndex: day.dayIndex,
-      date: day.date,
-      timeZone: day.timeZone,
-      activities: day.activities,
-      stops: (route?.orderedPlaces ?? []).filter(isUsableStop).map(toItineraryStop),
-      geometry: route?.geometry ?? null,
-      segments: route?.segments ?? [],
-      totalVisitMinutes: day.totalVisitMinutes,
-      totalTravelMinutes: day.totalTravelMinutes,
-      totalDistanceMeters: day.totalDistanceMeters,
-      partiallyEstimated: day.partiallyEstimated,
-      warnings: day.warnings,
-    };
-  });
+  const days = result.days.map((day) => toItineraryDay(day, routeByDay.get(day.dayIndex)));
 
   return {
     timeZone: result.timeZone,
@@ -169,6 +193,14 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
     weather.days,
   );
 
+  if (attractions.attractions.length === 0) {
+    throw new GenerationUnavailableError(
+      attractions.query === null
+        ? "The places service is temporarily unavailable. Your trip details are saved. Please try again in a moment."
+        : "We couldn't find suitable places near this destination. Adjust your destination or interests, then try again.",
+    );
+  }
+
   const start: Coordinates = { lat: location.lat, lng: location.lng };
 
   const result = await planTrip({
@@ -186,20 +218,33 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
   });
 
   const now = new Date();
-  const startedAt = trip.generation?.startedAt ?? now;
+  if (!result.days.some((day) => day.activities.some((activity) => activity.type === "attraction"))) {
+    throw new GenerationUnavailableError(
+      "We couldn't fit any places into this itinerary. Adjust your trip details, then try again.",
+    );
+  }
 
-  trip.set("weather", weather.days);
-  trip.set("weatherFetchedAt", weather.fetchedAt);
-  trip.set("attractions", attractions.attractions);
-  trip.set("attractionsFetchedAt", attractions.fetchedAt);
-  trip.set("attractionsQuery", attractions.query);
-  trip.set("itinerary", toItineraryRecord(result, now));
-  trip.set("status", "ready");
-  trip.set("generation.startedAt", startedAt);
-  trip.set("generation.generatedAt", now);
-  trip.set("generation.error", null);
-
-  return trip.save();
+  const saved = await TripModel.findOneAndUpdate(
+    { _id: trip._id, user: trip.user, status: "generating", "generation.startedAt": trip.generation.startedAt },
+    {
+      $set: {
+        weather: weather.days,
+        weatherFetchedAt: weather.fetchedAt,
+        attractions: attractions.attractions,
+        attractionsFetchedAt: attractions.fetchedAt,
+        attractionsQuery: attractions.query,
+        itinerary: toItineraryRecord(result, now),
+        regeneration: null,
+        status: "ready",
+        "generation.generatedAt": now,
+        "generation.error": null,
+      },
+      $inc: { itineraryVersion: 1 },
+    },
+    { new: true, runValidators: true },
+  ).exec();
+  if (!saved) throw new GenerationSupersededError();
+  return saved;
 }
 
 export function logGenerationFailure(error: unknown): void {

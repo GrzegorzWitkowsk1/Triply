@@ -1,5 +1,7 @@
 import type {
   AskableField,
+  RegenerateDayPreview,
+  RegenerateDayRequest,
   TripAnalysisResult,
   TripDetail,
   TripRequirementsAnswers,
@@ -9,7 +11,7 @@ import type {
 } from "@triply/shared";
 import { request } from "./client";
 
-export type { TripAnalysisResult, TripDetail, TripStatus, TripSummary };
+export type { RegenerateDayPreview, TripAnalysisResult, TripDetail, TripStatus, TripSummary };
 
 export function listTrips(params: { status?: TripStatus } = {}): Promise<TripSummary[]> {
   const query = new URLSearchParams();
@@ -61,5 +63,27 @@ export function confirmTrip(id: string): Promise<TripDetail> {
 export function generateTrip(id: string): Promise<TripDetail> {
   return request<TripDetail>(`/api/trips/${id}/generate`, {
     method: "POST",
+  });
+}
+
+export function regenerateTripDay(
+  tripId: string,
+  dayIndex: number,
+  input: RegenerateDayRequest,
+): Promise<RegenerateDayPreview> {
+  return request<RegenerateDayPreview>(`/api/trips/${tripId}/days/${dayIndex}/regenerate`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function applyRegeneratedDay(
+  tripId: string,
+  dayIndex: number,
+  previewId: string,
+): Promise<TripDetail> {
+  return request<TripDetail>(`/api/trips/${tripId}/days/${dayIndex}/apply`, {
+    method: "POST",
+    body: JSON.stringify({ previewId }),
   });
 }

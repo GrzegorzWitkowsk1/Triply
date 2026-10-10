@@ -7,4 +7,5 @@ export type {
   AIRequest,
   AISchema,
   AnalyzeTripInput,
+  ParseRegenerationInput,
 } from "./types.js";

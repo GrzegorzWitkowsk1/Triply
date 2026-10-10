@@ -45,6 +45,7 @@ import {
 } from "../../schemas/tripAnalysis";
 
 interface TripRequirementsDialogProps {
+  mode?: "complete" | "edit";
   open: boolean;
   analysis: TripAnalysis;
   missingFields: AskableField[];
@@ -55,6 +56,7 @@ interface TripRequirementsDialogProps {
 }
 
 export default function TripRequirementsDialog({
+  mode = "complete",
   open,
   analysis,
   missingFields,
@@ -173,7 +175,7 @@ export default function TripRequirementsDialog({
     >
       <form onSubmit={submit} className="requirements-form">
         <DialogTitle className="requirements-title">
-          A few details to make this yours
+          {mode === "edit" ? "Adjust your trip details" : "A few details to make this yours"}
           <IconButton
             aria-label="Close"
             onClick={onClose}
@@ -186,8 +188,9 @@ export default function TripRequirementsDialog({
 
         <DialogContent className="requirements-content">
           <p className="requirements-lead">
-            Your request didn't cover everything — fill in what's missing and
-            we'll do the rest.
+            {mode === "edit"
+              ? "Update your destination, dates, or preferences before trying your itinerary again."
+              : "Your request didn't cover everything — fill in what's missing and we'll do the rest."}
           </p>
 
           {needs("destination") && (

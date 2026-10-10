@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   AccountBalanceWalletOutlined,
   AutoFixHighOutlined,
@@ -11,7 +12,19 @@ import {
   PlaceOutlined,
   ShareOutlined,
 } from "@mui/icons-material";
-import { PACE_VALUES, type Pace } from "@triply/shared";
+import {
+  PACE_VALUES,
+  ASKABLE_FIELDS,
+  type Pace,
+  type RegenerateDayPreview,
+  type RegenerateDayRequest,
+  type UpdateTripRequirements,
+} from "@triply/shared";
+import { ApiError } from "../api/client";
+import TripRequirementsDialog from "../components/home/TripRequirementsDialog";
+import TripLoading from "../components/trip/TripLoading";
+import TripStatusCard from "../components/trip/TripStatusCard";
+import RegenerateDayDialog from "../components/trip/RegenerateDayDialog";
 import TripAssistant from "../components/trip/TripAssistant";
 import TripBudgetCard from "../components/trip/TripBudgetCard";
 import TripMap from "../components/trip/TripMap";
@@ -26,7 +39,9 @@ import {
 } from "../config/itineraryAdapters";
 import { toTripWeather } from "../config/weather";
 import { useGenerateTrip } from "../hooks/useTripGeneration";
-import { useTrip } from "../hooks/useTrips";
+import { useUpdateTripRequirements } from "../hooks/useTripAnalysis";
+import { useApplyRegeneration, useRegenerateDay } from "../hooks/useTripRegeneration";
+import { TRIPS_KEY, useTrip } from "../hooks/useTrips";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -102,20 +117,28 @@ export default function TripPage() {
   const location = useLocation();
   const trip = useTrip(id);
   const generate = useGenerateTrip();
+  const regenerate = useRegenerateDay();
+  const applyRegeneration = useApplyRegeneration();
+  const saveRequirements = useUpdateTripRequirements();
+  const queryClient = useQueryClient();
+  const [editOpen, setEditOpen] = useState(false);
 
   const [activeDay, setActiveDay] = useState(0);
   const [activeStop, setActiveStop] = useState(0);
   const [tags, setTags] = useState<string[]>([]);
   const [pace, setPace] = useState(1);
   const [walking, setWalking] = useState(1);
-  const autoStartRef = useRef(false);
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
+  const [regenerationPreview, setRegenerationPreview] =
+    useState<RegenerateDayPreview | null>(null);
+  const autoStartRef = useRef<string | null>(null);
 
   const analysis = trip.data?.analysis ?? null;
   const itinerary = trip.data?.itinerary ?? null;
   const status = trip.data?.status ?? "draft";
 
-  const isGenerating = (status === "generating" || generate.isPending) && !generate.isError;
-  const isFailed = status === "failed" || generate.isError;
+  const isGenerating = status === "generating" || generate.isPending;
+  const isFailed = !isGenerating && (status === "failed" || generate.isError);
 
   useEffect(() => {
     setTags(analysis?.interests ?? []);
@@ -130,34 +153,46 @@ export default function TripPage() {
 
   useEffect(() => {
     setActiveStop(0);
-    autoStartRef.current = false;
   }, [id]);
 
   const autoStart =
     (location.state as { autoStart?: boolean } | null)?.autoStart ?? false;
 
   useEffect(() => {
-    if (!id || !autoStart || autoStartRef.current || status !== "draft" || generate.isPending) {
+    if (!id || !trip.data || !autoStart || autoStartRef.current === id || status !== "draft" || generate.isPending) {
       return;
     }
 
-    autoStartRef.current = true;
+    autoStartRef.current = id;
     navigate(location.pathname, { replace: true });
     generate.mutate(id);
-  }, [autoStart, id, status, location.pathname, navigate, generate.mutate]);
+  }, [autoStart, id, trip.data, status, location.pathname, navigate, generate.mutate, generate.isPending]);
 
   if (trip.isPending) {
     return (
       <div className="trip-page">
         <div className="trip-inner">
-          <p className="trip-eyebrow">Loading trip…</p>
+          <TripLoading />
         </div>
       </div>
     );
   }
 
   if (trip.isError || !trip.data || !analysis) {
-    return <Navigate to="/trips" replace />;
+    const notFound = trip.error instanceof ApiError && trip.error.status === 404;
+    return (
+      <div className="trip-page"><div className="trip-inner">
+        <TripStatusCard
+          isError
+          title={notFound ? "This trip couldn't be found" : "We couldn't load your trip"}
+          message={notFound ? "The trip may have been removed or the link is incorrect." : errorMessage(trip.error)}
+          actionLabel={notFound ? "View my trips" : "Try again"}
+          onAction={() => { if (notFound) navigate("/trips"); else void trip.refetch(); }}
+          disabled={trip.isFetching}
+          onBack={() => navigate("/trips")}
+        />
+      </div></div>
+    );
   }
 
   const city = analysis.destination ?? "Untitled trip";
@@ -199,13 +234,72 @@ export default function TripPage() {
   };
 
   const handleGenerate = () => {
-    if (!id) {
+    if (!id || generate.isPending) {
       return;
     }
 
     generate.reset();
     generate.mutate(id);
   };
+
+  const handleSaveRequirements = (payload: UpdateTripRequirements) => {
+    if (!id || saveRequirements.isPending) return;
+    saveRequirements.mutate({ draftId: id, ...payload }, {
+      onSuccess: () => {
+        setEditOpen(false);
+        generate.reset();
+        void queryClient.invalidateQueries({ queryKey: TRIPS_KEY });
+      },
+    });
+  };
+
+  const dayIndex = day?.dayIndex ?? activeDay + 1;
+
+  const openRegenerate = () => {
+    regenerate.reset();
+    applyRegeneration.reset();
+    setRegenerationPreview(null);
+    setRegenerateOpen(true);
+  };
+
+  const handleRegenerationRequest = (
+    request: RegenerateDayRequest,
+  ) => {
+    if (!id) {
+      return;
+    }
+
+    setRegenerationPreview(null);
+    regenerate.mutate(
+      { tripId: id, dayIndex, request },
+      { onSuccess: setRegenerationPreview },
+    );
+  };
+
+  const handleApplyRegeneration = () => {
+    if (!id || !regenerationPreview) {
+      return;
+    }
+
+    applyRegeneration.mutate(
+      {
+        tripId: id,
+        dayIndex: regenerationPreview.dayIndex,
+        previewId: regenerationPreview.previewId,
+      },
+      {
+        onSuccess: () => {
+          setRegenerateOpen(false);
+          setRegenerationPreview(null);
+        },
+      },
+    );
+  };
+
+  const regenerationError =
+    regenerate.error || applyRegeneration.error
+      ? errorMessage(regenerate.error ?? applyRegeneration.error)
+      : null;
 
   return (
     <div className="trip-page">
@@ -266,8 +360,7 @@ export default function TripPage() {
               <button
                 type="button"
                 className="trip-action is-primary"
-                onClick={handleGenerate}
-                disabled={generate.isPending}
+                onClick={openRegenerate}
               >
                 <AutoFixHighOutlined /> Regenerate Day
               </button>
@@ -366,85 +459,51 @@ export default function TripPage() {
             </div>
           </div>
         ) : (
-          <section className="trip-card trip-status">
-            {isFailed ? (
-              <>
-                <div className="trip-card-head">
-                  <h3>Itinerary generation failed</h3>
-                </div>
-                <p className="trip-eyebrow">
-                  {generate.error
-                    ? errorMessage(generate.error)
-                    : trip.data.generation.error ??
-                      "We couldn't finish generating your itinerary. Your trip details are saved."}
-                </p>
-                <div className="plan-summary-actions">
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => navigate("/", { state: { focusPrompt: true } })}
-                  >
-                    Adjust details
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={handleGenerate}
-                    disabled={generate.isPending}
-                  >
-                    {generate.isPending ? "Retrying…" : "Try again"}
-                  </button>
-                </div>
-              </>
-            ) : isGenerating ? (
-              <>
-                <div className="trip-card-head">
-                  <h3>Building your itinerary</h3>
-                </div>
-                <p className="trip-eyebrow">
-                  {isGenerationStale
-                    ? "This is taking longer than expected. You can safely try again."
-                    : `We're scheduling your days, mapping the routes, and checking the weather in ${city}. This can take a moment.`}
-                </p>
-                {isGenerationStale && (
-                  <div className="plan-summary-actions">
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={handleGenerate}
-                      disabled={generate.isPending}
-                    >
-                      {generate.isPending ? "Retrying…" : "Try again"}
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <div className="trip-card-head">
-                  <h3>Your trip is ready to generate</h3>
-                </div>
-                <p className="trip-eyebrow">
-                  {dateLabel}
-                  {days > 0 ? ` · ${days} days` : ""} in {city}
-                  {country ? `, ${country}` : ""}. Generate the day-by-day itinerary
-                  whenever you're ready.
-                </p>
-                <div className="plan-summary-actions">
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={handleGenerate}
-                    disabled={generate.isPending}
-                  >
-                    Generate my trip
-                  </button>
-                </div>
-              </>
-            )}
-          </section>
+          isGenerating ? (
+            <TripLoading city={city} isStale={isGenerationStale} onRetry={!generate.isPending ? handleGenerate : undefined} />
+          ) : (
+            <TripStatusCard
+              isError={isFailed}
+              hasSavedDetails
+              title={isFailed ? "Your itinerary hit a small detour" : "Your trip is ready to generate"}
+              message={isFailed
+                ? generate.error ? errorMessage(generate.error) : trip.data.generation.error ?? "We couldn't finish your itinerary. Please try again."
+                : `${dateLabel}${days > 0 ? ` · ${days} days` : ""} in ${city}. Let's turn your ideas into a day-by-day plan.`}
+              actionLabel={isFailed ? "Try again" : "Generate my trip"}
+              onAction={handleGenerate}
+              disabled={saveRequirements.isPending}
+              onBack={() => navigate("/trips")}
+              onEdit={() => { saveRequirements.reset(); setEditOpen(true); }}
+            />
+          )
         )}
       </div>
+      <TripRequirementsDialog
+        mode="edit"
+        key={`${id}:${editOpen}`}
+        open={editOpen}
+        analysis={analysis}
+        missingFields={[...ASKABLE_FIELDS]}
+        isSaving={saveRequirements.isPending}
+        error={saveRequirements.error ? errorMessage(saveRequirements.error) : null}
+        onSave={handleSaveRequirements}
+        onClose={() => { if (!saveRequirements.isPending) setEditOpen(false); }}
+      />
+      <RegenerateDayDialog
+        open={regenerateOpen}
+        dayNumber={dayIndex}
+        preview={regenerationPreview}
+        isGenerating={regenerate.isPending}
+        isApplying={applyRegeneration.isPending}
+        error={regenerationError}
+        onGenerate={handleRegenerationRequest}
+        onApply={handleApplyRegeneration}
+        onEditOptions={() => setRegenerationPreview(null)}
+        onClose={() => {
+          setRegenerateOpen(false);
+          setRegenerationPreview(null);
+        }}
+      />
       <TripAssistant key={id} city={city} />
     </div>
   );

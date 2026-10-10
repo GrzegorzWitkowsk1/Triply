@@ -13,7 +13,7 @@ const DEFAULT_BACKOFF_MS = [1_000, 2_000];
 const DEFAULT_TOTAL_BUDGET_MS = 60_000;
 const ATTRACTIONS_RADIUS_M = 5000;
 const ATTRACTIONS_RESULT_CAP = 60;
-const SERVER_TIMEOUT_S = 20;
+const SERVER_TIMEOUT_S = 15;
 const USER_AGENT = "Triply/0.1 (trip planning)";
 
 const FALLBACK_FILTERS: TagValuesFilter[] = [{ key: "tourism", values: ["attraction"] }];
@@ -195,8 +195,16 @@ async function attemptRequest(
 
     const payload = (await response.json().catch(() => null)) as unknown;
 
-    if (!payload) {
+    if (!payload || typeof payload !== "object") {
       return { ok: false, retryable: true, reason: "response was not valid JSON" };
+    }
+
+    if ("remark" in payload && typeof payload.remark === "string" && payload.remark.trim()) {
+      return { ok: false, retryable: true, reason: `Overpass: ${payload.remark.slice(0, 300)}` };
+    }
+
+    if (!Array.isArray((payload as OverpassPayload).elements)) {
+      return { ok: false, retryable: true, reason: "response is missing the elements array" };
     }
 
     return { ok: true, payload };
@@ -207,7 +215,7 @@ async function attemptRequest(
   }
 }
 
-export async function fetchAttractions(
+async function fetchAttractionsFromProviders(
   lat: number,
   lng: number,
   interests: readonly string[],
@@ -228,14 +236,15 @@ export async function fetchAttractions(
   const startedAt = Date.now();
   let lastReason = "not attempted";
 
-  for (let endpointIndex = 0; endpointIndex < endpoints.length; endpointIndex += 1) {
-    const endpoint = endpoints[endpointIndex];
-    const maxAttempts = endpointIndex === 0 ? 1 + backoffMs.length : 1;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      if (attempt > 0) {
-        await sleep(backoffMs[attempt - 1] ?? 0);
-      }
+  // Give every provider a chance before retrying any of them.
+  for (let attempt = 0; attempt <= backoffMs.length; attempt += 1) {
+    if (attempt > 0) {
+      const delay = backoffMs[attempt - 1] ?? 0;
+      if (Date.now() - startedAt + delay >= totalBudgetMs) break;
+      await sleep(delay);
+    }
+    for (let endpointIndex = 0; endpointIndex < endpoints.length; endpointIndex += 1) {
+      const endpoint = endpoints[endpointIndex];
 
       const remaining = totalBudgetMs - (Date.now() - startedAt);
 
@@ -246,7 +255,8 @@ export async function fetchAttractions(
         return null;
       }
 
-      const outcome = await attemptRequest(endpoint, query, Math.min(timeoutMs, remaining));
+      const providerBudget = Math.max(1, Math.floor(remaining / (endpoints.length - endpointIndex)));
+      const outcome = await attemptRequest(endpoint, query, Math.min(timeoutMs, providerBudget));
 
       if (outcome.ok) {
         if (endpointIndex > 0 || attempt > 0) {
@@ -266,7 +276,7 @@ export async function fetchAttractions(
 
       lastReason = `${new URL(endpoint).host}: ${outcome.reason}`;
       console.error(
-        `[attractions] attempt ${attempt + 1}/${maxAttempts} failed (${lastReason}) after ${Date.now() - startedAt}ms`,
+        `[attractions] round ${attempt + 1}/${backoffMs.length + 1} failed (${lastReason}) after ${Date.now() - startedAt}ms`,
       );
 
       if (!outcome.retryable) {
@@ -278,4 +288,49 @@ export async function fetchAttractions(
 
   console.error(`[attractions] all endpoints failed: ${lastReason}`);
   return null;
+}
+
+interface CachedAttractions {
+  request: Promise<TripAttraction[] | null>;
+  expiresAt: number;
+}
+
+const recentRequests = new Map<string, CachedAttractions>();
+const FAILURE_COOLDOWN_MS = 15_000;
+const SUCCESS_CACHE_MS = 30_000;
+
+export function fetchAttractions(
+  lat: number,
+  lng: number,
+  interests: readonly string[],
+  options: FetchAttractionsOptions = {},
+): Promise<TripAttraction[] | null> {
+  // Explicit transport options are used by isolated provider tests and callers.
+  if (options.endpoints || options.timeoutMs !== undefined || options.backoffMs || options.totalBudgetMs !== undefined) {
+    return fetchAttractionsFromProviders(lat, lng, interests, options);
+  }
+  const key = JSON.stringify([lat, lng, [...normalizeInterests(interests)].sort(), options.weather ?? null]);
+  const cached = recentRequests.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.request;
+
+  if (recentRequests.size >= 200) {
+    const oldestKey = recentRequests.keys().next().value;
+    if (oldestKey !== undefined) recentRequests.delete(oldestKey);
+  }
+  const entry: CachedAttractions = {
+    request: Promise.resolve(null),
+    expiresAt: Infinity,
+  };
+  entry.request = fetchAttractionsFromProviders(lat, lng, interests, options).then(
+    (result) => {
+      entry.expiresAt = Date.now() + (result?.length ? SUCCESS_CACHE_MS : FAILURE_COOLDOWN_MS);
+      return result;
+    },
+    (error: unknown) => {
+      recentRequests.delete(key);
+      throw error;
+    },
+  );
+  recentRequests.set(key, entry);
+  return entry.request;
 }

@@ -481,8 +481,16 @@ export async function saveTripRequirements(
   confirmedFields: AskableField[],
 ): Promise<TripDocument> {
   const merged = mergeRequirements(draft.analysis, answers);
+  if (answers.location === undefined &&
+      (merged.destination !== draft.analysis.destination || merged.country !== draft.analysis.country)) {
+    merged.location = null;
+  }
   const analysis = await ensureLocation(merged);
-  const weather = await ensureWeather(analysis, draft.weather, draft.weatherFetchedAt);
+  const locationChanged = analysis.location?.lat !== draft.analysis.location?.lat ||
+    analysis.location?.lng !== draft.analysis.location?.lng;
+  const weather = await ensureWeather(
+    analysis, locationChanged ? [] : draft.weather, locationChanged ? null : draft.weatherFetchedAt,
+  );
   const attractions = await ensureAttractions(
     analysis,
     draft.attractions,
@@ -493,18 +501,27 @@ export async function saveTripRequirements(
 
   const confirmed = mergeConfirmedFields(draft.confirmedFields, confirmedFields, answers);
 
-  draft.set("analysis", analysis);
-  draft.set("weather", weather.days);
-  draft.set("weatherFetchedAt", weather.fetchedAt);
-  draft.set("attractions", attractions.attractions);
-  draft.set("attractionsFetchedAt", attractions.fetchedAt);
-  draft.set("attractionsQuery", attractions.query);
-  draft.set("clustering", buildClustering(analysis, attractions.attractions));
   const gaps = missingFields(analysis, confirmed);
-  draft.confirmedFields = confirmed;
-  draft.missingFields = gaps;
-
-  return draft.save();
+  const saved = await TripModel.findOneAndUpdate(
+    {
+      _id: draft._id,
+      user: draft.user,
+      status: { $in: ["draft", "failed"] },
+      updatedAt: (draft as TripDocument & { updatedAt: Date }).updatedAt,
+    },
+    { $set: {
+      analysis, weather: weather.days, weatherFetchedAt: weather.fetchedAt,
+      attractions: attractions.attractions, attractionsFetchedAt: attractions.fetchedAt,
+      attractionsQuery: attractions.query, clustering: buildClustering(analysis, attractions.attractions),
+      confirmedFields: confirmed, missingFields: gaps, status: "draft", "generation.error": null,
+    } },
+    { new: true, runValidators: true },
+  ).exec();
+  if (!saved) {
+    const error = new Error("The trip changed while saving. Reload it and try again.");
+    throw Object.assign(error, { status: 409, expose: true });
+  }
+  return saved;
 }
 
 export class TripRequirementsIncompleteError extends Error {

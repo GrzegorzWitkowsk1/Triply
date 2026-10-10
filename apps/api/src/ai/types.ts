@@ -1,3 +1,5 @@
+import type { RegenerationPreferences } from "@triply/shared";
+
 export interface AISchema {
   type: string;
   nullable?: boolean;
@@ -23,6 +25,11 @@ export type AIProviderName = "gemini" | "openrouter";
 export interface AnalyzeTripInput {
   prompt: string;
   badges: string[];
+}
+
+export interface ParseRegenerationInput {
+  customInstructions: string;
+  selectedPreferences?: RegenerationPreferences;
 }
 
 export interface AIProvider {
