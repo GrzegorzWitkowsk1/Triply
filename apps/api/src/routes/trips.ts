@@ -8,6 +8,7 @@ import {
   updateTripEquipmentItemSchema,
   updateTripRequirementsSchema,
   type AnalyzeTripRequest,
+  type TripStatus,
   type UpdateTripRequirements,
 } from "@triply/shared";
 import { aiService } from "../ai/index.js";
@@ -16,12 +17,22 @@ import type { PublicUser } from "../models/User.js";
 import {
   backfillTripAttractions,
   backfillTripWeather,
+  confirmTripRequirements,
   saveTripRequirements,
   toTripAnalysisResult,
   toTripDetail,
   toTripSummary,
+  TripRequirementsIncompleteError,
   upsertTripDraft,
 } from "../services/tripDraft.js";
+import {
+  claimTripForGeneration,
+  GENERIC_GENERATION_ERROR,
+  generationInputsReady,
+  logGenerationFailure,
+  markGenerationFailed,
+  runTripGeneration,
+} from "../services/tripGeneration.js";
 import {
   addEquipmentItem,
   deleteEquipmentItem,
@@ -142,7 +153,7 @@ tripsRouter.get(
       return;
     }
 
-    const filter: { user: Types.ObjectId; status?: "draft" | "confirmed" } = {
+    const filter: { user: Types.ObjectId; status?: TripStatus } = {
       user: new Types.ObjectId(currentUserId(res)),
     };
 
@@ -282,5 +293,91 @@ tripsRouter.delete(
     await deleteEquipmentItem(id, currentUserId(res), itemId);
 
     res.status(204).send();
+  }),
+);
+
+tripsRouter.post(
+  "/:id/confirm",
+  asyncHandler(async (req, res) => {
+    const id = tripIdParam(req);
+
+    if (!id) {
+      res.status(404).json({ error: "Trip not found" });
+      return;
+    }
+
+    const trip = await TripModel.findOne({
+      _id: new Types.ObjectId(id),
+      user: new Types.ObjectId(currentUserId(res)),
+    }).exec();
+
+    if (!trip) {
+      res.status(404).json({ error: "Trip not found" });
+      return;
+    }
+
+    try {
+      const saved = await confirmTripRequirements(trip);
+      res.json(toTripDetail(saved));
+    } catch (error) {
+      if (error instanceof TripRequirementsIncompleteError) {
+        res.status(400).json({
+          error: "A few trip details are still missing.",
+          missingFields: error.missing,
+        });
+        return;
+      }
+
+      throw error;
+    }
+  }),
+);
+
+tripsRouter.post(
+  "/:id/generate",
+  asyncHandler(async (req, res) => {
+    const id = tripIdParam(req);
+
+    if (!id) {
+      res.status(404).json({ error: "Trip not found" });
+      return;
+    }
+
+    const userId = currentUserId(res);
+
+    const existing = await TripModel.findOne({
+      _id: new Types.ObjectId(id),
+      user: new Types.ObjectId(userId),
+    }).exec();
+
+    if (!existing) {
+      res.status(404).json({ error: "Trip not found" });
+      return;
+    }
+
+    if (!generationInputsReady(existing)) {
+      res
+        .status(400)
+        .json({ error: "Add a destination and trip length before generating an itinerary." });
+      return;
+    }
+
+    const claimed = await claimTripForGeneration(id, userId);
+
+    if (!claimed) {
+      res.status(409).json({
+        error: "This itinerary is already being generated. Please wait for it to finish.",
+      });
+      return;
+    }
+
+    try {
+      const generated = await runTripGeneration(claimed);
+      res.json(toTripDetail(generated));
+    } catch (error) {
+      logGenerationFailure(error);
+      await markGenerationFailed(id, userId, GENERIC_GENERATION_ERROR);
+      res.status(502).json({ error: GENERIC_GENERATION_ERROR });
+    }
   }),
 );

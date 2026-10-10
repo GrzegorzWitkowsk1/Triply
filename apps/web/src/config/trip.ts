@@ -21,8 +21,8 @@ export interface TripActivity {
   type: string;
   name: string;
   duration: string;
-  cost: number;
-  walkMinutes: number;
+  cost: number | null;
+  walkMinutes: number | null;
 }
 
 export interface TripDay {

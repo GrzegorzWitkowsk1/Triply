@@ -2792,14 +2792,110 @@ body {
   gap: 14px;
 }
 
+.trip-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.timeline-item,
+.timeline-leg {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  align-items: start;
+}
+
+.timeline-rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+  align-self: stretch;
+}
+
+.timeline-rail::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: -2px;
+  left: 50%;
+  width: 2px;
+  background: var(--color-line);
+  transform: translateX(-50%);
+}
+
+.timeline-item:last-child .timeline-rail::before {
+  bottom: 0;
+  height: 34px;
+}
+
+.timeline-node {
+  position: relative;
+  z-index: 1;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 0 0 4px #ffffff;
+}
+
+.timeline-node .MuiSvgIcon-root {
+  font-size: 18px;
+}
+
+.timeline-node.is-travel {
+  background: #ffffff;
+  color: var(--color-muted);
+  border: 1px dashed var(--color-line);
+}
+
+.timeline-node.is-break {
+  background: #ffffff;
+  color: #e08600;
+  border: 1px solid #f0c98a;
+}
+
+.timeline-time {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.timeline-body {
+  min-width: 0;
+  padding: 0 0 18px 6px;
+}
+
+.timeline-walk {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #f2f6f8;
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .activity-card {
   width: 100%;
   display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
   border: 1px solid var(--color-line);
-  border-radius: 18px;
+  border-radius: 16px;
   background: #ffffff;
   text-align: left;
   font-family: inherit;
@@ -2821,55 +2917,48 @@ body {
   background: #fffaf7;
 }
 
-.activity-thumb {
-  width: 76px;
-  height: 76px;
-  flex-shrink: 0;
-  border-radius: 14px;
-  object-fit: cover;
-}
-
-.activity-info {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  column-gap: 10px;
-  row-gap: 3px;
-  min-width: 0;
-}
-
-.activity-count {
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--color-primary);
-  color: #ffffff;
-  font-size: 13px;
+.activity-name {
+  font-size: 16px;
   font-weight: 700;
-  flex-shrink: 0;
+  color: var(--color-text);
 }
 
-.activity-meta {
+.activity-category {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.activity-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-primary);
 }
 
-.activity-name {
-  width: 100%;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--color-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.activity-time .MuiSvgIcon-root {
+  font-size: 16px;
 }
 
-.activity-sub {
-  width: 100%;
+.break-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  border: 1px dashed #f0c98a;
+  border-radius: 16px;
+  background: #fffdf7;
+}
+
+.break-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.break-sub {
   font-size: 13px;
   color: var(--color-muted);
 }
@@ -3147,9 +3236,13 @@ body {
     font-size: 32px;
   }
 
-  .activity-thumb {
-    width: 56px;
-    height: 56px;
+  .timeline-item,
+  .timeline-leg {
+    grid-template-columns: 48px 1fr;
+  }
+
+  .timeline-body {
+    padding-left: 2px;
   }
 
   .trip-hero-actions .trip-action {

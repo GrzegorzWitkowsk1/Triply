@@ -1,6 +1,6 @@
 import type { TripStatus, TripSummary } from "@triply/shared";
 
-export type TripCardStatus = "Ready" | "Planning";
+export type TripCardStatus = "Ready" | "Planning" | "Failed";
 
 export interface TripCardModel {
   id: string;
@@ -50,7 +50,15 @@ function formatRange(startDate: string | null, endDate: string | null): string {
 }
 
 export function toCardStatus(status: TripStatus): TripCardStatus {
-  return status === "confirmed" ? "Ready" : "Planning";
+  if (status === "ready") {
+    return "Ready";
+  }
+
+  if (status === "failed") {
+    return "Failed";
+  }
+
+  return "Planning";
 }
 
 export function toTripCardModel(summary: TripSummary): TripCardModel {
@@ -62,7 +70,7 @@ export function toTripCardModel(summary: TripSummary): TripCardModel {
     dateLabel: formatRange(summary.startDate, summary.endDate),
     budgetUsed: summary.budget.amount ?? null,
     status: toCardStatus(summary.status),
-    isConfirmed: summary.status === "confirmed",
+    isConfirmed: summary.status === "ready",
   };
 }
 

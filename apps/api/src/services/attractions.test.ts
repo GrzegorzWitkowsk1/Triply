@@ -11,7 +11,9 @@ function withoutScores(result: TripAttraction[] | null): TripAttraction[] | null
     return null;
   }
 
-  return result.map(({ score: _score, ...rest }) => rest);
+  return result.map(
+    ({ score: _score, placeId: _placeId, environment: _environment, ...rest }) => rest,
+  );
 }
 
 function hasValidScores(result: TripAttraction[] | null): boolean {
@@ -195,6 +197,27 @@ describe("fetchAttractions", () => {
       "Triply/0.1 (trip planning)",
     );
     expect(postedQuery(fetchMock)).toContain("(around:5000,48.85,2.35)");
+  });
+
+  it("passes through the OSM id as placeId and the classified environment", async () => {
+    stubFetch(
+      jsonResponse({
+        elements: [
+          {
+            type: "node",
+            id: 12345,
+            lat: 48.85,
+            lon: 2.35,
+            tags: { name: "Café", amenity: "cafe" },
+          },
+        ],
+      }),
+    );
+
+    const result = await fetchAttractions(48.85, 2.35, ["food"], fastOptions());
+
+    expect(result?.[0]?.placeId).toBe("node/12345");
+    expect(result?.[0]?.environment).toBe("indoor");
   });
 
   it("retries retryable failures and succeeds on a later attempt", async () => {

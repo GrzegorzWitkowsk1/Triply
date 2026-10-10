@@ -6,6 +6,9 @@ interface TripPlanSummaryCardProps {
   missingFields: AskableField[];
   requirementsComplete: boolean;
   onEdit: () => void;
+  onGenerate: () => void;
+  isGenerating: boolean;
+  generateError: string | null;
 }
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -63,6 +66,9 @@ export default function TripPlanSummaryCard({
   missingFields,
   requirementsComplete,
   onEdit,
+  onGenerate,
+  isGenerating,
+  generateError,
 }: TripPlanSummaryCardProps) {
   const facts = [
     formatRange(analysis),
@@ -119,11 +125,14 @@ export default function TripPlanSummaryCard({
         <button
           type="button"
           className="btn btn-primary"
-          disabled={!requirementsComplete}
+          disabled={!requirementsComplete || isGenerating}
+          onClick={onGenerate}
         >
-          Continue
+          {isGenerating ? "Creating your trip…" : "Generate my trip"}
         </button>
       </div>
+
+      {generateError && <p className="prompt-hint is-error">{generateError}</p>}
 
       <p className="plan-summary-block">
         <LockOutlined fontSize="small" />
@@ -131,7 +140,9 @@ export default function TripPlanSummaryCard({
           ? missingFields.length === 1
             ? "Answer 1 more question to unlock the next step."
             : `Answer ${missingFields.length} more questions to unlock the next step.`
-          : "Itinerary generation is the next step."}
+          : isGenerating
+            ? "Building your day-by-day itinerary — this can take a moment."
+            : "We'll build your day-by-day itinerary next."}
       </p>
     </section>
   );

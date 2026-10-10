@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { addDays, diffDaysInclusive, isAfter, isIsoDate } from "./dates.js";
+import type { GeoLineString, RouteSegment, RouteSource } from "./planner.js";
+import type { ScheduledActivity, UnscheduledReason } from "./scheduling.js";
 
-export const TRIP_STATUS_VALUES = ["draft", "confirmed"] as const;
+export const TRIP_STATUS_VALUES = ["draft", "generating", "ready", "failed"] as const;
 export type TripStatus = (typeof TRIP_STATUS_VALUES)[number];
 
 export const tripStatusSchema = z.enum(TRIP_STATUS_VALUES);
@@ -93,15 +95,71 @@ export const tripDayWeatherSchema = z.object({
 
 export type TripDayWeather = z.infer<typeof tripDayWeatherSchema>;
 
+export const POI_ENVIRONMENT_SCHEMA_VALUES = ["indoor", "outdoor", "unknown"] as const;
+
 export const tripAttractionSchema = z.object({
   name: z.string().trim().min(1).max(200),
   category: z.string().trim().min(1).max(60),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   score: z.number().min(0).max(100).nullish(),
+  /** Stable upstream identifier (e.g. `node/12345`) used to keep POIs consistent. */
+  placeId: z.string().trim().min(1).max(120).nullish(),
+  /** Provider-classified indoor/outdoor environment, when known. */
+  environment: z.enum(POI_ENVIRONMENT_SCHEMA_VALUES).nullish(),
+  /** Known or provider-supplied visit duration in minutes, when available. */
+  visitDurationMinutes: z.number().int().positive().max(1440).nullish(),
 });
 
 export type TripAttraction = z.infer<typeof tripAttractionSchema>;
+
+/** A scheduled attraction as rendered on the timeline and map. */
+export interface ItineraryStop {
+  placeId: string | null;
+  name: string;
+  category: string;
+  lat: number;
+  lng: number;
+  score: number | null;
+}
+
+export interface ItineraryDay {
+  dayIndex: number;
+  /** Destination-local calendar date (YYYY-MM-DD), or "" when unknown. */
+  date: string;
+  timeZone: string;
+  activities: ScheduledActivity[];
+  /** Ordered attractions for the day, used for map markers. */
+  stops: ItineraryStop[];
+  geometry: GeoLineString | null;
+  segments: RouteSegment[];
+  totalVisitMinutes: number;
+  totalTravelMinutes: number | null;
+  totalDistanceMeters: number | null;
+  partiallyEstimated: boolean;
+  warnings: string[];
+}
+
+export interface TripUnscheduledPlace {
+  place: ItineraryStop;
+  dayIndex: number | null;
+  reason: UnscheduledReason;
+  detail: string | null;
+}
+
+export interface TripGeneration {
+  startedAt: string | null;
+  generatedAt: string | null;
+  error: string | null;
+}
+
+export interface TripItinerary {
+  timeZone: string;
+  routingSource: RouteSource;
+  generatedAt: string | null;
+  days: ItineraryDay[];
+  unscheduled: TripUnscheduledPlace[];
+}
 
 export const ASKABLE_FIELDS = [
   "destination",
@@ -233,6 +291,8 @@ export interface TripDetail extends TripAnalysisResult {
   badges: string[];
   equipment: TripEquipmentItem[];
   weather: TripDayWeather[];
+  itinerary: TripItinerary | null;
+  generation: TripGeneration;
   fixtureKey: string | null;
   createdAt: string | null;
   updatedAt: string | null;

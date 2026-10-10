@@ -13,7 +13,7 @@ import { useTrips } from "../hooks/useTrips";
 
 const FILTER_STATUS: Record<TripFilter, TripStatus | undefined> = {
   "All trips": undefined,
-  Ready: "confirmed",
+  Ready: "ready",
   Planning: "draft",
 };
 
@@ -75,15 +75,6 @@ export default function MyTripsPage() {
           {tripsQuery.isError && (
             <p className="my-trips-subtitle">{tripsQuery.error.message}</p>
           )}
-
-          {!tripsQuery.isPending &&
-            !tripsQuery.isError &&
-            trips.length === 0 && (
-              <p className="my-trips-subtitle">
-                No trips here yet. Plan your first one.
-              </p>
-            )}
-
           {tripsQuery.isFetching && !tripsQuery.isPending && (
             <p className="my-trips-subtitle">Refreshing…</p>
           )}

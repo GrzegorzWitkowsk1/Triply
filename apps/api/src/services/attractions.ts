@@ -160,6 +160,8 @@ function toAttractions(
     lat: poi.lat,
     lng: poi.lng,
     score: poi.score,
+    placeId: poi.osmKey ?? null,
+    environment: poi.environment,
   }));
 }
 

@@ -1,0 +1,153 @@
+import type { ItineraryDay, ItineraryStop, TripItinerary } from "@triply/shared";
+
+export interface TimelineTravel {
+  kind: "travel";
+  key: string;
+  minutes: number;
+  toName: string;
+}
+
+export interface TimelineAttraction {
+  kind: "attraction";
+  key: string;
+  stopIndex: number;
+  time: string;
+  name: string;
+  category: string;
+  durationMinutes: number;
+}
+
+export interface TimelineBreak {
+  kind: "break";
+  key: string;
+  time: string;
+  name: string;
+  minutes: number;
+  icon: "coffee" | "meal";
+}
+
+export type TimelineEntry = TimelineTravel | TimelineAttraction | TimelineBreak;
+
+export function formatClock(iso: string): string {
+  const match = /T(\d{2}):(\d{2})/.exec(iso);
+
+  return match ? `${match[1]}:${match[2]}` : iso;
+}
+
+export function formatDuration(minutes: number | null | undefined): string {
+  if (minutes === null || minutes === undefined || !Number.isFinite(minutes) || minutes <= 0) {
+    return "—";
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const mins = Math.round(minutes % 60);
+  const hourLabel = hours > 0 ? `${hours} hr${hours > 1 ? "s" : ""}` : "";
+  const minLabel = mins > 0 ? `${mins} min` : "";
+
+  return [hourLabel, minLabel].filter(Boolean).join(" ") || "—";
+}
+
+function capitalize(value: string): string {
+  return value.length > 0 ? value[0].toUpperCase() + value.slice(1) : value;
+}
+
+function breakIcon(title: string): "coffee" | "meal" {
+  return /coffee/i.test(title) ? "coffee" : "meal";
+}
+
+/** Scheduled stops for a day, in route order — used for map markers. */
+export function dayStops(day: ItineraryDay | undefined): [number, number][] {
+  if (!day) {
+    return [];
+  }
+
+  return scheduledStops(day).map((stop) => [stop.lat, stop.lng] as [number, number]);
+}
+
+function scheduledStops(day: ItineraryDay): ItineraryStop[] {
+  const scheduled = new Set(
+    day.activities
+      .filter((activity) => activity.type === "attraction" && activity.placeId)
+      .map((activity) => activity.placeId as string),
+  );
+
+  return day.stops.filter((stop) => stop.placeId !== null && scheduled.has(stop.placeId));
+}
+
+/** Turns a day's scheduled activities into an ordered timeline. */
+export function buildDayTimeline(day: ItineraryDay): TimelineEntry[] {
+  const stops = scheduledStops(day);
+  const stopIndexByPlaceId = new Map(stops.map((stop, index) => [stop.placeId, index]));
+  const stopByPlaceId = new Map(day.stops.map((stop) => [stop.placeId, stop]));
+
+  return day.activities.map((activity, index) => {
+    const key = `${day.dayIndex}-${index}`;
+
+    if (activity.type === "travel") {
+      return {
+        kind: "travel",
+        key,
+        minutes: Math.round(activity.durationMinutes),
+        toName: activity.title.replace(/^To\s+/i, ""),
+      } satisfies TimelineTravel;
+    }
+
+    if (activity.type === "attraction") {
+      const stop = activity.placeId ? stopByPlaceId.get(activity.placeId) : undefined;
+      const stopIndex = activity.placeId
+        ? stopIndexByPlaceId.get(activity.placeId) ?? -1
+        : -1;
+
+      return {
+        kind: "attraction",
+        key,
+        stopIndex,
+        time: formatClock(activity.startTime),
+        name: activity.title,
+        category: stop ? capitalize(stop.category) : "Sight",
+        durationMinutes: Math.round(activity.durationMinutes),
+      } satisfies TimelineAttraction;
+    }
+
+    return {
+      kind: "break",
+      key,
+      time: formatClock(activity.startTime),
+      name: activity.title,
+      minutes: Math.round(activity.durationMinutes),
+      icon: breakIcon(activity.title),
+    } satisfies TimelineBreak;
+  });
+}
+
+/** Route geometry for a day, converted from GeoJSON `[lng, lat]` to `[lat, lng]`. */
+export function dayGeometry(day: ItineraryDay | undefined): [number, number][] | null {
+  if (!day || !day.geometry || day.geometry.coordinates.length < 2) {
+    return null;
+  }
+
+  return day.geometry.coordinates.map(([lng, lat]) => [lat, lng] as [number, number]);
+}
+
+export function totalItineraryActivities(itinerary: TripItinerary): number {
+  return itinerary.days.reduce(
+    (sum, day) => sum + day.activities.filter((activity) => activity.type === "attraction").length,
+    0,
+  );
+}
+
+export function totalWalkingKm(itinerary: TripItinerary): number | null {
+  const meters = itinerary.days.reduce<number | null>((sum, day) => {
+    if (day.totalDistanceMeters === null) {
+      return sum;
+    }
+
+    return (sum ?? 0) + day.totalDistanceMeters;
+  }, null);
+
+  if (meters === null || meters === 0) {
+    return null;
+  }
+
+  return Math.round((meters / 1000) * 10) / 10;
+}

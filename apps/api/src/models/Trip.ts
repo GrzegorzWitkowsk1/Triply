@@ -1,13 +1,20 @@
 import { model, Schema, type HydratedDocument, type Types } from "mongoose";
 import type {
   AskableField,
+  GeoLineString,
+  ItineraryDay,
+  ItineraryStop,
   PoiCluster,
+  RouteSegment,
+  ScheduledActivity,
   TripAnalysis,
   TripAttraction,
   TripDayWeather,
+  TripItinerary,
   TripStatus,
+  TripUnscheduledPlace,
 } from "@triply/shared";
-import { PACE_VALUES, TRIP_STATUS_VALUES } from "@triply/shared";
+import { PACE_VALUES, POI_ENVIRONMENT_VALUES, TRIP_STATUS_VALUES } from "@triply/shared";
 
 export interface EquipmentRecord {
   name: string;
@@ -27,6 +34,14 @@ export interface ClusteringRecord {
   unassigned: TripAttraction[];
 }
 
+export interface TripGenerationRecord {
+  startedAt: Date | null;
+  generatedAt: Date | null;
+  error: string | null;
+}
+
+export type TripItineraryRecord = Omit<TripItinerary, "generatedAt">;
+
 export interface TripRecord {
   user: Types.ObjectId;
   status: TripStatus;
@@ -42,6 +57,8 @@ export interface TripRecord {
   attractionsFetchedAt: Date | null;
   attractionsQuery: AttractionsQueryRecord | null;
   clustering: ClusteringRecord | null;
+  itinerary: TripItineraryRecord | null;
+  generation: TripGenerationRecord;
   fixtureKey: string | null;
 }
 
@@ -90,6 +107,9 @@ const attractionSchema = new Schema<TripAttraction>(
     lat: { type: Number, required: true, min: -90, max: 90 },
     lng: { type: Number, required: true, min: -180, max: 180 },
     score: { type: Number, min: 0, max: 100 },
+    placeId: { type: String, default: null, trim: true },
+    environment: { type: String, enum: [...POI_ENVIRONMENT_VALUES, null], default: null },
+    visitDurationMinutes: { type: Number, default: null, min: 1, max: 1440 },
   },
   { _id: false },
 );
@@ -130,6 +150,109 @@ const clusteringSchema = new Schema<ClusteringRecord>(
     pace: { type: String, enum: [...PACE_VALUES, null], default: null },
     clusters: { type: [clusterSchema], default: [] },
     unassigned: { type: [attractionSchema], default: [] },
+  },
+  { _id: false },
+);
+
+const itineraryStopSchema = new Schema<ItineraryStop>(
+  {
+    placeId: { type: String, default: null, trim: true },
+    name: { type: String, required: true, trim: true, maxlength: 200 },
+    category: { type: String, required: true, trim: true, maxlength: 60 },
+    lat: { type: Number, required: true, min: -90, max: 90 },
+    lng: { type: Number, required: true, min: -180, max: 180 },
+    score: { type: Number, default: null, min: 0, max: 100 },
+  },
+  { _id: false },
+);
+
+const geoLineStringSchema = new Schema<GeoLineString>(
+  {
+    type: { type: String, enum: ["LineString"], required: true },
+    coordinates: { type: [[Number]], default: [] },
+  },
+  { _id: false },
+);
+
+const routeSegmentSchema = new Schema<RouteSegment>(
+  {
+    fromIndex: { type: Number, required: true },
+    toIndex: { type: Number, required: true },
+    distanceMeters: { type: Number, default: null },
+    durationSeconds: { type: Number, default: null },
+    geometry: { type: geoLineStringSchema, default: null },
+  },
+  { _id: false },
+);
+
+const itineraryActivitySchema = new Schema<ScheduledActivity>(
+  {
+    type: { type: String, enum: ["attraction", "travel", "break"], required: true },
+    startTime: { type: String, required: true },
+    endTime: { type: String, required: true },
+    placeId: { type: String },
+    title: { type: String, required: true },
+    durationMinutes: { type: Number, required: true },
+    durationSource: { type: String, enum: ["provided", "estimated", null], default: null },
+    distanceMeters: { type: Number, default: null },
+    travelDurationSource: {
+      type: String,
+      enum: ["provider", "approximation", "unavailable", null],
+      default: null,
+    },
+    weatherAdjusted: { type: Boolean, default: false },
+    warnings: { type: [String], default: undefined },
+  },
+  { _id: false },
+);
+
+const itineraryDaySchema = new Schema<ItineraryDay>(
+  {
+    dayIndex: { type: Number, required: true },
+    date: { type: String, default: "" },
+    timeZone: { type: String, required: true },
+    activities: { type: [itineraryActivitySchema], default: [] },
+    stops: { type: [itineraryStopSchema], default: [] },
+    geometry: { type: geoLineStringSchema, default: null },
+    segments: { type: [routeSegmentSchema], default: [] },
+    totalVisitMinutes: { type: Number, required: true },
+    totalTravelMinutes: { type: Number, default: null },
+    totalDistanceMeters: { type: Number, default: null },
+    partiallyEstimated: { type: Boolean, default: false },
+    warnings: { type: [String], default: [] },
+  },
+  { _id: false },
+);
+
+const unscheduledPlaceSchema = new Schema<TripUnscheduledPlace>(
+  {
+    place: { type: itineraryStopSchema, required: true },
+    dayIndex: { type: Number, default: null },
+    reason: { type: String, required: true },
+    detail: { type: String, default: null },
+  },
+  { _id: false },
+);
+
+const itinerarySchema = new Schema<TripItineraryRecord>(
+  {
+    timeZone: { type: String, required: true },
+    routingSource: {
+      type: String,
+      enum: ["provider", "approximation", "unavailable"],
+      required: true,
+    },
+    days: { type: [itineraryDaySchema], default: [] },
+    unscheduled: { type: [unscheduledPlaceSchema], default: [] },
+  },
+  { _id: false },
+);
+
+const generationSchema = new Schema<TripGenerationRecord>(
+  {
+    startedAt: { type: Date, default: null },
+    generatedAt: { type: Date, default: null },
+    error: { type: String, default: null },
   },
   { _id: false },
 );
@@ -177,6 +300,11 @@ const tripSchema = new Schema<TripRecord>(
     attractionsFetchedAt: { type: Date, default: null },
     attractionsQuery: { type: attractionsQuerySchema, default: null },
     clustering: { type: clusteringSchema, default: null },
+    itinerary: { type: itinerarySchema, default: null },
+    generation: {
+      type: generationSchema,
+      default: () => ({ startedAt: null, generatedAt: null, error: null }),
+    },
     fixtureKey: { type: String, default: null, trim: true },
   },
   { timestamps: true },

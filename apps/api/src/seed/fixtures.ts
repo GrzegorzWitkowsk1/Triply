@@ -19,7 +19,7 @@ export const SEED_FIXTURES: SeedFixture[] = [
     fixtureKey: "paris",
     prompt: "Five days in Paris with a focus on architecture and shopping.",
     badges: ["architecture", "shopping"],
-    status: "confirmed",
+    status: "ready",
     analysis: deriveTripSchedule({
       destination: "Paris",
       country: "France",
@@ -46,7 +46,7 @@ export const SEED_FIXTURES: SeedFixture[] = [
     fixtureKey: "rome",
     prompt: "Four days in Rome, packed with ruins and food.",
     badges: ["culture", "food"],
-    status: "confirmed",
+    status: "ready",
     analysis: deriveTripSchedule({
       destination: "Rome",
       country: "Italy",

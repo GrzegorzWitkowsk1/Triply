@@ -5,14 +5,22 @@ import "leaflet/dist/leaflet.css";
 interface TripMapProps {
   center: [number, number];
   stops: [number, number][];
+  geometry?: [number, number][] | null;
   active: number;
   onSelect: (index: number) => void;
 }
 
-export default function TripMap({ center, stops, active, onSelect }: TripMapProps) {
+export default function TripMap({
+  center,
+  stops,
+  geometry = null,
+  active,
+  onSelect,
+}: TripMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
+  const markersRef = useRef<L.Marker[]>([]);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
 
@@ -33,6 +41,7 @@ export default function TripMap({ center, stops, active, onSelect }: TripMapProp
       map.remove();
       mapRef.current = null;
       layerRef.current = null;
+      markersRef.current = [];
     };
   }, [center]);
 
@@ -41,23 +50,48 @@ export default function TripMap({ center, stops, active, onSelect }: TripMapProp
     const layer = layerRef.current;
     if (!map || !layer) return;
     layer.clearLayers();
+    markersRef.current = [];
 
-    if (stops.length > 0) {
-      L.polyline(stops, { color: "#f2664b", weight: 4, dashArray: "8 6" }).addTo(layer);
-      map.fitBounds(L.latLngBounds(stops), { padding: [28, 28] });
+    const path = geometry && geometry.length > 1 ? geometry : stops;
+
+    if (path.length > 0) {
+      L.polyline(path, {
+        color: "#f2664b",
+        weight: 4,
+        dashArray: geometry && geometry.length > 1 ? undefined : "8 6",
+      }).addTo(layer);
+      map.fitBounds(L.latLngBounds(path), { padding: [28, 28] });
     }
 
     stops.forEach((pos, i) => {
       const icon = L.divIcon({
         className: "trip-marker",
-        html: `<div class="trip-marker-inner${i === active ? " is-active" : ""}">${i + 1}</div>`,
+        html: `<div class="trip-marker-inner">${i + 1}</div>`,
         iconSize: [28, 28],
         iconAnchor: [14, 14],
       });
       const marker = L.marker(pos, { icon }).addTo(layer);
       marker.on("click", () => onSelectRef.current(i));
+      markersRef.current.push(marker);
     });
-  }, [stops, active]);
+  }, [stops, geometry]);
+
+  useEffect(() => {
+    markersRef.current.forEach((marker, i) => {
+      const inner = marker.getElement()?.querySelector(".trip-marker-inner");
+      inner?.classList.toggle("is-active", i === active);
+    });
+
+    const map = mapRef.current;
+    const target = stops[active];
+
+    if (map && target) {
+      map.flyTo(target, Math.max(map.getZoom(), 16), {
+        animate: true,
+        duration: 0.6,
+      });
+    }
+  }, [active, stops]);
 
   return <div className="trip-map" ref={containerRef} />;
 }

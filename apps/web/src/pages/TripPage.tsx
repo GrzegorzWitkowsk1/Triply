@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Navigate, useParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   AccountBalanceWalletOutlined,
   AutoFixHighOutlined,
@@ -11,20 +11,37 @@ import {
   PlaceOutlined,
   ShareOutlined,
 } from "@mui/icons-material";
-import { useNavigate } from "react-router-dom";
-import TripActivityCard from "../components/trip/TripActivityCard";
+import { PACE_VALUES, type Pace } from "@triply/shared";
 import TripAssistant from "../components/trip/TripAssistant";
 import TripBudgetCard from "../components/trip/TripBudgetCard";
 import TripMap from "../components/trip/TripMap";
 import TripPreferencesCard from "../components/trip/TripPreferencesCard";
-import { EMPTY_BUDGET_BREAKDOWN, findTripDetailByKey } from "../config/trip";
+import TripTimeline from "../components/trip/TripTimeline";
+import {
+  buildDayTimeline,
+  dayGeometry,
+  dayStops,
+  totalItineraryActivities,
+  totalWalkingKm,
+} from "../config/itineraryAdapters";
 import { toTripWeather } from "../config/weather";
+import { useGenerateTrip } from "../hooks/useTripGeneration";
 import { useTrip } from "../hooks/useTrips";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+const STALE_GENERATION_MS = 2 * 60 * 1000;
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  EUR: "€",
+  USD: "$",
+  GBP: "£",
+  PLN: "zł",
+  CHF: "CHF ",
+};
 
 function formatRange(startDate: string | null, endDate: string | null): string {
   if (!startDate) {
@@ -57,39 +74,77 @@ function formatRange(startDate: string | null, endDate: string | null): string {
   return `${startLabel}-${endLabel}`;
 }
 
+function formatBudget(amount: number | null, currency: string | null): string | null {
+  if (amount === null) {
+    return null;
+  }
+
+  const symbol = currency ? CURRENCY_SYMBOLS[currency] ?? `${currency} ` : "";
+
+  return `${symbol}${Math.round(amount)}`;
+}
+
+function paceIndex(pace: Pace | null): number {
+  const index = PACE_VALUES.indexOf(pace ?? "balanced");
+
+  return index >= 0 ? index : 1;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "Something went wrong. Please try again.";
+}
+
 export default function TripPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const trip = useTrip(id);
-
-  const analysis = trip.data?.analysis;
-  const fixture = findTripDetailByKey(trip.data?.fixtureKey ?? null);
+  const generate = useGenerateTrip();
 
   const [activeDay, setActiveDay] = useState(0);
-  const [activeActivity, setActiveActivity] = useState(0);
-  const [tags, setTags] = useState<string[]>(fixture?.prefDefaults.tags ?? []);
-  const [pace, setPace] = useState(fixture?.prefDefaults.pace ?? 1);
-  const [walking, setWalking] = useState(fixture?.prefDefaults.walking ?? 1);
+  const [activeStop, setActiveStop] = useState(0);
+  const [tags, setTags] = useState<string[]>([]);
+  const [pace, setPace] = useState(1);
+  const [walking, setWalking] = useState(1);
+  const autoStartRef = useRef(false);
 
-  const dayCountHint = Math.max(
-    trip.data?.analysis?.durationDays ?? fixture?.days ?? 0,
-    trip.data?.weather?.length ?? 0,
-    fixture?.tripDays.length ?? 0,
-    1,
-  );
+  const analysis = trip.data?.analysis ?? null;
+  const itinerary = trip.data?.itinerary ?? null;
+  const status = trip.data?.status ?? "draft";
 
-  useEffect(() => {
-    setActiveDay((current) => Math.min(current, dayCountHint - 1));
-  }, [dayCountHint]);
+  const isGenerating = (status === "generating" || generate.isPending) && !generate.isError;
+  const isFailed = status === "failed" || generate.isError;
 
   useEffect(() => {
-    if (!fixture) return;
-    setActiveDay(0);
-    setActiveActivity(0);
-    setTags(fixture.prefDefaults.tags);
-    setPace(fixture.prefDefaults.pace);
-    setWalking(fixture.prefDefaults.walking);
-  }, [id, fixture]);
+    setTags(analysis?.interests ?? []);
+    setPace(paceIndex(analysis?.pace ?? null));
+  }, [analysis?.interests, analysis?.pace]);
+
+  const dayCount = itinerary?.days.length ?? analysis?.durationDays ?? 0;
+
+  useEffect(() => {
+    setActiveDay((current) => Math.min(current, Math.max(dayCount - 1, 0)));
+  }, [dayCount, id]);
+
+  useEffect(() => {
+    setActiveStop(0);
+    autoStartRef.current = false;
+  }, [id]);
+
+  const autoStart =
+    (location.state as { autoStart?: boolean } | null)?.autoStart ?? false;
+
+  useEffect(() => {
+    if (!id || !autoStart || autoStartRef.current || status !== "draft" || generate.isPending) {
+      return;
+    }
+
+    autoStartRef.current = true;
+    navigate(location.pathname, { replace: true });
+    generate.mutate(id);
+  }, [autoStart, id, status, location.pathname, navigate, generate.mutate]);
 
   if (trip.isPending) {
     return (
@@ -101,37 +156,39 @@ export default function TripPage() {
     );
   }
 
-  if (trip.isError || !trip.data) {
+  if (trip.isError || !trip.data || !analysis) {
     return <Navigate to="/trips" replace />;
   }
 
-  const city = analysis?.destination ?? fixture?.city ?? "Untitled trip";
-  const country = analysis?.country ?? fixture?.country ?? "";
-  const days = analysis?.durationDays ?? fixture?.days ?? 0;
-  const dateLabel = formatRange(analysis?.startDate ?? null, analysis?.endDate ?? null);
-
-  const weatherDays = trip.data.weather;
-  const dayWeather = weatherDays[activeDay];
-  const weather = dayWeather ? toTripWeather(dayWeather) : fixture?.weather ?? null;
-  const stepsKm = fixture?.stepsKm ?? null;
-  const center =
-    analysis?.location ??
-    (fixture ? { lat: fixture.center[0], lng: fixture.center[1] } : null);
-  const tripDays = fixture?.tripDays ?? [];
-  const dayRoutes = fixture?.dayRoutes ?? [];
-  const budgetSpent = fixture?.budget.spent ?? analysis?.budget.amount ?? 0;
-  const budgetWhole = fixture?.budget.whole ?? analysis?.budget.amount ?? 0;
-
-  const dayCount = dayCountHint;
+  const city = analysis.destination ?? "Untitled trip";
+  const country = analysis.country ?? "";
+  const days = itinerary?.days.length ?? analysis.durationDays ?? 0;
+  const dateLabel = formatRange(analysis.startDate, analysis.endDate);
+  const day = itinerary?.days[activeDay];
+  const dayWeather = trip.data.weather[activeDay];
+  const weather = dayWeather ? toTripWeather(dayWeather) : null;
   const WeatherIcon = weather?.icon ?? null;
-  const totalActivities = tripDays.reduce((sum, day) => sum + day.activities.length, 0);
-  const spent = budgetSpent;
-  const whole = budgetWhole;
-  const budgetLevel = spent > whole ? "is-over" : whole - spent <= 50 ? "is-close" : "is-ok";
-  const day = tripDays[activeDay];
-  const stops = center && dayRoutes[activeDay]
-    ? dayRoutes[activeDay].map(([lat, lng]) => [lat, lng] as [number, number])
-    : [];
+
+  const center = analysis.location
+    ? ([analysis.location.lat, analysis.location.lng] as [number, number])
+    : null;
+  const entries = day ? buildDayTimeline(day) : [];
+  const stops = dayStops(day);
+  const geometry = dayGeometry(day);
+
+  const totalActivities = itinerary ? totalItineraryActivities(itinerary) : 0;
+  const walkingKm = itinerary ? totalWalkingKm(itinerary) : null;
+  const budgetLabel = formatBudget(analysis.budget.amount, analysis.budget.currency);
+  const budgetAmount = analysis.budget.amount;
+  const budgetSymbol = analysis.budget.currency
+    ? CURRENCY_SYMBOLS[analysis.budget.currency] ?? `${analysis.budget.currency} `
+    : "€";
+
+  const generationStartedAt = trip.data.generation.startedAt;
+  const isGenerationStale =
+    status === "generating" &&
+    generationStartedAt !== null &&
+    Date.now() - Date.parse(generationStartedAt) > STALE_GENERATION_MS;
 
   const toggleTag = (tagId: string) => {
     setTags((current) =>
@@ -141,6 +198,15 @@ export default function TripPage() {
     );
   };
 
+  const handleGenerate = () => {
+    if (!id) {
+      return;
+    }
+
+    generate.reset();
+    generate.mutate(id);
+  };
+
   return (
     <div className="trip-page">
       <div className="trip-inner">
@@ -148,26 +214,32 @@ export default function TripPage() {
           <div className="trip-hero-locale">
             <p className="trip-eyebrow">Your itinerary</p>
             <h1>
-              {city}, {country}
+              {city}
+              {country ? `, ${country}` : ""}
             </h1>
             <p className="trip-hero-sub">
-              {dateLabel} · {days} days
+              {dateLabel}
+              {days > 0 ? ` · ${days} days` : ""}
             </p>
             <div className="trip-hero-badges">
-              {WeatherIcon && weather && (
+              {status === "ready" && WeatherIcon && weather && (
                 <span className="trip-badge">
                   <WeatherIcon /> {weather.temp}° {weather.label}
                 </span>
               )}
-              <span className={`trip-badge is-budget ${budgetLevel}`}>
-                <AccountBalanceWalletOutlined /> €{spent} / €{whole}
-              </span>
-              <span className="trip-badge">
-                <PlaceOutlined /> {totalActivities} activities
-              </span>
-              {stepsKm !== null && (
+              {budgetLabel && (
+                <span className="trip-badge is-budget is-ok">
+                  <AccountBalanceWalletOutlined /> {budgetLabel} budget
+                </span>
+              )}
+              {status === "ready" && totalActivities > 0 && (
                 <span className="trip-badge">
-                  <DirectionsWalkOutlined /> {stepsKm} km walking
+                  <PlaceOutlined /> {totalActivities} activities
+                </span>
+              )}
+              {status === "ready" && walkingKm !== null && (
+                <span className="trip-badge">
+                  <DirectionsWalkOutlined /> {walkingKm} km walking
                 </span>
               )}
             </div>
@@ -180,99 +252,198 @@ export default function TripPage() {
             >
               <BackpackOutlined />
             </button>
-            <button type="button" className="trip-action">
+            <button
+              type="button"
+              className="trip-action"
+              onClick={() => navigate("/", { state: { focusPrompt: true } })}
+            >
               <EditOutlined /> Edit
             </button>
             <button type="button" className="trip-action">
               <ShareOutlined /> Share
             </button>
-            <button type="button" className="trip-action is-primary">
-              <AutoFixHighOutlined /> Optimize
-            </button>
+            {status === "ready" && (
+              <button
+                type="button"
+                className="trip-action is-primary"
+                onClick={handleGenerate}
+                disabled={generate.isPending}
+              >
+                <AutoFixHighOutlined /> Regenerate
+              </button>
+            )}
           </div>
         </section>
 
-        <div className="trip-content">
-          <div className="trip-left">
-            <div className="trip-day-header">
-              <span className="trip-day-label">
-                Day {activeDay + 1} of {dayCount}
-              </span>
-              <div className="trip-day-nav">
-                <button
-                  type="button"
-                  aria-label="Previous day"
-                  disabled={activeDay === 0}
-                  onClick={() => {
-                    setActiveDay((dayIndex) => Math.max(0, dayIndex - 1));
-                    setActiveActivity(0);
-                  }}
-                >
-                  <ChevronLeftOutlined />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Next day"
-                  disabled={activeDay >= dayCount - 1}
-                  onClick={() => {
-                    setActiveDay((dayIndex) =>
-                      Math.min(dayCount - 1, dayIndex + 1)
-                    );
-                    setActiveActivity(0);
-                  }}
-                >
-                  <ChevronRightOutlined />
-                </button>
+        {status === "ready" && itinerary ? (
+          <div className="trip-content">
+            <div className="trip-left">
+              <div className="trip-day-header">
+                <span className="trip-day-label">
+                  Day {activeDay + 1} of {dayCount}
+                </span>
+                <div className="trip-day-nav">
+                  <button
+                    type="button"
+                    aria-label="Previous day"
+                    disabled={activeDay === 0}
+                    onClick={() => {
+                      setActiveDay((dayIndex) => Math.max(0, dayIndex - 1));
+                      setActiveStop(0);
+                    }}
+                  >
+                    <ChevronLeftOutlined />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Next day"
+                    disabled={activeDay >= dayCount - 1}
+                    onClick={() => {
+                      setActiveDay((dayIndex) =>
+                        Math.min(dayCount - 1, dayIndex + 1)
+                      );
+                      setActiveStop(0);
+                    }}
+                  >
+                    <ChevronRightOutlined />
+                  </button>
+                </div>
+              </div>
+              <div className="trip-activity-list">
+                <TripTimeline
+                  entries={entries}
+                  activeStop={activeStop}
+                  onSelectStop={setActiveStop}
+                />
+                {entries.length === 0 && (
+                  <p className="trip-eyebrow">
+                    No activities were scheduled for this day.
+                  </p>
+                )}
+                {day && day.warnings.length > 0 && (
+                  <ul className="trip-eyebrow">
+                    {day.warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
-            <div className="trip-activity-list">
-              {day?.activities.map((activity, i) => (
-                <TripActivityCard
-                  key={`${i}-${activity.name}`}
-                  activity={activity}
-                  index={i + 1}
-                  selected={activeActivity === i}
-                  onSelect={() => setActiveActivity(i)}
-                />
-              ))}
-              {!day && (
-                <p className="trip-eyebrow">
-                  The itinerary for this trip has not been generated yet.
-                </p>
-              )}
-            </div>
-          </div>
 
-          <div className="trip-right">
-            {center && (
-              <div className="trip-map-wrap">
-                <TripMap
-                  center={[center.lat, center.lng]}
-                  stops={stops}
-                  active={activeActivity}
-                  onSelect={setActiveActivity}
+            <div className="trip-right">
+              {center && (
+                <div className="trip-map-wrap">
+                  <TripMap
+                    center={center}
+                    stops={stops}
+                    geometry={geometry}
+                    active={activeStop}
+                    onSelect={setActiveStop}
+                  />
+                  <p className="trip-map-caption">
+                    {itinerary.routingSource === "provider"
+                      ? `Walking route through the day's stops in ${city}.`
+                      : `Approximate walking route through the day's stops in ${city}.`}
+                  </p>
+                </div>
+              )}
+              {budgetAmount !== null && (
+                <TripBudgetCard
+                  whole={budgetAmount}
+                  currencySymbol={budgetSymbol}
+                  spent={null}
+                  breakdown={null}
                 />
-                <p className="trip-map-caption">
-                  Every stop sits within a short walk — less time in transit, more
-                  time enjoying {city}.
-                </p>
-              </div>
-            )}
-            <TripBudgetCard
-              spent={spent}
-              whole={whole}
-              breakdown={fixture?.budget.breakdown ?? EMPTY_BUDGET_BREAKDOWN}
-            />
-            <TripPreferencesCard
-              tags={tags}
-              onToggleTag={toggleTag}
-              pace={pace}
-              onPaceChange={setPace}
-              walking={walking}
-              onWalkingChange={setWalking}
-            />
+              )}
+              <TripPreferencesCard
+                tags={tags}
+                onToggleTag={toggleTag}
+                pace={pace}
+                onPaceChange={setPace}
+                walking={walking}
+                onWalkingChange={setWalking}
+              />
+            </div>
           </div>
-        </div>
+        ) : (
+          <section className="trip-card trip-status">
+            {isFailed ? (
+              <>
+                <div className="trip-card-head">
+                  <h3>Itinerary generation failed</h3>
+                </div>
+                <p className="trip-eyebrow">
+                  {generate.error
+                    ? errorMessage(generate.error)
+                    : trip.data.generation.error ??
+                      "We couldn't finish generating your itinerary. Your trip details are saved."}
+                </p>
+                <div className="plan-summary-actions">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => navigate("/", { state: { focusPrompt: true } })}
+                  >
+                    Adjust details
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleGenerate}
+                    disabled={generate.isPending}
+                  >
+                    {generate.isPending ? "Retrying…" : "Try again"}
+                  </button>
+                </div>
+              </>
+            ) : isGenerating ? (
+              <>
+                <div className="trip-card-head">
+                  <h3>Building your itinerary</h3>
+                </div>
+                <p className="trip-eyebrow">
+                  {isGenerationStale
+                    ? "This is taking longer than expected. You can safely try again."
+                    : `We're scheduling your days, mapping the routes, and checking the weather in ${city}. This can take a moment.`}
+                </p>
+                {isGenerationStale && (
+                  <div className="plan-summary-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleGenerate}
+                      disabled={generate.isPending}
+                    >
+                      {generate.isPending ? "Retrying…" : "Try again"}
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="trip-card-head">
+                  <h3>Your trip is ready to generate</h3>
+                </div>
+                <p className="trip-eyebrow">
+                  {dateLabel}
+                  {days > 0 ? ` · ${days} days` : ""} in {city}
+                  {country ? `, ${country}` : ""}. Generate the day-by-day itinerary
+                  whenever you're ready.
+                </p>
+                <div className="plan-summary-actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleGenerate}
+                    disabled={generate.isPending}
+                  >
+                    Generate my trip
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        )}
       </div>
       <TripAssistant key={id} city={city} />
     </div>

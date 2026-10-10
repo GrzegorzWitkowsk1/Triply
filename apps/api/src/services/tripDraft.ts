@@ -7,11 +7,12 @@ import {
   type AskableField,
   type TripAnalysis,
   type TripAnalysisResult,
-type TripRequirementsAnswers,
+  type TripRequirementsAnswers,
   type TripEquipmentItem,
   type TripDayWeather,
   type TripAttraction,
   type TripDetail,
+  type TripItinerary,
   type TripSummary,
 } from "@triply/shared";
 import { Types } from "mongoose";
@@ -24,6 +25,7 @@ import {
   type AttractionsQueryRecord,
   type ClusteringRecord,
   type TripDocument,
+  type TripItineraryRecord,
 } from "../models/Trip.js";
 
 const WEATHER_TTL_MS = 24 * 60 * 60 * 1000;
@@ -505,6 +507,34 @@ export async function saveTripRequirements(
   return draft.save();
 }
 
+export class TripRequirementsIncompleteError extends Error {
+  readonly missing: AskableField[];
+
+  constructor(missing: AskableField[]) {
+    super("Trip requirements are incomplete");
+    this.name = "TripRequirementsIncompleteError";
+    this.missing = missing;
+  }
+}
+
+/**
+ * Finalizes a draft once every askable field is answered. Keeps the trip in
+ * `draft` status — generation is a separate, explicit operation.
+ */
+export async function confirmTripRequirements(trip: TripDocument): Promise<TripDocument> {
+  const analysis = tripAnalysisSchema.parse(toPlainAnalysis(trip.analysis));
+  const missing = missingFields(analysis, trip.confirmedFields);
+
+  if (missing.length > 0) {
+    throw new TripRequirementsIncompleteError(missing);
+  }
+
+  trip.confirmedFields = ASKABLE_FIELDS.filter((field) => !missing.includes(field));
+  trip.missingFields = [];
+
+  return trip.save();
+}
+
 export function toTripAnalysisResult(draft: TripDocument): TripAnalysisResult {
   const analysis = tripAnalysisSchema.parse(toPlainAnalysis(draft.analysis));
   const gaps = missingFields(analysis, draft.confirmedFields);
@@ -551,8 +581,58 @@ export function toTripSummary(trip: TripDocument): TripSummary {
   };
 }
 
+function toPlainItinerary(trip: TripDocument): TripItineraryRecord | null {
+  if (!trip.itinerary) {
+    return null;
+  }
+
+  const candidate = trip.itinerary as unknown as { toObject?: () => TripItineraryRecord };
+
+  return typeof candidate.toObject === "function" ? candidate.toObject() : trip.itinerary;
+}
+
+function toTripItinerary(trip: TripDocument, generatedAt: string | null): TripItinerary | null {
+  const record = toPlainItinerary(trip);
+
+  if (!record) {
+    return null;
+  }
+
+  return {
+    timeZone: record.timeZone,
+    routingSource: record.routingSource,
+    generatedAt,
+    days: record.days.map((day) => ({
+      dayIndex: day.dayIndex,
+      date: day.date,
+      timeZone: day.timeZone,
+      activities: day.activities.map((activity) => ({
+        ...activity,
+        warnings: activity.warnings ? [...activity.warnings] : undefined,
+      })),
+      stops: day.stops.map((stop) => ({ ...stop })),
+      geometry: day.geometry ?? null,
+      segments: day.segments.map((segment) => ({ ...segment })),
+      totalVisitMinutes: day.totalVisitMinutes,
+      totalTravelMinutes: day.totalTravelMinutes,
+      totalDistanceMeters: day.totalDistanceMeters,
+      partiallyEstimated: day.partiallyEstimated,
+      warnings: [...day.warnings],
+    })),
+    unscheduled: record.unscheduled.map((entry) => ({
+      place: { ...entry.place },
+      dayIndex: entry.dayIndex,
+      reason: entry.reason,
+      detail: entry.detail ?? null,
+    })),
+  };
+}
+
 export function toTripDetail(trip: TripDocument): TripDetail {
   const result = toTripAnalysisResult(trip);
+  const generatedAt = trip.generation?.generatedAt
+    ? trip.generation.generatedAt.toISOString()
+    : null;
 
   return {
     ...result,
@@ -566,6 +646,12 @@ export function toTripDetail(trip: TripDocument): TripDetail {
       weatherCode: day.weatherCode,
       temperatureMax: day.temperatureMax,
     })),
+    itinerary: toTripItinerary(trip, generatedAt),
+    generation: {
+      startedAt: trip.generation?.startedAt ? trip.generation.startedAt.toISOString() : null,
+      generatedAt,
+      error: trip.generation?.error ?? null,
+    },
     fixtureKey: trip.fixtureKey ?? null,
     createdAt: (trip as any).createdAt ? (trip as any).createdAt.toISOString() : null,
     updatedAt: (trip as any).updatedAt ? (trip as any).updatedAt.toISOString() : null,

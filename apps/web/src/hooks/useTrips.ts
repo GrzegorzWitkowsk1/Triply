@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { TripStatus } from "@triply/shared";
+import type { TripDetail, TripStatus } from "@triply/shared";
 import { getTrip, listTrips } from "../api/trips";
 
 export const TRIPS_KEY = ["trips"] as const;
@@ -16,10 +16,16 @@ export function useTrips(status?: TripStatus) {
   });
 }
 
+const GENERATING_POLL_MS = 4000;
+
 export function useTrip(id: string | undefined) {
   return useQuery({
     queryKey: tripQueryKey(id ?? ""),
     queryFn: () => getTrip(id as string),
     enabled: Boolean(id),
+    refetchInterval: (query) =>
+      (query.state.data as TripDetail | undefined)?.status === "generating"
+        ? GENERATING_POLL_MS
+        : false,
   });
 }

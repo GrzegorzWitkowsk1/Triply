@@ -19,6 +19,7 @@ import {
   useAnalyzeTrip,
   useUpdateTripRequirements,
 } from "../hooks/useTripAnalysis";
+import { useConfirmTrip } from "../hooks/useTripGeneration";
 import { useTripPlanning } from "../hooks/useTripPlanning";
 
 interface VoiceHint {
@@ -61,6 +62,7 @@ export default function HomePage() {
   const planning = useTripPlanning();
   const analyze = useAnalyzeTrip();
   const saveRequirements = useUpdateTripRequirements();
+  const createTrip = useConfirmTrip();
   const tripsQuery = useTrips();
   const myTrips = useMemo(
     () => buildHomeTripCards(tripsQuery.data ?? []),
@@ -69,6 +71,7 @@ export default function HomePage() {
   const [draft, setDraft] = useState<TripAnalysisResult | null>(null);
   const [isDialogOpen, setDialogOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const canPlan = prompt.trim().length > 0 || selectedBadges.length > 0;
   const isPlanning = planning.hasStarted;
@@ -208,10 +211,12 @@ export default function HomePage() {
     setDraft(null);
     setDialogOpen(false);
     setSaveError(null);
+    setCreateError(null);
   };
 
   const startPlan = () => {
     setSaveError(null);
+    setCreateError(null);
     setDraft(null);
     setVoiceHint(null);
     planning.start();
@@ -235,10 +240,24 @@ export default function HomePage() {
     );
   };
 
+  const generateTrip = () => {
+    if (!draft || createTrip.isPending) return;
+
+    setCreateError(null);
+
+    createTrip.mutate(draft.draftId, {
+      onSuccess: (trip) => {
+        navigate(`/trips/${trip.id}`, { state: { autoStart: true } });
+      },
+      onError: (error) => setCreateError(errorMessage(error)),
+    });
+  };
+
   const saveAnswers = (payload: UpdateTripRequirements) => {
     if (!draft) return;
 
     setSaveError(null);
+    setCreateError(null);
 
     saveRequirements.mutate(
       {
@@ -370,6 +389,9 @@ export default function HomePage() {
             missingFields={draft.missingFields}
             requirementsComplete={draft.requirementsComplete}
             onEdit={() => setDialogOpen(true)}
+            onGenerate={generateTrip}
+            isGenerating={createTrip.isPending}
+            generateError={createError}
           />
         )}
 

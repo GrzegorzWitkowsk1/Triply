@@ -51,3 +51,15 @@ export function updateTripRequirements(
     body: JSON.stringify(payload),
   });
 }
+
+export function confirmTrip(id: string): Promise<TripDetail> {
+  return request<TripDetail>(`/api/trips/${id}/confirm`, {
+    method: "POST",
+  });
+}
+
+export function generateTrip(id: string): Promise<TripDetail> {
+  return request<TripDetail>(`/api/trips/${id}/generate`, {
+    method: "POST",
+  });
+}

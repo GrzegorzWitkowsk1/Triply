@@ -2,15 +2,42 @@ import { AccountBalanceWalletOutlined } from "@mui/icons-material";
 import type { BudgetSlice } from "../../config/trip";
 
 interface TripBudgetCardProps {
-  spent: number;
   whole: number;
-  breakdown: BudgetSlice[];
+  spent?: number | null;
+  breakdown?: BudgetSlice[] | null;
+  currencySymbol?: string;
 }
 
 const REST_COLOR = "#c9c9c9";
 const REST_THRESHOLD = 0.25;
 
-export default function TripBudgetCard({ spent, whole, breakdown }: TripBudgetCardProps) {
+export default function TripBudgetCard({
+  whole,
+  spent = null,
+  breakdown = null,
+  currencySymbol = "€",
+}: TripBudgetCardProps) {
+  const hasBreakdown =
+    breakdown !== null && breakdown.length > 0 && whole > 0;
+
+  if (!hasBreakdown) {
+    return (
+      <section className="trip-card budget-card">
+        <div className="trip-card-head">
+          <h3>Trip Budget</h3>
+          <span className="budget-total">
+            {currencySymbol}
+            {whole} <em>planned</em>
+          </span>
+        </div>
+        <span className="budget-extra">
+          <AccountBalanceWalletOutlined /> Your declared budget
+        </span>
+      </section>
+    );
+  }
+
+  const spentAmount = spent ?? 0;
   const restItems = breakdown.filter(
     (item) => item.amount / whole <= REST_THRESHOLD
   );
@@ -24,7 +51,8 @@ export default function TripBudgetCard({ spent, whole, breakdown }: TripBudgetCa
       <div className="trip-card-head">
         <h3>Trip Budget</h3>
         <span className="budget-total">
-          €{spent} <em>/ €{whole}</em>
+          {currencySymbol}
+          {spentAmount} <em>/ {currencySymbol}{whole}</em>
         </span>
       </div>
       <div className="budget-chart">
@@ -54,13 +82,19 @@ export default function TripBudgetCard({ spent, whole, breakdown }: TripBudgetCa
                 style={isRest ? undefined : { background: item.color }}
               />
               <span className="budget-label">{item.label}</span>
-              <span className="budget-amount">€{item.amount}</span>
+              <span className="budget-amount">
+                {currencySymbol}
+                {item.amount}
+              </span>
             </li>
           );
         })}
       </ul>
       <span className="budget-extra">
-        <AccountBalanceWalletOutlined /> {whole - spent >= 0 ? `${whole - spent} left` : `${spent - whole} over budget`}
+        <AccountBalanceWalletOutlined />{" "}
+        {whole - spentAmount >= 0
+          ? `${currencySymbol}${whole - spentAmount} left`
+          : `${currencySymbol}${spentAmount - whole} over budget`}
       </span>
     </section>
   );
