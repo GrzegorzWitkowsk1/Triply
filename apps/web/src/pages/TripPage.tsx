@@ -269,7 +269,7 @@ export default function TripPage() {
                 onClick={handleGenerate}
                 disabled={generate.isPending}
               >
-                <AutoFixHighOutlined /> Regenerate
+                <AutoFixHighOutlined /> Regenerate Day
               </button>
             )}
           </div>
