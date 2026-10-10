@@ -51,11 +51,27 @@ Per-day forecast (daily max temperature + WMO weather code) is fetched from the 
 
 ## Run
 
+Routing defaults to the FOSSGIS pedestrian OSRM endpoint at
+`https://routing.openstreetmap.de/routed-foot`. `ROUTING_MODE` and
+`ROUTING_ENABLED_MODES` default to `walking`; `ROUTING_OSRM_PROFILE` defaults to
+`driving`, the URL profile used with that endpoint's pedestrian graph. This URL
+profile does not turn the route into a car route. Custom OSRM deployments can
+override the endpoint, profile and enabled modes in `.env`.
+
+Requests to this public endpoint are spaced at least one second apart across
+provider instances to respect its [usage policy](https://routing.openstreetmap.de/about.html).
+Routes use OSRM and OpenStreetMap data. Connection failures still produce clearly
+labelled estimates without fabricated route geometry.
+
 ```bash
 bun run dev      # both apps at once (turborepo)
 bun run dev:api  # backend only on http://localhost:4000
 bun run dev:web  # frontend only on http://localhost:5173
 ```
+
+Development servers resolve `@triply/shared` directly from its TypeScript sources.
+The API enables the `development` export condition so contract changes are watched
+without rebuilding `shared/dist`. Production builds still consume the compiled package.
 
 ## Endpoints
 

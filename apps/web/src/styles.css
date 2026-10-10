@@ -3028,6 +3028,15 @@ body {
   color: var(--color-muted);
 }
 
+.trip-map-caption .trip-routing-retry {
+  min-width: 0;
+  margin-left: 8px;
+  padding: 0 6px;
+  font-size: inherit;
+  text-transform: none;
+  vertical-align: baseline;
+}
+
 .trip-page .trip-card {
   background: #ffffff;
   border: 1px solid var(--color-line);
@@ -4607,3 +4616,8 @@ body {
 .regenerate-actions {
   padding: 12px 24px 20px;
 }
+.itinerary-editable-card { position: relative; }
+.itinerary-card-controls { display: flex; position: absolute; top: 8px; right: 8px; }
+.itinerary-editable-card .activity-card { padding-right: 86px; }
+.itinerary-picker-results { display: grid; gap: 10px; margin-top: 12px; max-height: 350px; overflow-y: auto; }
+.itinerary-picker-results .activity-card:disabled { opacity: .55; cursor: default; }

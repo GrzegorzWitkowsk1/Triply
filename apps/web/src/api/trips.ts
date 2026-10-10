@@ -10,6 +10,19 @@ import type {
   UpdateTripRequirements,
 } from "@triply/shared";
 import { request } from "./client";
+import type { ItineraryEditRequest, ItineraryEditResponse, ItineraryCandidatesResponse } from "@triply/shared";
+
+export function editTripItinerary(tripId: string, input: ItineraryEditRequest) {
+  return request<ItineraryEditResponse>(`/api/trips/${tripId}/itinerary/edit`, {
+    method: "POST", body: JSON.stringify(input),
+  });
+}
+
+export function getItineraryCandidates(tripId: string, search = "", discover = false) {
+  return request<ItineraryCandidatesResponse>(`/api/trips/${tripId}/itinerary/candidates`, {
+    method: "POST", body: JSON.stringify({ search, discover }),
+  });
+}
 
 export type { RegenerateDayPreview, TripAnalysisResult, TripDetail, TripStatus, TripSummary };
 

@@ -552,7 +552,7 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
 
     if (unverifiedOpeningCount > 0) {
       warnings.push(
-        `Opening hours unverified for ${unverifiedOpeningCount} attraction(s); schedule is tentative.`,
+        `Opening hours unverified for ${unverifiedOpeningCount} attraction(s). Schedule is tentative.`,
       );
     }
 

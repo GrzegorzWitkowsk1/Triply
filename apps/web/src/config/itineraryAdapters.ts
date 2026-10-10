@@ -8,6 +8,7 @@ export interface TimelineTravel {
 }
 
 export interface TimelineAttraction {
+  placeId?: string;
   kind: "attraction";
   key: string;
   stopIndex: number;
@@ -100,6 +101,7 @@ export function buildDayTimeline(day: ItineraryDay): TimelineEntry[] {
 
       return {
         kind: "attraction",
+        placeId: activity.placeId,
         key,
         stopIndex,
         time: formatClock(activity.startTime),

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRoutingProvider, type RoutingProviderConfig } from "./factory.js";
 
 function config(overrides: Partial<RoutingProviderConfig> = {}): RoutingProviderConfig {
@@ -12,6 +12,19 @@ function config(overrides: Partial<RoutingProviderConfig> = {}): RoutingProvider
 }
 
 describe("createRoutingProvider", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("passes the pedestrian endpoint and URL profile to the existing OSRM adapter", async () => {
+    const fetchMock = vi.fn(async (_url: string) => Response.json({ code: "Ok", durations: [[0, 100], [100, 0]], distances: [[0, 125], [125, 0]] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createRoutingProvider(config({
+      ROUTING_OSRM_URL: "https://foot.osrm.test/routed-foot", ROUTING_OSRM_PROFILE: "driving", ROUTING_ENABLED_MODES: ["walking"],
+    }));
+    await provider!.getTravelMatrix([{ lat: 48.85, lng: 2.35 }, { lat: 48.86, lng: 2.36 }], "walking");
+    expect(provider!.supportsMode("walking")).toBe(true);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/routed-foot/table/v1/driving/");
+  });
+
   it("creates an OSRM provider with the configured modes", () => {
     const provider = createRoutingProvider(config());
 

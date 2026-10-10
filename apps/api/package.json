@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/index.ts",
+    "dev": "bun --watch --conditions=development src/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/start.js",
     "seed": "bun src/seed/index.ts",

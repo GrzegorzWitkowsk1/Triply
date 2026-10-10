@@ -10,9 +10,24 @@ import type { RouteLegValue, RouteResult, RoutingProvider, TravelMatrix } from "
 const USER_AGENT = "Triply/0.1 (trip planning)";
 const DEFAULT_BACKOFF_MS = [1_000, 2_000];
 const DEFAULT_TOTAL_BUDGET_MS = 20_000;
+// Public FOSSGIS endpoints permit at most one request per second. Share the
+// reservation across provider instances, days and simultaneous edit requests.
+const publicRequestSlots = new Map<string, number>();
+
+async function waitForPublicRequestSlot(url: string, remainingMs: number, mode: TravelMode): Promise<void> {
+  const host = new URL(url).hostname;
+  if (host !== "routing.openstreetmap.de") return;
+  const now = Date.now();
+  const slot = Math.max(now, publicRequestSlots.get(host) ?? 0);
+  if (slot - now >= remainingMs) throw routingErrorFromHttpStatus(429, "osrm", mode);
+  publicRequestSlots.set(host, slot + 1_000);
+  if (slot > now) await sleep(slot - now);
+}
 
 export interface OsrmConfig {
   baseUrl: string;
+  /** OSRM URL profile, independent of Triply's travel mode and the endpoint's graph. */
+  profile?: string;
   supportedModes: readonly TravelMode[];
   timeoutMs: number;
   backoffMs?: readonly number[];
@@ -114,7 +129,8 @@ export function createOsrmProvider(config: OsrmConfig): RoutingProvider {
     mode: TravelMode,
   ): string {
     const path = coordinates.map((point) => `${point.lng},${point.lat}`).join(";");
-    const url = new URL(`${baseUrl}/${service}/v1/${mode}/${path}`);
+    const profile = config.profile ?? mode;
+    const url = new URL(`${baseUrl}/${service}/v1/${encodeURIComponent(profile)}/${path}`);
 
     if (service === "table") {
       url.searchParams.set("annotations", "duration,distance");
@@ -127,11 +143,11 @@ export function createOsrmProvider(config: OsrmConfig): RoutingProvider {
     return url.toString();
   }
 
-  async function attemptRequest(url: string): Promise<AttemptOutcome> {
+  async function attemptRequest(url: string, timeoutMs: number): Promise<AttemptOutcome> {
     try {
       const response = await fetch(url, {
         headers: { "User-Agent": USER_AGENT },
-        signal: AbortSignal.timeout(config.timeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       });
 
       if (!response.ok) {
@@ -174,7 +190,10 @@ export function createOsrmProvider(config: OsrmConfig): RoutingProvider {
         throw routingConnectionError(lastError ?? new Error(lastReason), "osrm", mode);
       }
 
-      const outcome = await attemptRequest(url);
+      await waitForPublicRequestSlot(url, remaining, mode);
+      const requestBudget = totalBudgetMs - (Date.now() - startedAt);
+      if (requestBudget <= 0) throw routingConnectionError(new Error("Request budget exhausted"), "osrm", mode);
+      const outcome = await attemptRequest(url, Math.min(config.timeoutMs, requestBudget));
 
       if (outcome.ok) {
         return outcome.payload;

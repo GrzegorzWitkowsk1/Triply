@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { Alert, Button, CircularProgress } from "@mui/material";
+import type { ItineraryEditOperation } from "@triply/shared";
+import AttractionPicker from "../components/trip/AttractionPicker";
+import MoveAttractionDialog from "../components/trip/MoveAttractionDialog";
+import { useItineraryEditing } from "../hooks/useItineraryEditing";
 import {
   AccountBalanceWalletOutlined,
   AutoFixHighOutlined,
@@ -34,6 +39,7 @@ import {
   buildDayTimeline,
   dayGeometry,
   dayStops,
+  formatDuration,
   totalItineraryActivities,
   totalWalkingKm,
 } from "../config/itineraryAdapters";
@@ -121,6 +127,10 @@ export default function TripPage() {
   const applyRegeneration = useApplyRegeneration();
   const saveRequirements = useUpdateTripRequirements();
   const queryClient = useQueryClient();
+  const itineraryEdit = useItineraryEditing();
+  const [picker, setPicker] = useState<{ replaceId?: string } | null>(null);
+  const [movingId, setMovingId] = useState<string | null>(null);
+  const [editNotice, setEditNotice] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
 
   const [activeDay, setActiveDay] = useState(0);
@@ -254,8 +264,34 @@ export default function TripPage() {
   };
 
   const dayIndex = day?.dayIndex ?? activeDay + 1;
+  const scheduledStops = day?.stops.filter((stop) => day.activities.some((activity) => activity.type === "attraction" && activity.placeId === stop.placeId)) ?? [];
+  const editError = itineraryEdit.error ? (() => {
+    const error = itineraryEdit.error;
+    const details = error instanceof ApiError ? error.details : null;
+    const warnings = details && typeof details === "object" && "warnings" in details && Array.isArray(details.warnings)
+      ? details.warnings.filter((warning): warning is string => typeof warning === "string").join(" ") : "";
+    return `${error.message}${warnings ? ` ${warnings}` : ""}`;
+  })() : null;
+  const submitEdit = (operation: ItineraryEditOperation) => {
+    if (!id || itineraryEdit.isPending || regenerate.isPending || applyRegeneration.isPending) return;
+    const selectedId = scheduledStops[activeStop]?.placeId;
+    setEditNotice(null);
+    itineraryEdit.mutate({ tripId: id, operation, expectedVersion: trip.data.itineraryVersion ?? 0 }, {
+      onSuccess: (result) => {
+        setPicker(null); setMovingId(null); setRegenerationPreview(null);
+        const updatedDay = result.trip.itinerary?.days.find((entry) => entry.dayIndex === dayIndex);
+        const updatedStops = updatedDay?.stops.filter((stop) => updatedDay.activities.some((activity) => activity.type === "attraction" && activity.placeId === stop.placeId)) ?? [];
+        setActiveStop(selectedId ? updatedStops.findIndex((stop) => stop.placeId === selectedId) : -1);
+        const routingUnavailable = operation.type === "reroute" && (!updatedDay?.geometry || updatedDay.geometry.coordinates.length < 2);
+        setEditNotice(routingUnavailable
+          ? `Route geometry is still unavailable. You can retry again. ${result.warnings.join(" ")}`.trim()
+          : result.warnings.length ? `Saved. ${result.warnings.join(" ")}` : "Itinerary saved.");
+      },
+    });
+  };
 
   const openRegenerate = () => {
+    if (itineraryEdit.isPending) return;
     regenerate.reset();
     applyRegeneration.reset();
     setRegenerationPreview(null);
@@ -360,6 +396,7 @@ export default function TripPage() {
               <button
                 type="button"
                 className="trip-action is-primary"
+                disabled={itineraryEdit.isPending}
                 onClick={openRegenerate}
               >
                 <AutoFixHighOutlined /> Regenerate Day
@@ -379,7 +416,7 @@ export default function TripPage() {
                   <button
                     type="button"
                     aria-label="Previous day"
-                    disabled={activeDay === 0}
+                    disabled={activeDay === 0 || itineraryEdit.isPending}
                     onClick={() => {
                       setActiveDay((dayIndex) => Math.max(0, dayIndex - 1));
                       setActiveStop(0);
@@ -390,7 +427,7 @@ export default function TripPage() {
                   <button
                     type="button"
                     aria-label="Next day"
-                    disabled={activeDay >= dayCount - 1}
+                    disabled={activeDay >= dayCount - 1 || itineraryEdit.isPending}
                     onClick={() => {
                       setActiveDay((dayIndex) =>
                         Math.min(dayCount - 1, dayIndex + 1)
@@ -403,10 +440,27 @@ export default function TripPage() {
                 </div>
               </div>
               <div className="trip-activity-list">
+                {day && <p className="trip-eyebrow">
+                  {scheduledStops.length} stops · {formatDuration(day.totalVisitMinutes)} visiting · {formatDuration(day.totalTravelMinutes)} travel
+                  {day.totalDistanceMeters !== null ? ` · ${(day.totalDistanceMeters / 1000).toFixed(1)} km` : " · Distance unavailable"}
+                  {day.partiallyEstimated ? " · Estimated travel" : ""}
+                </p>}
+                <button type="button" className="trip-action" disabled={itineraryEdit.isPending || regenerateOpen} onClick={() => { itineraryEdit.reset(); setPicker({}); }}>Add Attraction</button>
+                {itineraryEdit.isPending && <p role="status">Saving itinerary…</p>}
+                {editError && <Alert severity="error">{editError}</Alert>}
+                {editNotice && <Alert severity={itineraryEdit.data?.warnings.length || editNotice.startsWith("Route geometry is still unavailable.") ? "warning" : "success"}>{editNotice}</Alert>}
                 <TripTimeline
                   entries={entries}
                   activeStop={activeStop}
                   onSelectStop={setActiveStop}
+                  saving={itineraryEdit.isPending || regenerateOpen}
+                  onReorder={(attractionIds) => submitEdit({ type: "reorder", dayIndex, attractionIds })}
+                  onAction={(action, attractionId) => {
+                    itineraryEdit.reset(); setEditNotice(null);
+                    if (action === "remove") submitEdit({ type: "remove", dayIndex, attractionId });
+                    if (action === "replace") setPicker({ replaceId: attractionId });
+                    if (action === "move") setMovingId(attractionId);
+                  }}
                 />
                 {entries.length === 0 && (
                   <p className="trip-eyebrow">
@@ -434,9 +488,16 @@ export default function TripPage() {
                     onSelect={setActiveStop}
                   />
                   <p className="trip-map-caption">
-                    {itinerary.routingSource === "provider"
-                      ? `Walking route through the day's stops in ${city}.`
-                      : `Approximate walking route through the day's stops in ${city}.`}
+                    {geometry ? <>Route through the day's stops in {city}. Routing by <a href="https://project-osrm.org/" target="_blank" rel="noreferrer">OSRM</a> using <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap data</a>. <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noreferrer">Fix the map</a>.</> : `Stops in ${city}. Route geometry is unavailable.`}
+                    {!geometry && scheduledStops.length > 0 && <Button
+                      size="small"
+                      className="trip-routing-retry"
+                      disabled={itineraryEdit.isPending || regenerateOpen || regenerate.isPending || applyRegeneration.isPending}
+                      startIcon={itineraryEdit.isPending && itineraryEdit.variables?.operation.type === "reroute" ? <CircularProgress size={12} color="inherit" /> : undefined}
+                      onClick={() => submitEdit({ type: "reroute", dayIndex })}
+                    >
+                      {itineraryEdit.isPending && itineraryEdit.variables?.operation.type === "reroute" ? "Retrying…" : "Retry"}
+                    </Button>}
                   </p>
                 </div>
               )}
@@ -489,6 +550,14 @@ export default function TripPage() {
         onSave={handleSaveRequirements}
         onClose={() => { if (!saveRequirements.isPending) setEditOpen(false); }}
       />
+      {id && <AttractionPicker tripId={id} open={picker !== null} replace={Boolean(picker?.replaceId)} stopCount={scheduledStops.length}
+        saving={itineraryEdit.isPending} error={editError} onClose={() => setPicker(null)}
+        onConfirm={(attractionId, position) => submitEdit(picker?.replaceId
+          ? { type: "replace", dayIndex, oldAttractionId: picker.replaceId, newAttractionId: attractionId }
+          : { type: "add", dayIndex, attractionId, position })} />}
+      <MoveAttractionDialog open={movingId !== null} sourceDayIndex={dayIndex} days={itinerary?.days ?? []}
+        saving={itineraryEdit.isPending} error={editError} onClose={() => setMovingId(null)}
+        onConfirm={(targetDayIndex, position) => movingId && submitEdit({ type: "move", sourceDayIndex: dayIndex, targetDayIndex, attractionId: movingId, position })} />
       <RegenerateDayDialog
         open={regenerateOpen}
         dayNumber={dayIndex}

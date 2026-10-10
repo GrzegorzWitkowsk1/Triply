@@ -52,7 +52,7 @@ export default function TripMap({
     layer.clearLayers();
     markersRef.current = [];
 
-    const path = geometry && geometry.length > 1 ? geometry : stops;
+    const path = geometry && geometry.length > 1 ? geometry : [];
 
     if (path.length > 0) {
       L.polyline(path, {
@@ -74,6 +74,9 @@ export default function TripMap({
       marker.on("click", () => onSelectRef.current(i));
       markersRef.current.push(marker);
     });
+    if (path.length === 0 && stops.length > 0) {
+      map.fitBounds(L.latLngBounds(stops), { padding: [28, 28], maxZoom: 16 });
+    }
   }, [stops, geometry]);
 
   useEffect(() => {

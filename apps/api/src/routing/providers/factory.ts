@@ -6,6 +6,7 @@ import { createOsrmProvider } from "./osrm.js";
 export interface RoutingProviderConfig {
   ROUTING_PROVIDER: string;
   ROUTING_OSRM_URL: string;
+  ROUTING_OSRM_PROFILE?: string;
   ROUTING_ENABLED_MODES: readonly TravelMode[];
   ROUTING_TIMEOUT_MS: number;
 }
@@ -22,6 +23,7 @@ export function createRoutingProvider(
     case "osrm":
       return createOsrmProvider({
         baseUrl: config.ROUTING_OSRM_URL,
+        profile: config.ROUTING_OSRM_PROFILE,
         supportedModes: config.ROUTING_ENABLED_MODES,
         timeoutMs: config.ROUTING_TIMEOUT_MS,
       });

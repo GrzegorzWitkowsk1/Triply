@@ -18,6 +18,8 @@ const EPSILON = 1e-9;
 type CostMatrix = (number | null)[][];
 
 export interface OptimizeClusterOptions {
+  /** Manual edits must retain the supplied place order. */
+  preserveOrder?: boolean;
   mode: TravelMode;
   start?: Coordinates | null;
   returnToStart?: boolean;
@@ -231,7 +233,7 @@ export async function optimizeClusterRoute<T extends ClusterablePoi>(
     }
   });
 
-  if (validIndices.length < 2) {
+  if (validIndices.length === 0 || (validIndices.length === 1 && (!options.preserveOrder || !options.start))) {
     return {
       dayIndex: cluster.day,
       orderedPlaces: [...places],
@@ -300,8 +302,12 @@ export async function optimizeClusterRoute<T extends ClusterablePoi>(
       ? 0
       : nodes.reduce((best, _node, index) => (compareNodePreference(nodes[index], nodes[best]) < 0 ? index : best), 0);
 
-  const initialOrder = nearestNeighborOrder(cost, seed);
-  const optimized = twoOpt(initialOrder, cost, { fixedStart: true, returnToStart }).order;
+  const initialOrder = options.preserveOrder
+    ? nodes.map((_node, index) => index)
+    : nearestNeighborOrder(cost, seed);
+  const optimized = options.preserveOrder
+    ? initialOrder
+    : twoOpt(initialOrder, cost, { fixedStart: true, returnToStart }).order;
 
   const sequence = returnToStart ? [...optimized, seed] : optimized;
 

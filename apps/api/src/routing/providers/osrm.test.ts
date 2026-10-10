@@ -109,11 +109,24 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe("createOsrmProvider", () => {
+  it("uses a separate URL profile for both table and route without changing the travel mode", async () => {
+    const fetchMock = stubFetchSequence([jsonResponse(matrixBody), jsonResponse(routeBody)]);
+    const provider = makeProvider({ profile: "driving", supportedModes: ["walking"] });
+    await provider.getTravelMatrix(points, "walking");
+    const route = await provider.getRoute(points, "walking");
+    expect(provider.supportsMode("walking")).toBe(true);
+    expect(provider.supportsMode("driving")).toBe(false);
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/table/v1/driving/");
+    expect(String(fetchMock.mock.calls[1][0])).toContain("/route/v1/driving/");
+    expect(route.geometry).not.toBeNull();
+  });
+
   it("requests a duration/distance table with lng,lat coordinates", async () => {
     const fetchMock = stubFetch(jsonResponse(matrixBody));
 
@@ -251,5 +264,23 @@ describe("createOsrmProvider", () => {
       status: 502,
       code: "unreachable",
     });
+  });
+
+  it("spaces public routing calls across provider instances at least one second apart", async () => {
+    vi.useFakeTimers();
+    const times: number[] = [];
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      times.push(Date.now());
+      return jsonResponse(matrixBody);
+    }));
+    const options = { baseUrl: "https://routing.openstreetmap.de/routed-foot", profile: "driving", supportedModes: ["walking" as const] };
+    const first = makeProvider(options).getTravelMatrix(points, "walking");
+    const second = makeProvider(options).getTravelMatrix(points, "walking");
+    await vi.advanceTimersByTimeAsync(999);
+    expect(times).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await Promise.all([first, second]);
+    expect(times).toHaveLength(2);
+    expect(times[1] - times[0]).toBeGreaterThanOrEqual(1_000);
   });
 });

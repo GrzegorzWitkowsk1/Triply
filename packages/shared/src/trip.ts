@@ -286,6 +286,8 @@ export interface TripSummary {
 }
 
 export interface TripDetail extends TripAnalysisResult {
+  /** Persisted itinerary revision; optional for compatibility with older clients. */
+  itineraryVersion?: number;
   id: string;
   status: TripStatus;
   prompt: string;

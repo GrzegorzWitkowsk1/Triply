@@ -38,8 +38,10 @@ const parsed = z
     OPENROUTER_API_KEY: optionalSecret,
     ROUTING_PROVIDER: z.preprocess(emptyToUndefined, z.string().trim().min(1).default("osrm")),
     ROUTING_OSRM_URL: z
-      .preprocess(emptyToUndefined, z.string().url().default("https://router.project-osrm.org")),
-    ROUTING_ENABLED_MODES: z.preprocess(emptyToUndefined, z.string().default("driving")),
+      .preprocess(emptyToUndefined, z.string().url().default("https://routing.openstreetmap.de/routed-foot")),
+    // The endpoint selects the actual foot graph. OSRM still uses "driving" in its URL.
+    ROUTING_OSRM_PROFILE: z.preprocess(emptyToUndefined, z.string().trim().regex(/^[a-zA-Z0-9_-]+$/).default("driving")),
+    ROUTING_ENABLED_MODES: z.preprocess(emptyToUndefined, z.string().default("walking")),
     ROUTING_MODE: z.preprocess(emptyToUndefined, z.string().trim().min(1).default("walking")),
     ROUTING_TIMEOUT_MS: z.preprocess(
       emptyToUndefined,
@@ -60,6 +62,7 @@ const parsed = z
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     ROUTING_PROVIDER: process.env.ROUTING_PROVIDER,
     ROUTING_OSRM_URL: process.env.ROUTING_OSRM_URL,
+    ROUTING_OSRM_PROFILE: process.env.ROUTING_OSRM_PROFILE,
     ROUTING_ENABLED_MODES: process.env.ROUTING_ENABLED_MODES,
     ROUTING_MODE: process.env.ROUTING_MODE,
     ROUTING_TIMEOUT_MS: process.env.ROUTING_TIMEOUT_MS,
@@ -106,6 +109,7 @@ export const env = {
   OPENROUTER_API_KEY: parsed.data.OPENROUTER_API_KEY ?? null,
   ROUTING_PROVIDER: parsed.data.ROUTING_PROVIDER,
   ROUTING_OSRM_URL: parsed.data.ROUTING_OSRM_URL,
+  ROUTING_OSRM_PROFILE: parsed.data.ROUTING_OSRM_PROFILE,
   ROUTING_ENABLED_MODES: parseEnabledModes(parsed.data.ROUTING_ENABLED_MODES),
   ROUTING_MODE: isTravelMode(parsed.data.ROUTING_MODE)
     ? parsed.data.ROUTING_MODE

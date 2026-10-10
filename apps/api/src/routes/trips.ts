@@ -15,6 +15,8 @@ import {
   type UpdateTripRequirements,
 } from "@triply/shared";
 import { aiService } from "../ai/index.js";
+import { itineraryCandidatesRequestSchema, itineraryEditRequestSchema } from "@triply/shared";
+import { editTripItinerary, itineraryCandidates, ItineraryEditError } from "../services/tripItineraryEditor.js";
 import { TripModel } from "../models/Trip.js";
 import type { PublicUser } from "../models/User.js";
 import {
@@ -89,6 +91,35 @@ const aiLimiter = rateLimit({
 });
 
 export const tripsRouter = Router();
+
+tripsRouter.post("/:id/itinerary/edit", asyncHandler(async (req, res) => {
+  const parsed = itineraryEditRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid edit operation" });
+    return;
+  }
+  try {
+    const result = await editTripItinerary(tripIdParam(req) ?? "", currentUserId(res), parsed.data);
+    res.json({ ...result, trip: toTripDetail(result.trip) });
+  } catch (error) {
+    if (!(error instanceof ItineraryEditError)) throw error;
+    res.status(error.status).json({ error: error.message, warnings: error.warnings, conflicts: error.conflicts });
+  }
+}));
+
+tripsRouter.post("/:id/itinerary/candidates", aiLimiter, asyncHandler(async (req, res) => {
+  const parsed = itineraryCandidatesRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid attraction search" });
+    return;
+  }
+  try {
+    res.json(await itineraryCandidates(tripIdParam(req) ?? "", currentUserId(res), parsed.data.search, parsed.data.discover));
+  } catch (error) {
+    if (!(error instanceof ItineraryEditError)) throw error;
+    res.status(error.status).json({ error: error.message });
+  }
+}));
 
 tripsRouter.post(
   "/analyze",

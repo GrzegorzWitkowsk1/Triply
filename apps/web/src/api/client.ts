@@ -4,11 +4,13 @@ interface ErrorResponse {
 
 export class ApiError extends Error {
   readonly status: number;
+  readonly details: unknown;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, details?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -24,6 +26,7 @@ export async function parseResponse<T>(response: Response): Promise<T> {
     throw new ApiError(
       message ?? "The request could not be completed.",
       response.status,
+      body,
     );
   }
 

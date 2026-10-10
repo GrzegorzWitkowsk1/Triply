@@ -397,6 +397,10 @@ export async function ensureAttractions(
 }
 
 export async function backfillTripAttractions(trip: TripDocument): Promise<void> {
+  // Generated itineraries retain their authoritative candidate pool. Additional
+  // discoveries are explicitly merged by editing/regeneration, never replaced
+  // by a page refresh (which could race an edit or discard its saved options).
+  if (trip.status === "ready" && trip.itinerary && trip.attractions.length > 0) return;
   const attractions = await ensureAttractions(
     trip.analysis,
     trip.attractions,
@@ -653,6 +657,7 @@ export function toTripDetail(trip: TripDocument): TripDetail {
 
   return {
     ...result,
+    itineraryVersion: trip.itineraryVersion ?? 0,
     id: trip._id.toString(),
     status: trip.status,
     prompt: trip.prompt,
