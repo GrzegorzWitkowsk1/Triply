@@ -5,6 +5,11 @@ import {
 } from "../../config/trip";
 
 interface TripPreferencesCardProps {
+  dirty: boolean;
+  disabled: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onRegenerate: () => void;
   tags: string[];
   onToggleTag: (id: string) => void;
   pace: number;
@@ -14,6 +19,7 @@ interface TripPreferencesCardProps {
 }
 
 export default function TripPreferencesCard({
+  dirty, disabled, error, onCancel, onRegenerate,
   tags,
   onToggleTag,
   pace,
@@ -34,6 +40,7 @@ export default function TripPreferencesCard({
             <button
               key={option.id}
               type="button"
+              disabled={disabled}
               className={`pref-tag${selected ? " is-active" : ""}`}
               onClick={() => onToggleTag(option.id)}
             >
@@ -50,6 +57,7 @@ export default function TripPreferencesCard({
             <button
               key={option}
               type="button"
+              disabled={disabled}
               className={`pref-slider-option${pace === i ? " is-active" : ""}`}
               onClick={() => onPaceChange(i)}
             >
@@ -65,6 +73,7 @@ export default function TripPreferencesCard({
             <button
               key={option}
               type="button"
+              disabled={disabled}
               className={`pref-slider-option${walking === i ? " is-active" : ""}`}
               onClick={() => onWalkingChange(i)}
             >
@@ -73,6 +82,11 @@ export default function TripPreferencesCard({
           ))}
         </div>
       </div>
+      {error && <p role="alert">{error}</p>}
+      {dirty && <div className="pref-actions">
+        <button type="button" className="pref-cancel" disabled={disabled} onClick={onCancel}>Cancel</button>
+        <button type="button" className="pref-regenerate" disabled={disabled} onClick={onRegenerate}>Regenerate</button>
+      </div>}
     </section>
   );
 }

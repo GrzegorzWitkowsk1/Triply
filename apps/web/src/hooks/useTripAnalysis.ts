@@ -15,6 +15,7 @@ export function useUpdateTripRequirements() {
   return useMutation({
     mutationFn: (input: {
       draftId: string;
+      regenerate?: boolean;
       answers: TripRequirementsAnswers;
       confirmedFields: AskableField[];
     }) => updateTripRequirements(input.draftId, input),

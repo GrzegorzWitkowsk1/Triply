@@ -158,6 +158,20 @@ describe("assistant HTTP integration and confirmation", () => {
 });
 
 describe("manual itinerary editing", () => {
+  it("requires explicit regeneration to save preferences on a ready trip and invalidates the old itinerary", async () => {
+    const { agent, trip } = await setup();
+    const patch = (regenerate?: boolean) => agent.patch(`/api/trips/${trip.id}/requirements`).set("Origin", env.WEB_ORIGIN)
+      .send({ answers: { pace: "relaxed", maxWalkingDistanceKm: 3 }, confirmedFields: [], regenerate });
+    expect((await patch()).status).toBe(409);
+    const result = await patch(true);
+    expect(result.status).toBe(200);
+    expect(result.body.analysis).toMatchObject({ pace: "relaxed", maxWalkingDistanceKm: 3 });
+    const saved = await TripModel.findById(trip._id);
+    expect(saved?.status).toBe("draft");
+    expect(saved?.itinerary).toBeNull();
+    expect(saved?.itineraryVersion).toBe(4);
+    expect(saved?.regeneration).toBeNull();
+  });
   it("persists OSM metadata and date-specific checks through MongoDB and the detail API", async () => {
     const { edit, trip, agent } = await setup();
     const metadata = { raw: "Mo-Fr 10:00-18:00", source: "osm", checkedAt: "2026-05-01", website: "https://museum.example", legacyCovid19: "off" };

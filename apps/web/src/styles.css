@@ -3185,6 +3185,12 @@ body {
   margin-top: 20px;
 }
 
+.pref-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.pref-actions button { padding: 7px 13px; border: 0; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.pref-cancel { background: transparent; color: var(--color-primary); }
+.pref-actions .pref-regenerate { background: var(--color-primary); color: #fff; border-radius: 999px; }
+.pref-actions button:disabled { opacity: .5; cursor: default; }
+
 .pref-slider-title {
   display: block;
   margin-bottom: 10px;

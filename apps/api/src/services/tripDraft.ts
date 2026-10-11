@@ -483,6 +483,7 @@ export async function saveTripRequirements(
   draft: TripDocument,
   answers: TripRequirementsAnswers,
   confirmedFields: AskableField[],
+  regenerate = false,
 ): Promise<TripDocument> {
   const merged = mergeRequirements(draft.analysis, answers);
   if (answers.location === undefined &&
@@ -510,7 +511,7 @@ export async function saveTripRequirements(
     {
       _id: draft._id,
       user: draft.user,
-      status: { $in: ["draft", "failed"] },
+      status: { $in: regenerate ? ["draft", "failed", "ready"] : ["draft", "failed"] },
       updatedAt: (draft as TripDocument & { updatedAt: Date }).updatedAt,
     },
     { $set: {
@@ -518,7 +519,8 @@ export async function saveTripRequirements(
       attractions: attractions.attractions, attractionsFetchedAt: attractions.fetchedAt,
       attractionsQuery: attractions.query, clustering: buildClustering(analysis, attractions.attractions),
       confirmedFields: confirmed, missingFields: gaps, status: "draft", "generation.error": null,
-    } },
+      ...(regenerate ? { itinerary: null, regeneration: null, "generation.generatedAt": null, "generation.startedAt": null } : {}),
+    }, ...(regenerate ? { $inc: { itineraryVersion: 1 } } : {}) },
     { new: true, runValidators: true },
   ).exec();
   if (!saved) {

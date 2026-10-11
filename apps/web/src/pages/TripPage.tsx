@@ -55,6 +55,10 @@ const MONTHS = [
 ];
 
 const STALE_GENERATION_MS = 2 * 60 * 1000;
+const WALKING_LIMITS = [3, 5, 10] as const;
+function walkingIndex(km: number | null | undefined): number {
+  return km == null ? 1 : km <= 3 ? 0 : km <= 5 ? 1 : 2;
+}
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   EUR: "€",
@@ -138,6 +142,7 @@ export default function TripPage() {
   const [tags, setTags] = useState<string[]>([]);
   const [pace, setPace] = useState(1);
   const [walking, setWalking] = useState(1);
+  const [preferencesError, setPreferencesError] = useState<string | null>(null);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [regenerationPreview, setRegenerationPreview] =
     useState<RegenerateDayPreview | null>(null);
@@ -153,7 +158,8 @@ export default function TripPage() {
   useEffect(() => {
     setTags(analysis?.interests ?? []);
     setPace(paceIndex(analysis?.pace ?? null));
-  }, [analysis?.interests, analysis?.pace]);
+    setWalking(walkingIndex(analysis?.maxWalkingDistanceKm));
+  }, [id, analysis?.interests, analysis?.pace, analysis?.maxWalkingDistanceKm]);
 
   const dayCount = itinerary?.days.length ?? analysis?.durationDays ?? 0;
 
@@ -241,6 +247,30 @@ export default function TripPage() {
         ? current.filter((tag) => tag !== tagId)
         : [...current, tagId]
     );
+  };
+  const preferencesDirty = pace !== paceIndex(analysis.pace) || walking !== walkingIndex(analysis.maxWalkingDistanceKm)
+    || tags.length !== analysis.interests.length || tags.some(tag => !analysis.interests.includes(tag));
+  const preferencesDisabled = saveRequirements.isPending || isGenerating || itineraryEdit.isPending || regenerateOpen || applyRegeneration.isPending;
+  const cancelPreferences = () => {
+    setTags([...analysis.interests]);
+    setPace(paceIndex(analysis.pace));
+    setWalking(walkingIndex(analysis.maxWalkingDistanceKm));
+    setPreferencesError(null);
+  };
+  const regeneratePreferences = () => {
+    if (!id || !preferencesDirty || preferencesDisabled) return;
+    setPreferencesError(null);
+    saveRequirements.mutate({ draftId: id, regenerate: true, confirmedFields: [], answers: {
+      interests: tags, pace: PACE_VALUES[pace],
+      ...(walking !== walkingIndex(analysis.maxWalkingDistanceKm) ? { maxWalkingDistanceKm: WALKING_LIMITS[walking] } : {}),
+    } }, {
+      onSuccess: () => {
+        setRegenerationPreview(null); setActiveDay(0); setActiveStop(0);
+        generate.reset();
+        generate.mutate(id);
+      },
+      onError: error => setPreferencesError(errorMessage(error)),
+    });
   };
 
   const handleGenerate = () => {
@@ -510,6 +540,11 @@ export default function TripPage() {
                 />
               )}
               <TripPreferencesCard
+                dirty={preferencesDirty}
+                disabled={preferencesDisabled}
+                error={preferencesError}
+                onCancel={cancelPreferences}
+                onRegenerate={regeneratePreferences}
                 tags={tags}
                 onToggleTag={toggleTag}
                 pace={pace}

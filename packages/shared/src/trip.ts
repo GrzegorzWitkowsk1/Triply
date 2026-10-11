@@ -214,6 +214,7 @@ export const tripRequirementsAnswersSchema = z.object({
 export type TripRequirementsAnswers = z.infer<typeof tripRequirementsAnswersSchema>;
 
 export const updateTripRequirementsSchema = z.object({
+  regenerate: z.boolean().optional(),
   answers: tripRequirementsAnswersSchema.nullish().transform((answers) => answers ?? {}),
   confirmedFields: z.array(askableFieldSchema).max(ASKABLE_FIELDS.length).default([]),
 });

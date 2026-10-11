@@ -55,6 +55,7 @@ export function analyzeTrip(input: {
 export function updateTripRequirements(
   draftId: string,
   input: {
+    regenerate?: boolean;
     answers: TripRequirementsAnswers;
     confirmedFields: AskableField[];
   },

@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { TripDetail } from "@triply/shared";
@@ -9,6 +9,7 @@ import TripPage from "./TripPage";
 
 const mocks = vi.hoisted(() => ({
   mutate: vi.fn(), reset: vi.fn(), refetch: vi.fn(),
+  save: vi.fn(),
   trip: { data: undefined as TripDetail | undefined, isPending: false, isError: false, isFetching: false, error: null as Error | null },
   generation: { isPending: false, isError: false, error: null as Error | null },
 }));
@@ -18,7 +19,7 @@ vi.mock("../hooks/useTripRegeneration", () => ({
   useRegenerateDay: () => ({ reset: vi.fn(), mutate: vi.fn(), isPending: false, error: null }),
   useApplyRegeneration: () => ({ reset: vi.fn(), mutate: vi.fn(), isPending: false, error: null }),
 }));
-vi.mock("../hooks/useTripAnalysis", () => ({ useUpdateTripRequirements: () => ({ reset: vi.fn(), mutate: vi.fn(), isPending: false, error: null }) }));
+vi.mock("../hooks/useTripAnalysis", () => ({ useUpdateTripRequirements: () => ({ reset: vi.fn(), mutate: mocks.save, isPending: false, error: null }) }));
 vi.mock("../components/home/TripRequirementsDialog", () => ({ default: () => null }));
 vi.mock("../components/trip/RegenerateDayDialog", () => ({ default: () => null }));
 vi.mock("../components/trip/TripAssistant", () => ({ default: () => null }));
@@ -57,6 +58,47 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("TripPage generation states", () => {
+  function preferences() {
+    mocks.trip.data!.status = "ready";
+    mocks.trip.data!.analysis.maxWalkingDistanceKm = 7;
+    mocks.trip.data!.itinerary = { timeZone: "Europe/Paris", routingSource: "unavailable", generatedAt: null, days: [], unscheduled: [] };
+    const view = render(<Page />);
+    const card = within(view.container.querySelector(".pref-card") as HTMLElement);
+    return card;
+  }
+  it("shows preferences actions only for changed values and Cancel restores persisted values", () => {
+    const card = preferences();
+    expect(card.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(card.getByRole("button", { name: "High" }).className).toContain("is-active");
+    fireEvent.click(card.getByRole("button", { name: "Food" }));
+    fireEvent.click(card.getByRole("button", { name: "Low" }));
+    fireEvent.click(card.getByRole("button", { name: "Relaxed" }));
+    fireEvent.click(card.getByRole("button", { name: "Cancel" }));
+    expect(card.queryByRole("button", { name: "Regenerate" })).toBeNull();
+    expect(card.getByRole("button", { name: "High" }).className).toContain("is-active");
+    expect(card.getByRole("button", { name: "Balanced" }).className).toContain("is-active");
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+  it("saves preferences before generating and preserves an unchanged custom walking limit", () => {
+    const card = preferences();
+    fireEvent.click(card.getByRole("button", { name: "Food" }));
+    fireEvent.click(card.getByRole("button", { name: "Regenerate" }));
+    expect(mocks.save.mock.calls[0][0]).toEqual({ draftId: "trip-1", regenerate: true, confirmedFields: [],
+      answers: { interests: ["culture", "food"], pace: "balanced" } });
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    mocks.save.mock.calls[0][1].onSuccess();
+    expect(mocks.mutate).toHaveBeenCalledWith("trip-1");
+  });
+  it("does not generate after a save failure and retains changes for retry", () => {
+    mocks.save.mockImplementationOnce((_input, options) => options.onError(new Error("Save failed")));
+    const card = preferences();
+    fireEvent.click(card.getByRole("button", { name: "Low" }));
+    fireEvent.click(card.getByRole("button", { name: "Regenerate" }));
+    expect(mocks.save.mock.calls[0][0].answers.maxWalkingDistanceKm).toBe(3);
+    expect(card.getByRole("alert").textContent).toBe("Save failed");
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(card.getByRole("button", { name: "Regenerate" })).toBeTruthy();
+  });
   it("starts only one generation when StrictMode replays the effects", () => {
     render(<Page />);
     expect(mocks.mutate).toHaveBeenCalledTimes(1);

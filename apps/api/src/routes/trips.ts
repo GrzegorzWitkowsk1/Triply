@@ -214,7 +214,7 @@ tripsRouter.patch(
       return;
     }
 
-    if (draft.status !== "draft" && draft.status !== "failed") {
+    if (draft.status !== "draft" && draft.status !== "failed" && !(draft.status === "ready" && parsed.data.regenerate)) {
       res.status(409).json({ error: "Requirements can only be edited before itinerary generation." });
       return;
     }
@@ -224,6 +224,7 @@ tripsRouter.patch(
       draft,
       request.answers,
       request.confirmedFields,
+      request.regenerate === true,
     );
 
     res.json(toTripAnalysisResult(saved));
