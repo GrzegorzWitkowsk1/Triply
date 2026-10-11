@@ -15,6 +15,7 @@ export type AssistantResponse =
   | { type: "clarification"; message: string; picker?: { dayIndex: number; replace: boolean; stopCount: number } }
   | { type: "error"; message: string; retryable: boolean }
   | { type: "action_preview"; message: string; actionType: "regenerate_day"; preview: RegenerateDayPreview }
+  | { type: "action_preview"; message: string; actionType: "expense"; previewId: string }
   | { type: "action_preview"; message: string; actionType: "edit_itinerary"; previewId: string; days: ItineraryDay[]; warnings: string[] };
 export interface AssistantConversation { conversationId: string; messages: AssistantMessage[] }
 export interface AssistantMessageResult extends AssistantConversation { response: AssistantResponse }

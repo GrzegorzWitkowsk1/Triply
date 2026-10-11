@@ -20,6 +20,7 @@ import { cancelAssistantAction, confirmAssistantEdit, getAssistantConversation, 
 import { itineraryCandidatesRequestSchema, itineraryEditRequestSchema } from "@triply/shared";
 import { editTripItinerary, itineraryCandidates, ItineraryEditError } from "../services/tripItineraryEditor.js";
 import { TripModel } from "../models/Trip.js";
+import { expensesRouter } from "./expenses.js";
 import type { PublicUser } from "../models/User.js";
 import {
   backfillTripAttractions,
@@ -93,6 +94,7 @@ const aiLimiter = rateLimit({
 });
 
 export const tripsRouter = Router();
+tripsRouter.use("/:id", expensesRouter);
 
 tripsRouter.get(["/:id/assistant/conversations", "/:id/assistant/conversations/:conversationId"], asyncHandler(async (req, res) => {
   try {

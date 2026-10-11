@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { interpretBudgetRequest } from "./assistantBudget.js";
+import { mutateExpense } from "./expenses.js";
 import { Types } from "mongoose";
 import { TripModel } from "../models/Trip.js";
 import { itineraryEditRequestSchema, type AssistantMessageRequest, type AssistantMessageResult, type AssistantResponse, type ItineraryEditOperation } from "@triply/shared";
@@ -32,6 +34,18 @@ export async function sendAssistantMessage(tripId: string, userId: string, input
   const revision = stored.revision;
   let response: AssistantResponse;
   try {
+    const budgetIntent = interpretBudgetRequest(trip, input.message, input.selectedDayId);
+    if (budgetIntent) {
+      stored.pending = null;
+      stored.prepared = null;
+      if (budgetIntent.operation) {
+        const id = randomUUID();
+        stored.prepared = { id, expiresAt: new Date(Date.now() + 30 * 60_000), expenseOperation: budgetIntent.operation, budgetRevision: trip.budgetRevision ?? 0, days: [], warnings: [] };
+        response = { type: "action_preview", actionType: "expense", previewId: id, message: budgetIntent.message };
+      } else if (budgetIntent.cheaperDay) {
+        response = { type: "action_preview", actionType: "regenerate_day", message: budgetIntent.message, preview: await createDayRegenerationPreview({ trip, dayIndex: budgetIntent.cheaperDay, cheaper: true, preferences: { lessWalking: false, moreFood: false, relaxedPace: false, preferIndoor: false, surpriseMe: true } }) };
+      } else response = { type: "message", message: budgetIntent.message };
+    } else {
     if (input.candidate && (!stored.pending || !["add", "replace"].includes(stored.pending.operation ?? ""))) throw new ItineraryEditError("There is no pending attraction selection.");
     const interpreted = input.candidate && stored.pending
       ? { ...stored.pending, ...(stored.pending.operation === "add" ? { attraction: input.candidate.attractionId } : { replacement: input.candidate.attractionId }) }
@@ -112,6 +126,7 @@ export async function sendAssistantMessage(tripId: string, userId: string, input
     if (day) stored.lastDay = day.dayIndex;
     if (attraction?.id) { stored.lastAttraction = attraction.id; if (attraction.dayIndex && (!day || intent.question !== "opening_hours")) stored.lastDay = attraction.dayIndex; }
     if (response!.type !== "clarification") stored.pending = null;
+    }
   } catch (error) {
     response = { type: "error", retryable: true, message: error instanceof ItineraryEditError ? error.message : "I couldn't prepare a reliable response. Please try again or clarify your request." };
   }
@@ -130,8 +145,10 @@ export async function confirmAssistantEdit(tripId: string, userId: string, previ
   const claim = await TripAssistantConversationModel.updateOne({ _id: stored._id, "prepared.id": previewId, "prepared.expiresAt": { $gt: new Date() } }, { $set: { prepared: null }, $inc: { revision: 1 } });
   if (!claim.modifiedCount) throw new ItineraryEditError("This preview expired or was already applied. Prepare a new one.", 410);
   // Existing editor revalidates ownership, operation and version and performs atomic CAS.
-  const result = await editTripItinerary(tripId, userId, prepared.request);
-  await TripAssistantConversationModel.updateOne({ _id: stored._id }, { $push: { messages: { $each: [{ id: randomUUID(), role: "ai", text: "Confirmed: your itinerary was updated." }], $slice: -40 } }, $inc: { revision: 1 } }).catch(() => { console.warn("[assistant] Applied edit; conversation confirmation could not be saved."); });
+  const result = prepared.expenseOperation
+    ? { trip: await mutateExpense(tripId, userId, prepared.expenseOperation, prepared.budgetRevision!), warnings: [], affectedDayIndices: [] }
+    : await editTripItinerary(tripId, userId, prepared.request!);
+  await TripAssistantConversationModel.updateOne({ _id: stored._id }, { $push: { messages: { $each: [{ id: randomUUID(), role: "ai", text: prepared.expenseOperation ? "Confirmed: your expenses were updated." : "Confirmed: your itinerary was updated." }], $slice: -40 } }, $inc: { revision: 1 } }).catch(() => { console.warn("[assistant] Applied change; conversation confirmation could not be saved."); });
   return result;
 }
 

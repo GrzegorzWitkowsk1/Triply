@@ -12,6 +12,9 @@ import {
   type TripUnscheduledPlace,
 } from "@triply/shared";
 import { randomUUID } from "node:crypto";
+import { budgetAwareCandidates } from "./budgetSelection.js";
+import { summarizeBudget } from "./budgetSummary.js";
+import { formatMoney } from "@triply/shared";
 import { env } from "../config/env.js";
 import { TripModel, type TripDocument, type TripRegenerationRecord } from "../models/Trip.js";
 import { createRoutingProvider } from "../routing/index.js";
@@ -63,6 +66,7 @@ export class RegenerationNotFoundError extends Error {
 }
 
 export interface RegenerateTripDayInput {
+  cheaper?: boolean;
   trip: TripDocument;
   dayIndex: number;
   preferences: RegenerationPreferences;
@@ -422,7 +426,7 @@ export async function regenerateTripDay(
   };
   const basePool = trip.attractions.filter((attraction) => !excluded.has(attractionKey(attraction)) && available(attraction));
   const target = plannedTarget(preferences, trip.analysis.pace);
-  const baseRanked = rankCandidates(basePool, context);
+  const baseRanked = rankCandidates(budgetAwareCandidates(basePool, trip.toObject(), dayIndex, input.cheaper), context);
   const location = trip.analysis.location;
   const newAttractions: TripAttraction[] = [];
 
@@ -463,7 +467,7 @@ export async function regenerateTripDay(
   }
 
   const pool = [...basePool, ...newAttractions];
-  const ranked = newAttractions.length > 0 ? rankCandidates(pool, context) : baseRanked;
+  const ranked = newAttractions.length > 0 ? rankCandidates(budgetAwareCandidates(pool, trip.toObject(), dayIndex, input.cheaper), context) : baseRanked;
 
   if (ranked.length === 0) {
     throw new NoSuitableAlternativesError(warnings);
@@ -516,6 +520,14 @@ export async function regenerateTripDay(
 
   const day = toItineraryDay(scheduleDay, route);
   warnings.push(...day.warnings);
+  const originalBudget = summarizeBudget(trip.toObject());
+  const proposedBudget = summarizeBudget({ ...trip.toObject(), attractions: [...trip.toObject().attractions, ...newAttractions], itinerary: { ...trip.toObject().itinerary!, days: itinerary.days.map(d => d.dayIndex === dayIndex ? day : d) } });
+  warnings.push(...proposedBudget.warnings);
+  for (const code of new Set([...originalBudget.totals, ...proposedBudget.totals].map(t => t.currency))) {
+    const before = originalBudget.totals.find(t => t.currency === code)?.automaticMinor ?? 0;
+    const after = proposedBudget.totals.find(t => t.currency === code)?.automaticMinor ?? 0;
+    warnings.push(`Known admission estimate change: ${formatMoney(after - before, code)}. Manual expenses are preserved.`);
+  }
 
   const scheduledAttractions = day.activities.filter(
     (activity) => activity.type === "attraction",

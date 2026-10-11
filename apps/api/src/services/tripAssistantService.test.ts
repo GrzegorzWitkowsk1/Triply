@@ -43,9 +43,10 @@ beforeEach(() => {
   vi.spyOn(TripAssistantConversationModel, "updateOne").mockResolvedValue({ acknowledged: true, matchedCount: 1, modifiedCount: 1, upsertedCount: 0, upsertedId: null });
 });
 describe("assistant grounding and resolution", () => {
-  it("calculates persisted counts, time, outdoor classification and unavailable expenses", () => {
+  it("calculates persisted counts, time, outdoor classification and known budget totals", () => {
     expect(factualAnswer(trip, "count")).toContain("3 scheduled attractions");
-    expect(factualAnswer(trip, "budget")).toContain("cannot calculate");
+    expect(factualAnswer(trip, "budget")).toContain("Actual remaining: €500.00");
+    expect(factualAnswer(trip, "budget")).toContain("partial estimate");
     expect(factualAnswer(trip, "walking")).toContain("2.0 km (estimated)");
     expect(factualAnswer(trip, "outdoors")).toContain("Retiro Park");
     expect(factualAnswer(trip, "busiest")).toContain("Day 1");
@@ -99,7 +100,7 @@ describe("assistant orchestration", () => {
     mocks.generate.mockResolvedValue({ ...baseIntent, attraction: "Prado Museum" });
     const result = await sendAssistantMessage(tripId,userId,{ message: "Prado Museum" });
     expect(result.response.type).toBe("action_preview");
-    expect(stored.prepared?.request.operation).toEqual({ type: "remove", dayIndex: 1, attractionId: "node/0" });
+    expect(stored.prepared?.request?.operation).toEqual({ type: "remove", dayIndex: 1, attractionId: "node/0" });
     expect(trip.itinerary!.days[0].activities).toHaveLength(2);
     expect(mocks.edit).not.toHaveBeenCalled();
   });
@@ -117,7 +118,7 @@ describe("assistant orchestration", () => {
   ])("maps resolved requests to the existing typed operation: %j", async (fields, expected) => {
     mocks.generate.mockResolvedValue({ ...baseIntent, intent: "edit_itinerary", ...fields });
     expect((await sendAssistantMessage(tripId,userId,{ message: "Edit this itinerary" })).response.type).toBe("action_preview");
-    expect(stored.prepared?.request.operation).toEqual(expected);
+    expect(stored.prepared?.request?.operation).toEqual(expected);
     expect(mocks.edit).not.toHaveBeenCalled();
   });
   it("refuses partial execution of a multi-action request", async () => {

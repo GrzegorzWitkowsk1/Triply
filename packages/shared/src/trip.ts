@@ -292,6 +292,7 @@ export interface TripSummary {
 }
 
 export interface TripDetail extends TripAnalysisResult {
+  budgetData?: import("./budget.js").TripBudgetData;
   admissionSummary?: AdmissionSummary;
   /** Persisted itinerary revision; optional for compatibility with older clients. */
   itineraryVersion?: number;

@@ -10,6 +10,7 @@ import {
 } from "@triply/shared";
 import { Types } from "mongoose";
 import { env } from "../config/env.js";
+import { selectBudgetCandidates } from "./budgetSelection.js";
 import { TripModel, type TripDocument, type TripItineraryRecord } from "../models/Trip.js";
 import { ensureAttractions, ensureWeather } from "./tripDraft.js";
 import { planTrip, type PlanTripResult } from "./tripPlanner.js";
@@ -209,7 +210,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
   const start: Coordinates = { lat: location.lat, lng: location.lng };
 
   const result = await planTrip({
-    pois: toSchedulablePois(attractions.attractions),
+    pois: toSchedulablePois(selectBudgetCandidates(attractions.attractions, trip.toObject())),
     durationDays: analysis.durationDays,
     pace: analysis.pace,
     weather: weather.days,

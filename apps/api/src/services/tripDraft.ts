@@ -1,3 +1,4 @@
+import { budgetData } from "./budgetSummary.js";
 import {
   deriveTripSchedule,
   summarizeAdmission,
@@ -664,6 +665,7 @@ export function toTripDetail(trip: TripDocument): TripDetail {
 
   return {
     ...result,
+    budgetData: budgetData(trip.toObject()),
     itineraryVersion: trip.itineraryVersion ?? 0,
     id: trip._id.toString(),
     status: trip.status,

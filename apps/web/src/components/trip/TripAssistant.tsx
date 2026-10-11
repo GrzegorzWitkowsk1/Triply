@@ -82,7 +82,7 @@ export default function TripAssistant({ city, tripId, selectedDayId }: TripAssis
     try {
       if (proposal.actionType === "regenerate_day") await regeneration.mutateAsync({ tripId, dayIndex: proposal.preview.dayIndex, previewId: proposal.preview.previewId });
       else await assistant.apply.mutateAsync(proposal.previewId);
-      setMessages(current => [...current, { id: Date.now(), role: "ai", text: "Confirmed: your itinerary was updated." }]);
+      setMessages(current => [...current, { id: Date.now(), role: "ai", text: proposal.actionType === "expense" ? "Confirmed: your expenses were updated." : "Confirmed: your itinerary was updated." }]);
       setProposal(null);
     } catch { setActionError("Could not apply this proposal. It may be stale or expired; request a new preview."); }
   };
@@ -101,8 +101,8 @@ export default function TripAssistant({ city, tripId, selectedDayId }: TripAssis
       <RegenerateDayDialog zIndex={1600} open={proposal?.actionType === "regenerate_day"} dayNumber={proposal?.actionType === "regenerate_day" ? proposal.preview.dayIndex : 1}
         preview={proposal?.actionType === "regenerate_day" ? proposal.preview : null} isGenerating={false} isApplying={busy} error={actionError}
         onGenerate={() => {}} onApply={() => void confirm()} onEditOptions={cancelProposal} onClose={cancelProposal} />
-      <Dialog sx={{ zIndex: 1600 }} open={proposal?.actionType === "edit_itinerary"} onClose={busy ? undefined : cancelProposal} fullWidth maxWidth="sm">
-        <DialogTitle>Review itinerary change</DialogTitle>
+      <Dialog sx={{ zIndex: 1600 }} open={proposal?.actionType === "edit_itinerary" || proposal?.actionType === "expense"} onClose={busy ? undefined : cancelProposal} fullWidth maxWidth="sm">
+        <DialogTitle>{proposal?.actionType === "expense" ? "Review expense change" : "Review itinerary change"}</DialogTitle>
         <DialogContent>
           <p>{proposal?.message}</p>
           {proposal?.actionType === "edit_itinerary" && proposal.days.map(day => <p key={day.dayIndex}>Day {day.dayIndex}: {day.activities.filter(activity => activity.type === "attraction").map(activity => activity.title + " (" + activity.startTime.slice(11,16) + ")").join(", ") || "No attractions"}</p>)}

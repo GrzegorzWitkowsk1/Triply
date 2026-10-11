@@ -531,12 +531,15 @@ export default function TripPage() {
                   </p>
                 </div>
               )}
-              {budgetAmount !== null && (
+              {(
                 <TripBudgetCard
-                  whole={budgetAmount}
+                  tripId={trip.data.id}
+                  budgetData={trip.data.budgetData}
+                  days={trip.data.itinerary?.days ?? []}
+                  activeDayIndex={dayIndex}
+                  attractions={trip.data.itinerary?.days.flatMap(d => d.stops) ?? []}
+                  whole={budgetAmount ?? 0}
                   currencySymbol={budgetSymbol}
-                  spent={null}
-                  breakdown={null}
                 />
               )}
               <TripPreferencesCard

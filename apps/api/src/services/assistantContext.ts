@@ -1,6 +1,8 @@
 import type { ItineraryDay } from "@triply/shared";
 import { admissionLabel, formatAdmissionPrice, summarizeAdmission } from "@triply/shared";
 import type { TripDocument } from "../models/Trip.js";
+import { summarizeBudget } from "./budgetSummary.js";
+import { formatMoney } from "@triply/shared";
 import { evaluateOpeningHours, resolvePoiTimeZone } from "./openingHoursService.js";
 import { resolveVisit } from "./scheduling.js";
 import { mergeSchedulingConfig } from "./schedulingConfig.js";
@@ -47,6 +49,7 @@ export function buildAssistantContext(trip: TripDocument, selected?: string) {
   return { destination: trip.analysis.destination, dates: [trip.analysis.startDate, trip.analysis.endDate], travelers: trip.analysis.travelers,
     interests: trip.analysis.interests, pace: trip.analysis.pace, maxWalkingDistanceKm: trip.analysis.maxWalkingDistanceKm, budget: trip.analysis.budget, selectedDay: selected,
     days: trip.itinerary!.days.map(day => ({ dayIndex: day.dayIndex, date: day.date, count: day.activities.filter(a => a.type === "attraction").length })),
+    budgetSummary: summarizeBudget(trip.toObject()),
     admissionSummary: summarizeAdmission(trip.itinerary!.days, trip.attractions, trip.analysis.travelers),
     admission: trip.attractions.filter(p => trip.itinerary!.days.some(d => d.activities.some(a => a.type === "attraction" && a.placeId === p.placeId))).map(p => ({ id: p.placeId, name: p.name, admission: p.admission ?? null })),
     openingHours: trip.itinerary!.days.flatMap(day => day.activities.filter(a => a.type === "attraction").map(activity => ({ day, activity }))).slice(0, 40).map(({ day, activity }) => {
@@ -101,7 +104,15 @@ export function factualAnswer(trip: TripDocument, question: string, day?: Itiner
       : /which.*closed/i.test(message) ? lines.filter(line => line.result.status === "closed" && !line.result.nextAvailableStart && !line.result.intervals.some(interval => interval.unknown)) : lines;
     return filtered.map(line => line.text).join("\n") || "No matching attractions have that confirmed opening-hours status.";
   }
-  if (question === "budget") return `Your planned budget is ${trip.analysis.budget.amount ?? "unknown"} ${trip.analysis.budget.currency ?? ""}. Expense data is unavailable, so I cannot calculate your remaining budget.`;
+  if (question === "budget") {
+    const summary = summarizeBudget(trip.toObject());
+    const money = (amount: number | null) => amount === null || !summary.currency ? "unavailable" : formatMoney(amount, summary.currency);
+    const category = /food|drinks/i.test(message) ? "food_drinks" : /shopping/i.test(message) ? "shopping" : /transport|taxi/i.test(message) ? "transport" : /accommodation|hotel/i.test(message) ? "accommodation" : /attractions/i.test(message) ? "attractions" : null;
+    const rows = category ? summary.categories.find(c => c.category === category)!.totals : summary.totals;
+    const metric = /actual|spent/i.test(message) ? "actualMinor" : "plannedMinor";
+    const top = summary.comparisonAvailable ? [...summary.days].filter(d => d.dayId !== null).sort((a,b) => (b.totals.find(t => t.currency === summary.currency)?.[metric] ?? 0) - (a.totals.find(t => t.currency === summary.currency)?.[metric] ?? 0))[0] : undefined;
+    return `Total budget: ${money(summary.totalBudgetMinor)}. Known planned spending: ${money(summary.plannedSpendingMinor)}. Actual spending: ${money(summary.actualSpendingMinor)}. Planned remaining: ${money(summary.plannedRemainingMinor)}. Actual remaining: ${money(summary.actualRemainingMinor)}.\n${category ?? "Currency totals"}: ${rows.map(t => `${t.currency}: planned ${formatMoney(t.plannedMinor,t.currency)}, actual ${formatMoney(t.actualMinor,t.currency)}`).join("; ") || "No recorded spending"}.${top ? ` Most expensive day by ${metric === "actualMinor" ? "actual" : "known planned"} spending: day ${top.dayId}.` : ""}\n${summary.warnings.join(" ")}`;
+  }
   if (question === "count") return `${activities.length} scheduled attractions across ${days.length} itinerary day(s).`;
   if (question === "walking") {
     const known = days.filter(d => d.totalDistanceMeters !== null);

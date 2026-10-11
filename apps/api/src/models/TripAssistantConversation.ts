@@ -9,7 +9,7 @@ interface ConversationRecord {
   lastDay: number | null;
   lastAttraction: string | null;
   pending: AssistantIntent | null;
-  prepared: { id: string; expiresAt: Date; request: ItineraryEditRequest; days: ItineraryDay[]; warnings: string[] } | null;
+  prepared: { id: string; expiresAt: Date; request?: ItineraryEditRequest; expenseOperation?: import("@triply/shared").ExpenseOperation; budgetRevision?: number; days: ItineraryDay[]; warnings: string[] } | null;
   revision: number;
 }
 const schema = new Schema<ConversationRecord>({

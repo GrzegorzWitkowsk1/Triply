@@ -3069,6 +3069,8 @@ body {
   font-size: 15px;
   font-weight: 700;
   color: var(--color-text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .budget-total em {
@@ -3088,6 +3090,14 @@ body {
 
 .budget-segment {
   height: 100%;
+  flex-shrink: 0;
+  cursor: default;
+  transition: opacity 0.2s ease;
+}
+
+.budget-segment:hover,
+.budget-segment:focus-visible {
+  opacity: 0.75;
 }
 
 .budget-list {
@@ -3110,6 +3120,224 @@ body {
   height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+.budget-expense-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto 28px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  overflow-wrap: anywhere;
+}
+
+.budget-expenses {
+  max-height: 200px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+  padding-right: 6px;
+  gap: 0;
+}
+
+.budget-expense-description {
+  min-width: 0;
+}
+
+.budget-expense-title,
+.budget-expense-category {
+  display: block;
+}
+
+.budget-expense-title {
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.budget-expense-category {
+  color: var(--expense-color);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.budget-expense-row .budget-dot,
+.budget-day-category .budget-dot {
+  background: var(--expense-color);
+}
+
+.budget-expense-row .budget-delete {
+  color: var(--color-muted);
+}
+
+.budget-expense-row .budget-delete:hover {
+  color: var(--color-primary);
+  background: rgba(242, 102, 75, 0.08);
+}
+
+.budget-empty,
+.budget-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+
+.budget-empty {
+  padding: 20px 0;
+  text-align: center;
+}
+
+.budget-note {
+  margin: 8px 0;
+}
+
+.budget-note.is-over-budget {
+  color: var(--color-primary);
+}
+
+.budget-per-day {
+  margin-top: 16px;
+}
+
+.budget-per-day-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.budget-per-day-toggle::before,
+.budget-per-day-toggle::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--color-line);
+}
+
+.budget-per-day-toggle::before {
+  margin-right: 8px;
+}
+
+.budget-per-day-toggle::after {
+  margin-left: 8px;
+}
+
+.budget-per-day-toggle .MuiSvgIcon-root {
+  transition: transform 0.2s ease;
+}
+
+.budget-per-day-toggle[aria-expanded="true"] .MuiSvgIcon-root {
+  transform: rotate(180deg);
+}
+
+.budget-days {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+}
+
+.budget-day {
+  background: #fafafa;
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.budget-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.budget-day-head small {
+  display: block;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 400;
+  margin-top: 3px;
+}
+
+.budget-day-categories {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.budget-day-category {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.budget-day-category strong {
+  color: var(--color-text);
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-expense-form {
+  display: grid;
+  gap: 12px;
+  padding-top: 20px;
+}
+
+.budget-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.budget-form-name-row {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.budget-form-name-row .MuiSelect-select {
+  padding-left: 8px;
+  padding-right: 22px;
+  font-size: 12px;
+}
+
+.budget-form-name-row .MuiSelect-icon {
+  right: 2px;
+  font-size: 18px;
+}
+
+.budget-expense-form .MuiOutlinedInput-root {
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.budget-expense-form .MuiOutlinedInput-input {
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.budget-expense-form .MuiButton-contained {
+  min-height: 44px;
+  border-radius: 12px;
+  text-transform: none;
+  font-weight: 600;
 }
 
 .budget-dot.is-rest {

@@ -79,6 +79,12 @@ beforeEach(() => {
       if (candidateFailure) return new Response(JSON.stringify({ error: "Search unavailable" }), { status: 503 });
       return Response.json({ candidates, warnings: [] });
     }
+    if (input.endsWith("/budget")) return Response.json({ revision: 0, expenses: [], summary: {
+      currency: null, totalBudgetMinor: null, allocations: {}, allocationCurrency: null, totals: [], categories: [], days: [],
+      plannedSpendingMinor: null, actualSpendingMinor: null, plannedRemainingMinor: null, actualRemainingMinor: null,
+      unknownAdmissionPriceCount: 0, hasIncompletePricing: false, comparisonAvailable: false,
+      plannedOverBudget: false, actualOverBudget: false, warnings: [],
+    } });
     if (input === "/api/trips/trip-1") return Response.json(structuredClone(trip));
     return Response.json([]);
   }));

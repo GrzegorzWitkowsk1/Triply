@@ -9,6 +9,8 @@ import { TripModel } from "../models/Trip.js";
 import { fetchAttractions } from "../services/attractions.js";
 import { editTripItinerary } from "../services/tripItineraryEditor.js";
 import { normalizeAdmission } from "../services/admissionPricingService.js";
+import { randomUUID } from "node:crypto";
+import { expenseInputSchema } from "@triply/shared";
 import { TripAssistantConversationModel } from "../models/TripAssistantConversation.js";
 const assistantMock = vi.hoisted(() => ({ generate: vi.fn() }));
 vi.mock("../ai/providers/factory.js", () => ({ createAIProvider: () => ({ generate: assistantMock.generate }) }));
@@ -89,6 +91,106 @@ const stopIds = (day: ItineraryDay) => day.stops.map((stop) => stop.placeId);
 const assistantIntent = { intent: "edit_itinerary", question: "schedule", day: "day 1", targetDay: null,
   attraction: "node/1", replacement: null, before: null, operation: "remove", multipleActions: false,
   preferences: { lessWalking: false, moreFood: false, relaxedPace: false, preferIndoor: false, surpriseMe: false } };
+
+describe("Step 10 persistent budget integration", () => {
+  const input = (overrides: Record<string, unknown> = {}) => expenseInputSchema.parse({ title: "Lunch", category: "food_drinks", currency: "EUR", amountMinor: 2500, type: "planned", ...overrides });
+  it("persists CRUD, separates statuses and keeps itinerary previews/revisions intact", async () => {
+    const { agent, trip } = await setup(); const base = `/api/trips/${trip.id}`; const id = randomUUID();
+    const preview = await agent.post(`${base}/days/1/regenerate`).set("Origin", env.WEB_ORIGIN).send({ preferences: { relaxedPace: true } });
+    expect(preview.status).toBe(200);
+    const created = await agent.post(`${base}/expenses`).set("Origin", env.WEB_ORIGIN).send({ expense: input({ dayId: "2", note: "Lunch reservation" }), requestId: id, expectedRevision: 0 });
+    expect(created.status).toBe(201); expect(created.body.summary.plannedSpendingMinor).toBe(2500);
+    expect(created.body.expenses[0]).toMatchObject({ id, dayId: "2", note: "Lunch reservation" });
+    const edited = await agent.patch(`${base}/expenses/${id}`).set("Origin", env.WEB_ORIGIN).send({ expense: input({ type: "actual", amountMinor: 1800, dayId: "2", date: "2026-06-02" }), expectedRevision: 1 });
+    expect(edited.status).toBe(200); expect(edited.body.summary).toMatchObject({ actualSpendingMinor: 1800, plannedSpendingMinor: 0 });
+    const saved = await TripModel.findById(trip._id);
+    expect(saved?.budgetRevision).toBe(2); expect(saved?.itineraryVersion).toBe(3); expect(saved?.regeneration?.previewId).toBe(preview.body.previewId);
+    expect((await agent.get(`${base}/expenses`)).body.expenses[0].date).toBe("2026-06-02");
+    expect((await agent.delete(`${base}/expenses/${id}`).set("Origin", env.WEB_ORIGIN).send({ expectedRevision: 2 })).body.expenses).toEqual([]);
+  });
+  it("rejects malformed amounts, currencies, categories, types and foreign references", async () => {
+    const { agent, trip } = await setup();
+    for (const invalid of [{ amountMinor: -1 }, { amountMinor: 1.1 }, { currency: "XYZ" }, { category: "invalid" }, { type: "paid" }, { dayId: "4" }, { attractionId: "node/999" }, { replacesAdmission: true }]) {
+      const result = await agent.post(`/api/trips/${trip.id}/expenses`).set("Origin", env.WEB_ORIGIN).send({ expense: { ...input(), ...invalid }, requestId: randomUUID(), expectedRevision: 0 });
+      expect(result.status).toBe(400);
+    }
+    expect((await TripModel.findById(trip._id))?.expenses).toHaveLength(0);
+  });
+  it("requires authentication and enforces ownership on reads and writes", async () => {
+    const { trip, agent } = await setup();
+    expect((await request(app).get(`/api/trips/${trip.id}/budget`)).status).toBe(401);
+    const other = await TripModel.create({ ...trip.toObject(), _id: new mongoose.Types.ObjectId(), user: new mongoose.Types.ObjectId() });
+    expect((await agent.get(`/api/trips/${other.id}/expenses`)).status).toBe(404);
+    expect((await agent.post(`/api/trips/${other.id}/expenses`).set("Origin", env.WEB_ORIGIN).send({ expense: input(), requestId: randomUUID(), expectedRevision: 0 })).status).toBe(404);
+  });
+  it("makes creation retries idempotent and rejects concurrent stale writers", async () => {
+    const { agent, trip } = await setup(); const path = `/api/trips/${trip.id}/expenses`; const id = randomUUID();
+    const payload = { expense: input(), requestId: id, expectedRevision: 0 };
+    expect((await agent.post(path).set("Origin", env.WEB_ORIGIN).send(payload)).status).toBe(201);
+    expect((await agent.post(path).set("Origin", env.WEB_ORIGIN).send(payload)).body.expenses).toHaveLength(1);
+    expect((await agent.post(path).set("Origin", env.WEB_ORIGIN).send({ ...payload, expense: input({ amountMinor: 5000 }) })).status).toBe(409);
+    const results = await Promise.all([1,2].map(() => agent.post(path).set("Origin", env.WEB_ORIGIN).send({ expense: input(), requestId: randomUUID(), expectedRevision: 1 })));
+    expect(results.map(r => r.status).sort()).toEqual([201,409]);
+    expect((await TripModel.findById(trip._id))?.expenses).toHaveLength(2);
+  });
+  it("validates allocations without treating them as expenses", async () => {
+    const { agent, trip } = await setup(); const path = `/api/trips/${trip.id}/budget`;
+    const result = await agent.patch(path).set("Origin", env.WEB_ORIGIN).send({ allocations: { attractions: 15000, food_drinks: 15000 }, expectedRevision: 0 });
+    expect(result.status).toBe(200); expect(result.body.summary.plannedSpendingMinor).toBe(0);
+    expect((await agent.patch(path).set("Origin", env.WEB_ORIGIN).send({ allocations: { food_drinks: 50001 }, expectedRevision: 1 })).status).toBe(400);
+    expect((await agent.patch(path).set("Origin", env.WEB_ORIGIN).send({ allocations: { other: -1 }, expectedRevision: 1 })).status).toBe(400);
+    expect((await agent.get(path)).body.summary.allocations.attractions).toBe(15000);
+  });
+  it("reconciles explicit admissions, prevents duplicate replacements and preserves history through edits", async () => {
+    const { agent, trip, edit } = await setup(); const base = `/api/trips/${trip.id}`;
+    await TripModel.updateOne({ _id: trip._id }, { $set: { "attractions.0.admission": normalizeAdmission({ tourism: "museum", fee: "yes", charge: "15 EUR per person" }) } });
+    expect((await agent.get(`${base}/budget`)).body.summary.plannedSpendingMinor).toBe(1500);
+    const ticket = input({ title: "Admission", category: "attractions", attractionId: "node/1", dayId: "1", replacesAdmission: true, amountMinor: 1200, date: "2026-06-01" });
+    const create = (revision: number) => agent.post(`${base}/expenses`).set("Origin", env.WEB_ORIGIN).send({ expense: ticket, requestId: randomUUID(), expectedRevision: revision });
+    expect((await create(0)).body.summary.plannedSpendingMinor).toBe(1200);
+    expect((await create(1)).status).toBe(400);
+    const moved = await edit({ type: "move", sourceDayIndex: 1, targetDayIndex: 2, attractionId: "node/1" });
+    expect(moved.body.trip.budgetData.summary.plannedSpendingMinor).toBe(1200);
+    expect(moved.body.trip.budgetData.expenses[0]).toMatchObject({ date: "2026-06-01", dayId: "1" });
+    const removed = await edit({ type: "remove", dayIndex: 2, attractionId: "node/1" }, 4);
+    expect(removed.body.trip.budgetData.expenses).toHaveLength(1);
+    expect(removed.body.trip.budgetData.summary.plannedSpendingMinor).toBe(1200);
+  });
+  it("regeneration applies despite unrelated expense changes and returns a fresh summary", async () => {
+    const { agent, trip } = await setup(); const base = `/api/trips/${trip.id}`;
+    const preview = await agent.post(`${base}/days/1/regenerate`).set("Origin", env.WEB_ORIGIN).send({ preferences: { relaxedPace: true } });
+    expect(preview.status).toBe(200);
+    await agent.post(`${base}/expenses`).set("Origin", env.WEB_ORIGIN).send({ expense: input({ type: "actual" }), requestId: randomUUID(), expectedRevision: 0 });
+    const applied = await agent.post(`${base}/days/1/apply`).set("Origin", env.WEB_ORIGIN).send({ previewId: preview.body.previewId });
+    expect(applied.status).toBe(200); expect(applied.body.budgetData.summary.actualSpendingMinor).toBe(2500); expect(applied.body.budgetData.expenses).toHaveLength(1);
+  });
+  it("assistant confirms literal expenses once, answers budget questions and proposes moves/deletes", async () => {
+    const { agent, trip } = await setup(); const base = `/api/trips/${trip.id}`;
+    const send = (message: string) => agent.post(`${base}/assistant/messages`).set("Origin", env.WEB_ORIGIN).send({ message });
+    const proposed = await send("Record €18 for drinks");
+    expect(proposed.body.response.actionType).toBe("expense"); expect((await TripModel.findById(trip._id))?.expenses).toHaveLength(0);
+    const apply = (id: string) => agent.post(`${base}/assistant/actions/${id}/apply`).set("Origin", env.WEB_ORIGIN).send({});
+    expect((await apply(proposed.body.response.previewId)).body.trip.budgetData.summary.actualSpendingMinor).toBe(1800);
+    expect((await apply(proposed.body.response.previewId)).status).toBe(410);
+    expect((await send("How much have I actually spent on food?")).body.response.message).toContain("€18.00");
+    const move = await send("Move my drinks expense to day 3");
+    expect((await apply(move.body.response.previewId)).body.trip.budgetData.expenses[0].dayId).toBe("3");
+    const deletion = await send("Delete the drinks expense");
+    expect((await apply(deletion.body.response.previewId)).body.trip.budgetData.expenses).toHaveLength(0);
+    expect(assistantMock.generate).not.toHaveBeenCalled();
+  });
+  it("rejects stale assistant expense confirmations and keeps canceled proposals inert", async () => {
+    const { agent, trip } = await setup(); const base = `/api/trips/${trip.id}`;
+    const send = () => agent.post(`${base}/assistant/messages`).set("Origin", env.WEB_ORIGIN).send({ message: "Add €25 for lunch on day 2" });
+    const proposed = await send();
+    await agent.post(`${base}/expenses`).set("Origin", env.WEB_ORIGIN).send({ expense: input(), requestId: randomUUID(), expectedRevision: 0 });
+    expect((await agent.post(`${base}/assistant/actions/${proposed.body.response.previewId}/apply`).set("Origin", env.WEB_ORIGIN).send({})).status).toBe(409);
+    const second = await send();
+    await agent.delete(`${base}/assistant/actions/${second.body.response.previewId}`).set("Origin", env.WEB_ORIGIN);
+    expect((await agent.post(`${base}/assistant/actions/${second.body.response.previewId}/apply`).set("Origin", env.WEB_ORIGIN).send({})).status).toBe(410);
+    expect((await TripModel.findById(trip._id))?.expenses).toHaveLength(1);
+  });
+});
 describe("assistant HTTP integration and confirmation", () => {
   it("invalidates canceled previews on the server", async () => {
     const { agent, trip } = await setup();

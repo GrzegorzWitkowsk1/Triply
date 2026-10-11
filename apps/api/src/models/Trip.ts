@@ -17,7 +17,7 @@ import type {
   TripStatus,
   TripUnscheduledPlace,
 } from "@triply/shared";
-import { PACE_VALUES, POI_ENVIRONMENT_VALUES, TRIP_STATUS_VALUES } from "@triply/shared";
+import { EXPENSE_CATEGORIES, PACE_VALUES, POI_ENVIRONMENT_VALUES, TRIP_STATUS_VALUES } from "@triply/shared";
 
 export interface EquipmentRecord {
   name: string;
@@ -66,6 +66,10 @@ export interface TripRegenerationRecord {
 }
 
 export interface TripRecord {
+  expenses: import("@triply/shared").TripExpense[];
+  budgetAllocations: import("@triply/shared").BudgetAllocations;
+  budgetAllocationCurrency: string | null;
+  budgetRevision: number;
   user: Types.ObjectId;
   status: TripStatus;
   prompt: string;
@@ -391,6 +395,18 @@ const analysisSchema = new Schema<TripAnalysis>(
 
 const tripSchema = new Schema<TripRecord>(
   {
+    expenses: { type: [new Schema({
+      id: { type: String, required: true }, title: { type: String, required: true, maxlength: 120 },
+      category: { type: String, required: true, enum: EXPENSE_CATEGORIES },
+      amountMinor: { type: Number, required: true, min: 0, max: Number.MAX_SAFE_INTEGER, validate: Number.isSafeInteger },
+      currency: { type: String, required: true }, type: { type: String, enum: ["planned", "actual"], required: true },
+      date: { type: String, default: null }, dayId: { type: String, default: null }, attractionId: { type: String, default: null },
+      replacesAdmission: { type: Boolean, default: false }, note: { type: String, default: null, maxlength: 2000 },
+      createdAt: { type: String, required: true }, updatedAt: { type: String, required: true },
+    }, { _id: false })], default: [] },
+    budgetAllocations: { type: new Schema(Object.fromEntries(EXPENSE_CATEGORIES.map(key => [key, { type: Number, min: 0, max: Number.MAX_SAFE_INTEGER, validate: Number.isSafeInteger }])), { _id: false }), default: () => ({}) },
+    budgetRevision: { type: Number, default: 0, min: 0 },
+    budgetAllocationCurrency: { type: String, default: null },
     user: {
       type: Schema.Types.ObjectId,
       ref: "User",
