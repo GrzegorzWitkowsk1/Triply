@@ -1,4 +1,4 @@
-import { isPoiCategory, type PoiCategory, type PoiEnvironment } from "@triply/shared";
+import { isPoiCategory, type PoiCategory, type PoiEnvironment, type AttractionOpeningHours } from "@triply/shared";
 import { categoryForTags, environmentForTags } from "./poiCategories.js";
 import { distanceMeters, isValidCoordinate } from "./geo.js";
 
@@ -31,6 +31,7 @@ export interface NormalizedPoi {
   distanceMeters: number;
   environment: PoiEnvironment;
   metadataCount: number;
+  openingHours?: AttractionOpeningHours;
 }
 
 export interface NormalizePoisOptions {
@@ -130,10 +131,20 @@ function prepare(candidates: readonly RawPoiCandidate[], options: NormalizePoisO
       distanceMeters: distanceMeters(options.lat, options.lng, lat, lng),
       environment: environmentForTags(tags),
       metadataCount: countMetadata(tags),
+      ...openingMetadata(tags),
     });
   });
 
   return prepared;
+}
+
+function openingMetadata(tags: Record<string, unknown>): { openingHours?: AttractionOpeningHours } {
+  const value = (key: string) => typeof tags[key] === "string" && tags[key].trim() ? tags[key] as string : null;
+  const raw = value("opening_hours");
+  const legacyCovid19 = value("opening_hours:covid19");
+  if (!raw && !legacyCovid19 && !value("check_date:opening_hours") && !value("website") && !value("contact:website")) return {};
+  return { openingHours: { raw, source: raw ? "osm" : null, checkedAt: value("check_date:opening_hours"),
+    legacyCovid19, website: value("website") ?? value("contact:website") } };
 }
 
 function compareDuplicatePriority(a: NormalizedPoi, b: NormalizedPoi): number {
@@ -156,16 +167,18 @@ function compareDuplicatePriority(a: NormalizedPoi, b: NormalizedPoi): number {
 }
 
 function dedupe(prepared: readonly PreparedPoi[]): PreparedPoi[] {
-  const seenOsmKeys = new Set<string>();
+  const seenOsmKeys = new Map<string, PreparedPoi>();
   const uniqueByOsm: PreparedPoi[] = [];
 
   for (const poi of prepared) {
     if (poi.osmKey !== null) {
       if (seenOsmKeys.has(poi.osmKey)) {
+        const existing = seenOsmKeys.get(poi.osmKey)!;
+        if (!existing.openingHours?.raw && poi.openingHours?.raw) existing.openingHours = poi.openingHours;
         continue;
       }
 
-      seenOsmKeys.add(poi.osmKey);
+      seenOsmKeys.set(poi.osmKey, poi);
     }
 
     uniqueByOsm.push(poi);
@@ -188,13 +201,16 @@ function dedupe(prepared: readonly PreparedPoi[]): PreparedPoi[] {
     const kept: PreparedPoi[] = [];
 
     for (const candidate of ordered) {
-      const isDuplicate = kept.some(
+      const duplicate = kept.find(
         (existing) =>
           distanceMeters(existing.lat, existing.lng, candidate.lat, candidate.lng) <
           DUPLICATE_RADIUS_M,
       );
 
-      if (!isDuplicate) {
+      if (duplicate && !duplicate.openingHours?.raw && candidate.openingHours?.raw) {
+        duplicate.openingHours = candidate.openingHours;
+      }
+      if (!duplicate) {
         kept.push(candidate);
       }
     }

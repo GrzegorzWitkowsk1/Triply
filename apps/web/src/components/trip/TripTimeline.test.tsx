@@ -40,6 +40,29 @@ const entries: TimelineEntry[] = [
 ];
 
 describe("TripTimeline", () => {
+  it("summarizes 24/7 availability without a misleading midnight-to-midnight label", () => {
+    const entry: TimelineEntry = { ...entries[1] as Extract<TimelineEntry, { kind: "attraction" }>,
+      openingHoursCheck: { status: "open", reason: "Open all day", source: "osm", timeZone: "Europe/Paris",
+        warnings: [], intervals: [{ start: "2026-10-13T00:00:00", end: "2026-10-15T00:00:00", unknown: false }] } };
+    render(<TripTimeline entries={[entry]} activeStop={0} onSelectStop={() => {}} />);
+    expect(screen.getByText("Open all day")).toBeTruthy();
+  });
+  it("renders evaluated daily hours and keeps missing hours explicitly unavailable", () => {
+    const known: TimelineEntry = { ...entries[1] as Extract<TimelineEntry, { kind: "attraction" }>,
+      openingHoursCheck: { status: "open", reason: "The full visit fits within known opening hours.",
+        source: "osm", timeZone: "Europe/Paris", warnings: [],
+        intervals: [{ start: "2026-10-13T10:00:00", end: "2026-10-13T18:00:00", unknown: false }] } };
+    render(<TripTimeline entries={[known, entries[3]]} activeStop={0} onSelectStop={() => {}} />);
+    expect(screen.getByText("Open 10:00–18:00")).toBeTruthy();
+    expect(screen.getByText("Opening hours unavailable")).toBeTruthy();
+  });
+  it("renders the existing card's conflict warning", () => {
+    const entry: TimelineEntry = { ...entries[1] as Extract<TimelineEntry, { kind: "attraction" }>,
+      openingHoursCheck: { status: "closed", reason: "Visit extends beyond closing time.", source: "osm",
+        timeZone: "Europe/Paris", intervals: [], warnings: [] } };
+    render(<TripTimeline entries={[entry]} activeStop={0} onSelectStop={() => {}} />);
+    expect(screen.getByText("Opening-hours conflict").title).toBe("Visit extends beyond closing time.");
+  });
   it("selects a stop when its attraction card is clicked", () => {
     const onSelectStop = vi.fn();
     render(

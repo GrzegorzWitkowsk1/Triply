@@ -158,6 +158,20 @@ describe("assistant HTTP integration and confirmation", () => {
 });
 
 describe("manual itinerary editing", () => {
+  it("persists OSM metadata and date-specific checks through MongoDB and the detail API", async () => {
+    const { edit, trip, agent } = await setup();
+    const metadata = { raw: "Mo-Fr 10:00-18:00", source: "osm", checkedAt: "2026-05-01", website: "https://museum.example", legacyCovid19: "off" };
+    await TripModel.updateOne({ _id: trip._id }, { $set: { "attractions.3.openingHours": metadata } });
+    const result = await edit({ type: "add", dayIndex: 3, attractionId: "node/4" });
+    expect(result.status).toBe(200);
+    const persisted = await TripModel.findById(trip._id);
+    expect(persisted?.attractions[3].openingHours?.raw).toBe(metadata.raw);
+    expect(persisted?.attractions[3].openingHours?.legacyCovid19).toBe("off");
+    const response = await agent.get(`/api/trips/${trip.id}`);
+    const activity = response.body.itinerary.days[2].activities.find((entry: { placeId?: string }) => entry.placeId === "node/4" && "openingHoursCheck" in entry);
+    expect(activity.openingHoursCheck).toMatchObject({ status: "open", source: "osm", timeZone: "Europe/Paris" });
+    expect(activity.startTime).toContain("T10:00");
+  });
   it("retries routing through the edit endpoint while preserving attraction order and other days", async () => {
     const { edit, trip, agent } = await setup();
     const before = await agent.get(`/api/trips/${trip.id}`);

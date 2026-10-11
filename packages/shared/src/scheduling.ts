@@ -6,6 +6,7 @@ import type {
   TravelMode,
 } from "./planner.js";
 import type { Pace, TripDayWeather } from "./trip.js";
+import type { AttractionOpeningHours, OpeningHoursCheck } from "./openingHours.js";
 
 export const WEEKDAY_VALUES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
@@ -32,7 +33,7 @@ export interface SchedulablePoi extends ClusterablePoi {
   category?: string;
   visitDurationMinutes?: number | null;
   environment?: PoiEnvironment;
-  openingHours?: OpeningHours | null;
+  openingHours?: OpeningHours | AttractionOpeningHours | null;
 }
 
 export type ScheduledActivityType = "attraction" | "travel" | "break";
@@ -53,6 +54,7 @@ export interface ScheduledActivity {
   distanceMeters?: number | null;
   travelDurationSource?: TravelDurationSource;
   weatherAdjusted?: boolean;
+  openingHoursCheck?: OpeningHoursCheck;
   warnings?: string[];
 }
 

@@ -1,4 +1,4 @@
-import type { ItineraryDay, ItineraryStop, TripItinerary } from "@triply/shared";
+import type { ItineraryDay, ItineraryStop, TripItinerary, OpeningHoursCheck } from "@triply/shared";
 
 export interface TimelineTravel {
   kind: "travel";
@@ -16,6 +16,7 @@ export interface TimelineAttraction {
   name: string;
   category: string;
   durationMinutes: number;
+  openingHoursCheck?: OpeningHoursCheck;
 }
 
 export interface TimelineBreak {
@@ -108,6 +109,7 @@ export function buildDayTimeline(day: ItineraryDay): TimelineEntry[] {
         name: activity.title,
         category: stop ? capitalize(stop.category) : "Sight",
         durationMinutes: Math.round(activity.durationMinutes),
+        openingHoursCheck: activity.openingHoursCheck,
       } satisfies TimelineAttraction;
     }
 

@@ -39,6 +39,16 @@ describe("normalizeInterests", () => {
 });
 
 describe("normalizePois", () => {
+  it("preserves opening metadata during identity and geographic deduplication", () => {
+    const candidates = [
+      poi("node/1", 48.85, 2.35, { name: "Gallery", tourism: "museum", website: "https://example.test", description: "Gallery", wikidata: "Q1" }),
+      poi("node/1", 48.85, 2.35, { name: "Gallery", tourism: "museum", opening_hours: "10:00-18:00", "check_date:opening_hours": "2026-09-01" }),
+      poi("way/2", 48.85001, 2.35, { name: "Gallery", tourism: "museum", opening_hours: "10:00-18:00" }),
+    ];
+    const result = normalizePois(candidates, options(["culture"]));
+    expect(result).toHaveLength(1);
+    expect(result[0].openingHours).toMatchObject({ raw: "10:00-18:00", source: "osm", checkedAt: "2026-09-01" });
+  });
   it("normalizes a valid POI with category, distance, environment and metadata", () => {
     const [result] = normalizePois(
       [

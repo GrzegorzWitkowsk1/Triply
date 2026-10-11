@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { attractionOpeningHoursSchema } from "./openingHours.js";
 import { addDays, diffDaysInclusive, isAfter, isIsoDate } from "./dates.js";
 import type { GeoLineString, RouteSegment, RouteSource } from "./planner.js";
 import type { ScheduledActivity, UnscheduledReason } from "./scheduling.js";
@@ -110,6 +111,7 @@ export const tripAttractionSchema = z.object({
   environment: z.enum(POI_ENVIRONMENT_SCHEMA_VALUES).nullish(),
   /** Known or provider-supplied visit duration in minutes, when available. */
   visitDurationMinutes: z.number().int().positive().max(1440).nullish(),
+  openingHours: attractionOpeningHoursSchema.nullish(),
 });
 
 export type TripAttraction = z.infer<typeof tripAttractionSchema>;

@@ -1,5 +1,8 @@
 import type { ItineraryDay } from "@triply/shared";
 import type { TripDocument } from "../models/Trip.js";
+import { evaluateOpeningHours, resolvePoiTimeZone } from "./openingHoursService.js";
+import { resolveVisit } from "./scheduling.js";
+import { mergeSchedulingConfig } from "./schedulingConfig.js";
 
 export function resolveDay(days: ItineraryDay[], reference: string | null, previous: number | null, selected?: string, now = new Date()): ItineraryDay[] {
   if (!reference) return days.filter(day => day.dayIndex === (previous ?? Number(selected)));
@@ -20,9 +23,10 @@ export function resolveDay(days: ItineraryDay[], reference: string | null, previ
   return days.filter(day => day.date === ref || (day.date && new Intl.DateTimeFormat("en", { weekday: "long", timeZone: "UTC" }).format(new Date(`${day.date}T12:00:00Z`)).toLowerCase() === ref));
 }
 
-export function resolveAttraction(trip: TripDocument, reference: string | null, day: ItineraryDay | undefined, previous: string | null, candidates = false) {
+export function resolveAttraction(trip: TripDocument, reference: string | null, day: ItineraryDay | undefined, previous: string | null, candidates = false, openingHours = false) {
   const scheduled = (day ? [day] : trip.itinerary!.days).flatMap(d => d.activities.filter(a => a.type === "attraction").map(a => ({ id: a.placeId, name: a.title, dayIndex: d.dayIndex })));
-  const pool = candidates ? trip.attractions.filter(a => a.placeId && !trip.itinerary!.days.some(d => d.activities.some(activity => activity.placeId === a.placeId))).map(a => ({ id: a.placeId, name: a.name, dayIndex: 0 })) : scheduled;
+  const pool = openingHours ? trip.attractions.map(a => ({ id: a.placeId, name: a.name, dayIndex: scheduled.find(p => p.id === a.placeId)?.dayIndex ?? 0 }))
+    : candidates ? trip.attractions.filter(a => a.placeId && !trip.itinerary!.days.some(d => d.activities.some(activity => activity.placeId === a.placeId))).map(a => ({ id: a.placeId, name: a.name, dayIndex: 0 })) : scheduled;
   if (!reference) return [];
   const ref = reference.toLowerCase().trim().replace(/^the\s+/, "");
   const exact = pool.filter(a => a.name.toLowerCase() === ref || a.id === reference);
@@ -42,6 +46,14 @@ export function buildAssistantContext(trip: TripDocument, selected?: string) {
   return { destination: trip.analysis.destination, dates: [trip.analysis.startDate, trip.analysis.endDate], travelers: trip.analysis.travelers,
     interests: trip.analysis.interests, pace: trip.analysis.pace, maxWalkingDistanceKm: trip.analysis.maxWalkingDistanceKm, budget: trip.analysis.budget, selectedDay: selected,
     days: trip.itinerary!.days.map(day => ({ dayIndex: day.dayIndex, date: day.date, count: day.activities.filter(a => a.type === "attraction").length })),
+    openingHours: trip.itinerary!.days.flatMap(day => day.activities.filter(a => a.type === "attraction").map(activity => ({ day, activity }))).slice(0, 40).map(({ day, activity }) => {
+      const poi = trip.attractions.find(place => place.placeId === activity.placeId);
+      return { id: activity.placeId, name: activity.title, date: day.date,
+        metadata: poi?.openingHours ? { raw: poi.openingHours.raw?.slice(0, 500), source: poi.openingHours.source, checkedAt: poi.openingHours.checkedAt } : null,
+        availability: evaluateOpeningHours({ metadata: poi?.openingHours, date: day.date,
+          startMinutes: Number(activity.startTime.slice(11, 13)) * 60 + Number(activity.startTime.slice(14, 16)),
+          durationMinutes: activity.durationMinutes, timeZone: resolvePoiTimeZone(poi ?? {}, day.timeZone) }) };
+    }),
     relevantDays: trip.itinerary!.days.filter(day => day.dayIndex === Number(selected)).slice(0,1).map(day => ({
       dayIndex: day.dayIndex, date: day.date, timeZone: day.timeZone,
       activities: day.activities.slice(0,40).map(activity => ({ id: activity.placeId, title: activity.title, type: activity.type, startTime: activity.startTime, endTime: activity.endTime })),
@@ -52,9 +64,29 @@ export function buildAssistantContext(trip: TripDocument, selected?: string) {
   };
 }
 
-export function factualAnswer(trip: TripDocument, question: string, day?: ItineraryDay, attractionId?: string): string {
+export function factualAnswer(trip: TripDocument, question: string, day?: ItineraryDay, attractionId?: string, message = ""): string {
   const days = day ? [day] : trip.itinerary!.days;
   const activities = days.flatMap(d => d.activities.filter(a => a.type === "attraction"));
+  if (question === "opening_hours") {
+    const clock = /\b([01]?\d|2[0-3]):([0-5]\d)\b/.exec(message);
+    const config = mergeSchedulingConfig();
+    const lines = days.flatMap(d => trip.attractions.filter(poi => !attractionId || poi.placeId === attractionId).map(poi => {
+      const activity = d.activities.find(a => a.type === "attraction" && a.placeId === poi.placeId);
+      const duration = activity?.durationMinutes ?? resolveVisit({ name: poi.name, lat: poi.lat, lng: poi.lng,
+        category: poi.category, visitDurationMinutes: poi.visitDurationMinutes }, config).minutes;
+      const startMinutes = clock ? Number(clock[1]) * 60 + Number(clock[2]) : activity ? Number(activity.startTime.slice(11, 13)) * 60 + Number(activity.startTime.slice(14, 16)) : 0;
+      const input = { metadata: poi.openingHours, date: d.date, startMinutes, durationMinutes: duration, timeZone: resolvePoiTimeZone(poi, d.timeZone) };
+      let result = evaluateOpeningHours(input);
+      if (!clock && !activity && result.nextAvailableStart) {
+        result = evaluateOpeningHours({ ...input, startMinutes: Number(result.nextAvailableStart.slice(11,13)) * 60 + Number(result.nextAvailableStart.slice(14,16)) });
+      }
+      const hours = result.intervals.map(interval => `${interval.start.slice(11,16)}–${interval.end.slice(11,16)}${interval.unknown ? " (uncertain)" : ""}`).join(", ");
+      return { result, text: `${poi.name} (${d.date}, ${result.timeZone ?? "timezone unknown"}): ${result.status} for ${activity || clock ? "the" : "a possible"} ${duration}-minute visit. ${result.reason}${hours ? ` Hours: ${hours}.` : ""}${result.nextAvailableStart && result.status === "closed" ? ` Suggested start: ${result.nextAvailableStart}.` : ""} Source: ${result.source ?? "unavailable"}.` };
+    }));
+    const filtered = /unknown|unavailable/i.test(message) ? lines.filter(line => line.result.status === "unknown")
+      : /which.*closed/i.test(message) ? lines.filter(line => line.result.status === "closed" && !line.result.nextAvailableStart && !line.result.intervals.some(interval => interval.unknown)) : lines;
+    return filtered.map(line => line.text).join("\n") || "No matching attractions have that confirmed opening-hours status.";
+  }
   if (question === "budget") return `Your planned budget is ${trip.analysis.budget.amount ?? "unknown"} ${trip.analysis.budget.currency ?? ""}. Expense data is unavailable, so I cannot calculate your remaining budget.`;
   if (question === "count") return `${activities.length} scheduled attractions across ${days.length} itinerary day(s).`;
   if (question === "walking") {

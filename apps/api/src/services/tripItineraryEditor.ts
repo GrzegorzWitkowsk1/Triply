@@ -11,6 +11,7 @@ import type { RoutingProvider } from "../routing/types.js";
 import { fetchAttractions } from "./attractions.js";
 import { optimizeClusterRoute } from "./routeOptimizer.js";
 import { buildDailySchedules } from "./scheduling.js";
+import { resolvePoiTimeZone } from "./openingHoursService.js";
 import { toItineraryDay, toItineraryStop, toSchedulablePois } from "./tripGeneration.js";
 
 export class ItineraryEditError extends Error {
@@ -186,7 +187,8 @@ export async function recalculateEditedDay(trip: TripDocument, day: ItineraryDay
   const dates: (string | null)[] = [];
   dates[day.dayIndex - 1] = day.date || null;
   const scheduled = buildDailySchedules({ dayRoutes: [route], travelMode: env.ROUTING_MODE,
-    pace: trip.analysis.pace, weather: trip.weather, timeZone: day.timeZone, dates, start });
+    pace: trip.analysis.pace, weather: trip.weather,
+    timeZone: resolvePoiTimeZone(trip.analysis.location ?? {}, day.timeZone), dates, start });
   const result = scheduled.days[0];
   const actualIds = result.activities.filter((activity) => activity.type === "attraction").map((activity) => activity.placeId);
   const conflicts = scheduled.unscheduledPlaces.map((entry) => ({ place: toItineraryStop(entry.place),

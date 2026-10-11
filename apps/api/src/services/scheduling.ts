@@ -7,6 +7,7 @@ import {
   type DailySchedulingResult,
   type DurationSource,
   type OpeningWindow,
+  type OpeningHoursCheck,
   type RouteSegment,
   type SchedulablePoi,
   type ScheduledActivity,
@@ -22,6 +23,7 @@ import { isValidCoordinate } from "./geo.js";
 import { isPrecipitationCode } from "./poiScoring.js";
 import { mergeSchedulingConfig } from "./schedulingConfig.js";
 import { isValidTimeZone, resolveLocalIso, weekdayForDate } from "./timeZone.js";
+import { evaluateOpeningHours, resolvePoiTimeZone, visitEndLocalIso } from "./openingHoursService.js";
 
 interface WeatherCondition {
   adverse: boolean;
@@ -70,7 +72,7 @@ function estimateVisitMinutes(category: string | undefined, config: SchedulingCo
   return Math.round((estimate.minMinutes + estimate.maxMinutes) / 2);
 }
 
-function resolveVisit(poi: SchedulablePoi, config: SchedulingConfig): VisitResolution {
+export function resolveVisit(poi: SchedulablePoi, config: SchedulingConfig): VisitResolution {
   const provided = poi.visitDurationMinutes;
 
   if (typeof provided === "number" && Number.isFinite(provided) && provided > 0) {
@@ -108,7 +110,7 @@ function resolveTravel(
 function windowsForDay(poi: SchedulablePoi, weekday: Weekday | null): OpeningWindow[] | null {
   const hours = poi.openingHours;
 
-  if (!hours || !hours.weekly || weekday === null) {
+  if (!hours || !("weekly" in hours) || weekday === null) {
     return null;
   }
 
@@ -423,15 +425,15 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
       cursor += travel.minutes;
     };
 
-    const dropTrailing = (from: number, reason: UnscheduledReason): void => {
+    const dropTrailing = (from: number, reason: UnscheduledReason, detail?: string): void => {
       for (let index = from; index < validPlaces.length; index += 1) {
         unscheduledPlaces.push({
           place: validPlaces[index],
           dayIndex,
-          reason,
+          reason: index === from ? reason : "insufficient-time",
           detail:
             reason === "opening-hours-conflict"
-              ? "Opening hours prevent scheduling this attraction."
+              ? index === from ? detail ?? "Opening hours prevent scheduling this attraction." : "An earlier opening-hours conflict prevents completing this route in its saved order."
               : "The attraction does not fit inside the daily time window.",
         });
       }
@@ -452,11 +454,22 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
       const travel = segment ? resolveTravel(segment, input.travelMode, config) : null;
       const anticipatedArrival = cursor + (travel?.minutes ?? 0);
       const weekday = date ? weekdayForDate(date) : null;
-      const windows = windowsForDay(place, weekday);
+      const metadata = place.openingHours && "raw" in place.openingHours ? place.openingHours : null;
+      const attractionZone = resolvePoiTimeZone(place, requestedZone);
+      const evaluate = (minutes: number) => evaluateOpeningHours({ metadata, date, startMinutes: minutes,
+        durationMinutes: visit.minutes, endMinutes, timeZone: attractionZone });
+      let openingCheck: OpeningHoursCheck | undefined = metadata || !place.openingHours ? evaluate(anticipatedArrival) : undefined;
+      let windows = windowsForDay(place, weekday);
+      if (metadata && openingCheck?.status !== "unknown" && !openingCheck?.intervals.some(interval => interval.unknown)) {
+        windows = openingCheck!.intervals.map(interval => ({
+          openMinutes: Number(interval.start.slice(11, 13)) * 60 + Number(interval.start.slice(14, 16)),
+          closeMinutes: (interval.end.slice(0, 10) === date ? 0 : 1440) + Number(interval.end.slice(11, 13)) * 60 + Number(interval.end.slice(14, 16)),
+        }));
+      }
 
       if (windows !== null) {
         if (windows.length === 0) {
-          dropTrailing(placeIndex, "opening-hours-conflict");
+          dropTrailing(placeIndex, "opening-hours-conflict", openingCheck?.reason);
           break;
         }
 
@@ -501,6 +514,15 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
       }
 
       const activityWarnings: string[] = [];
+      if (openingCheck) {
+        openingCheck = evaluate(activityStart);
+        if (openingCheck.status === "closed") {
+          dropTrailing(placeIndex, "opening-hours-conflict", openingCheck.reason);
+          break;
+        }
+        if (openingCheck.status === "unknown") activityWarnings.push(openingCheck.reason);
+        activityWarnings.push(...openingCheck.warnings.filter(warning => !activityWarnings.includes(warning)));
+      }
       let weatherAdjusted = false;
 
       if (condition?.adverse && place.environment === "outdoor") {
@@ -512,6 +534,13 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
 
       const activityStartIso = resolveLocalIso(date, activityStart, timeZone);
       const activityEndIso = resolveLocalIso(date, activityStart + visit.minutes, timeZone);
+      if (date && attractionZone) activityEndIso.iso = visitEndLocalIso(date, activityStart, visit.minutes, attractionZone);
+      const elapsedEndMinutes = activityEndIso.iso ? Number(activityEndIso.iso.slice(11, 13)) * 60 + Number(activityEndIso.iso.slice(14, 16))
+        + (activityEndIso.iso.slice(0, 10) === date ? 0 : 1440) : activityStart + visit.minutes;
+      if (elapsedEndMinutes > endMinutes) {
+        dropTrailing(placeIndex, "insufficient-time");
+        break;
+      }
 
       if (activityStartIso.adjusted || activityEndIso.adjusted) {
         activityWarnings.push("Scheduled across a daylight saving time change.");
@@ -527,10 +556,11 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
         durationSource: visit.source,
         warnings: activityWarnings.length > 0 ? activityWarnings : undefined,
         weatherAdjusted: weatherAdjusted || undefined,
+        openingHoursCheck: openingCheck,
       });
 
       totalVisitMinutes += visit.minutes;
-      cursor = activityStart + visit.minutes;
+      cursor = elapsedEndMinutes;
     }
 
     if (!stopped && hasStart && route.returnsToStart && route.segments.length > 0) {

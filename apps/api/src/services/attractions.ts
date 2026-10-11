@@ -162,6 +162,7 @@ function toAttractions(
     score: poi.score,
     placeId: poi.osmKey ?? null,
     environment: poi.environment,
+    ...(poi.openingHours ? { openingHours: poi.openingHours } : {}),
   }));
 }
 

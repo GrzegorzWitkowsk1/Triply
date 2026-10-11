@@ -13,6 +13,13 @@ export default function TripAttractionCard({
   selected,
   onSelect,
 }: TripAttractionCardProps) {
+  const check = entry.openingHoursCheck;
+  const knownIntervals = check?.intervals.filter(interval => !interval.unknown) ?? [];
+  const allDay = knownIntervals.some(interval => interval.start.slice(11, 16) === "00:00"
+    && interval.end.slice(0, 10) > interval.start.slice(0, 10));
+  const dailyHours = knownIntervals.map(interval => `${interval.start.slice(11, 16)}–${interval.end.slice(11, 16)}${interval.end.slice(0, 10) > interval.start.slice(0, 10) ? " (next day)" : ""}`).join(", ");
+  const hoursLabel = check?.status === "open" ? allDay ? "Open all day" : `Open ${dailyHours}`
+    : check?.status === "closed" ? "Opening-hours conflict" : "Opening hours unavailable";
   return (
     <button
       type="button"
@@ -23,6 +30,9 @@ export default function TripAttractionCard({
       <span className="activity-category">{entry.category}</span>
       <span className="activity-time">
         <ScheduleOutlined /> {formatDuration(entry.durationMinutes)} visit
+      </span>
+      <span className="activity-category" title={entry.openingHoursCheck?.reason}>
+        {hoursLabel}
       </span>
     </button>
   );

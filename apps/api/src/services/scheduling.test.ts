@@ -100,6 +100,29 @@ function build(
   });
 }
 
+describe("OSM opening-aware scheduling", () => {
+  const metadata = (raw: string) => ({ raw, source: "osm" as const, checkedAt: null });
+  it("waits for opening and verifies the full visit again after breaks", () => {
+    const place = poi("Gallery", { visitDurationMinutes: 60, openingHours: metadata("Mo 13:00-14:00") });
+    const result = build([makeRoute(1, [place])], { startDate: "2026-06-01", pace: "balanced" });
+    const visit = result.days[0].activities.find(a => a.type === "attraction");
+    expect(visit?.startTime).toBe("2026-06-01T13:00:00");
+    expect(visit?.openingHoursCheck?.status).toBe("open");
+  });
+  it("retains every conflicting and blocked attraction as a structured result", () => {
+    const result = build([makeRoute(1, [poi("Closed", { openingHours: metadata("Mo off") }), poi("Unknown")])],
+      { startDate: "2026-06-01" });
+    expect(result.unscheduledPlaces.map(p => p.place.name)).toEqual(["Closed", "Unknown"]);
+    expect(result.unscheduledPlaces[0].reason).toBe("opening-hours-conflict");
+    expect(result.unscheduledPlaces[1].reason).toBe("insufficient-time");
+  });
+  it("leaves invalid and missing hours explicitly unknown on each visit", () => {
+    const result = build([makeRoute(1, [poi("Invalid", { openingHours: metadata("invalid") }), poi("Missing")])],
+      { startDate: "2026-06-01" });
+    expect(result.days[0].activities.filter(a => a.type === "attraction").map(a => a.openingHoursCheck?.status)).toEqual(["unknown", "unknown"]);
+  });
+});
+
 describe("buildDailySchedules", () => {
   it("estimates visit durations and preserves provided ones", () => {
     const places = [

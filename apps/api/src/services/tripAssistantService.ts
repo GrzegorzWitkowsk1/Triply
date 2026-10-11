@@ -52,7 +52,7 @@ export async function sendAssistantMessage(tripId: string, userId: string, input
     const clarify = (message: string): AssistantResponse => { stored.pending = intent; return { type: "clarification", message }; };
     const days = resolveDay(trip.itinerary!.days, intent.day, stored.lastDay, input.selectedDayId);
     const day = days.length === 1 ? days[0] : undefined;
-    const attractions = resolveAttraction(trip, intent.attraction, intent.day ? day : undefined, stored.lastAttraction);
+    const attractions = resolveAttraction(trip, intent.attraction, intent.day ? day : undefined, stored.lastAttraction, false, intent.question === "opening_hours");
     const attraction = attractions.length === 1 ? attractions[0] : undefined;
     stored.prepared = null;
     if (intent.multipleActions) response = clarify("I can prepare these changes sequentially, with confirmation for each. Which change should we handle first? Please restate that change.");
@@ -60,8 +60,8 @@ export async function sendAssistantMessage(tripId: string, userId: string, input
     else if (intent.intent === "clarification") response = clarify("Please specify the trip question or itinerary change you want.");
     else if ((intent.day && !day) || ((intent.intent === "regenerate_day" || intent.operation === "add") && !day)) response = clarify(`Which itinerary day do you mean? Available days: ${trip.itinerary!.days.map(d => `${d.dayIndex}${d.date ? ` (${d.date})` : ""}`).join(", ")}.`);
     else if (intent.intent === "trip_question") {
-      if (intent.question === "why" && !attraction) response = clarify(`Which attraction do you mean? ${attractions.map(a => a.name).join(", ")}`);
-      else response = { type: "message", message: factualAnswer(trip, intent.question, intent.day || (stored.lastDay && ["schedule", "first", "last", "duration"].includes(intent.question)) ? day : undefined, attraction?.id ?? undefined) };
+      if ((intent.question === "why" || (intent.question === "opening_hours" && intent.attraction)) && !attraction) response = clarify(`Which attraction do you mean? ${attractions.map(a => a.name).join(", ")}`);
+      else response = { type: "message", message: factualAnswer(trip, intent.question, intent.day || (stored.lastDay && ["schedule", "first", "last", "duration"].includes(intent.question)) ? day : undefined, attraction?.id ?? undefined, input.message) };
     } else if (intent.intent === "regenerate_day" && day) {
       if (!Object.values(intent.preferences).some(Boolean)) response = clarify("How should this day change: less walking, more food, relaxed pace, indoor attractions, or a different plan?");
       else response = { type: "action_preview", actionType: "regenerate_day", message: `Review the proposed day ${day.dayIndex}. Your itinerary changes only when you apply the preview.`, preview: await createDayRegenerationPreview({ trip, dayIndex: day.dayIndex, preferences: intent.preferences }) };
@@ -110,7 +110,7 @@ export async function sendAssistantMessage(tripId: string, userId: string, input
       }
     }
     if (day) stored.lastDay = day.dayIndex;
-    if (attraction?.id) { stored.lastAttraction = attraction.id; stored.lastDay = attraction.dayIndex; }
+    if (attraction?.id) { stored.lastAttraction = attraction.id; if (attraction.dayIndex && (!day || intent.question !== "opening_hours")) stored.lastDay = attraction.dayIndex; }
     if (response!.type !== "clarification") stored.pending = null;
   } catch (error) {
     response = { type: "error", retryable: true, message: error instanceof ItineraryEditError ? error.message : "I couldn't prepare a reliable response. Please try again or clarify your request." };

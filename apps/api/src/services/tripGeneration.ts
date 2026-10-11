@@ -13,6 +13,7 @@ import { env } from "../config/env.js";
 import { TripModel, type TripDocument, type TripItineraryRecord } from "../models/Trip.js";
 import { ensureAttractions, ensureWeather } from "./tripDraft.js";
 import { planTrip, type PlanTripResult } from "./tripPlanner.js";
+import { resolvePoiTimeZone } from "./openingHoursService.js";
 
 /** A generation that has been running longer than this is considered abandoned. */
 export const STALE_GENERATION_MS = 2 * 60 * 1000;
@@ -98,6 +99,7 @@ export function toSchedulablePois(
     placeId: attraction.placeId ?? undefined,
     environment: attraction.environment ?? undefined,
     visitDurationMinutes: attraction.visitDurationMinutes ?? undefined,
+    openingHours: attraction.openingHours ?? undefined,
   }));
 }
 
@@ -210,6 +212,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
     weather: weather.days,
     startDate: analysis.startDate,
     dates: generationDates(trip),
+    timeZone: resolvePoiTimeZone(location),
     routing: {
       mode: env.ROUTING_MODE,
       start,

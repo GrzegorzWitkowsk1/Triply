@@ -5,4 +5,5 @@ export * from "./dates.js";
 export * from "./planner.js";
 export * from "./regeneration.js";
 export * from "./scheduling.js";
+export * from "./openingHours.js";
 export * from "./trip.js";

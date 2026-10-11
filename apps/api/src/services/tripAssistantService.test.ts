@@ -65,6 +65,15 @@ describe("assistant grounding and resolution", () => {
   });
 });
 describe("assistant orchestration", () => {
+  it("answers an opening-hours question deterministically on the requested day", async () => {
+    trip.attractions[0].openingHours = { raw: "Tu-Su 10:00-18:00; Mo off", source: "osm", checkedAt: null };
+    trip.attractions[0].visitDurationMinutes = 90;
+    mocks.generate.mockResolvedValue({ ...baseIntent, question: "opening_hours", day: "Tuesday", attraction: "Prado Museum" });
+    const result = await sendAssistantMessage(tripId, userId, { message: "Is Prado Museum open on Tuesday at 17:00?" });
+    expect(result.response.type).toBe("message");
+    expect(result.response.message).toContain("2026-10-13");
+    expect(result.response.message).toContain("closed for the 90-minute visit");
+  });
   it("stores bounded messages and supplies bounded history without private data", async () => {
     stored.messages = Array.from({ length: 40 }, (_,i) => ({ id: String(i), role: "ai", text: "old" }));
     const result = await sendAssistantMessage(tripId,userId,{ message: "How many attractions?" });

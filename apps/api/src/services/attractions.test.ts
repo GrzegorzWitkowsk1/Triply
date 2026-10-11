@@ -12,7 +12,7 @@ function withoutScores(result: TripAttraction[] | null): TripAttraction[] | null
   }
 
   return result.map(
-    ({ score: _score, placeId: _placeId, environment: _environment, ...rest }) => rest,
+    ({ score: _score, placeId: _placeId, environment: _environment, openingHours: _openingHours, ...rest }) => rest,
   );
 }
 

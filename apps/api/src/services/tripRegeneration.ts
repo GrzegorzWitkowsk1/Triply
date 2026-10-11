@@ -20,6 +20,8 @@ import { fetchAttractions } from "./attractions.js";
 import { distanceMeters } from "./geo.js";
 import { optimizeClusterRoute } from "./routeOptimizer.js";
 import { buildDailySchedules } from "./scheduling.js";
+import { improveOpeningHoursRoute, planningAvailability } from "./openingHoursPlanning.js";
+import { resolvePoiTimeZone } from "./openingHoursService.js";
 import { toItineraryDay, toItineraryStop, toSchedulablePois } from "./tripGeneration.js";
 
 export const PREVIEW_TTL_MS = 30 * 60 * 1000;
@@ -408,7 +410,17 @@ export async function regenerateTripDay(
   const rng = mulberry32(seed);
   const context: RankingContext = { preferences, anchor, currentKeys, rng };
 
-  const basePool = trip.attractions.filter((attraction) => !excluded.has(attractionKey(attraction)));
+  const available = (attraction: TripAttraction) => {
+    const check = planningAvailability(toSchedulablePois([attraction])[0], targetDay.date,
+      { travelMode: env.ROUTING_MODE, pace: preferences.relaxedPace ? "relaxed" : trip.analysis.pace,
+        timeZone: itinerary.timeZone }, dayIndex);
+    if (check.status === "closed" && !check.nextAvailableStart && !check.intervals.some(interval => interval.unknown)) {
+      warnings.push(`${attraction.name}: ${check.reason}`);
+      return false;
+    }
+    return true;
+  };
+  const basePool = trip.attractions.filter((attraction) => !excluded.has(attractionKey(attraction)) && available(attraction));
   const target = plannedTarget(preferences, trip.analysis.pace);
   const baseRanked = rankCandidates(basePool, context);
   const location = trip.analysis.location;
@@ -431,7 +443,7 @@ export async function regenerateTripDay(
         for (const attraction of fetched) {
           const key = attractionKey(attraction);
 
-          if (excluded.has(key) || existingKeys.has(key)) {
+          if (excluded.has(key) || existingKeys.has(key) || !available(attraction)) {
             continue;
           }
 
@@ -471,7 +483,7 @@ export async function regenerateTripDay(
     ? { lat: location.lat, lng: location.lng }
     : null;
 
-  const route = await optimizeClusterRoute<SchedulablePoi>(cluster, {
+  let route = await optimizeClusterRoute<SchedulablePoi>(cluster, {
     mode: env.ROUTING_MODE,
     start,
     returnToStart: env.ROUTING_RETURN_TO_START,
@@ -480,13 +492,18 @@ export async function regenerateTripDay(
 
   const dates: (string | null)[] = [];
   dates[dayIndex - 1] = targetDay.date && targetDay.date.length > 0 ? targetDay.date : null;
+  const improved = await improveOpeningHoursRoute(route, {
+    travelMode: env.ROUTING_MODE, pace: preferences.relaxedPace ? "relaxed" : trip.analysis.pace,
+    weather: trip.weather, timeZone: resolvePoiTimeZone(location ?? {}, itinerary.timeZone), dates, start,
+  }, { mode: env.ROUTING_MODE, start, returnToStart: env.ROUTING_RETURN_TO_START, provider });
+  route = improved.route;
 
   const scheduling = buildDailySchedules<SchedulablePoi>({
     dayRoutes: [route],
     travelMode: env.ROUTING_MODE,
     pace: preferences.relaxedPace ? "relaxed" : (trip.analysis.pace ?? null),
     weather: trip.weather,
-    timeZone: itinerary.timeZone,
+    timeZone: resolvePoiTimeZone(location ?? {}, itinerary.timeZone),
     dates,
     start,
   });
@@ -529,7 +546,7 @@ export async function regenerateTripDay(
     }
   }
 
-  const unscheduled: TripUnscheduledPlace[] = scheduling.unscheduledPlaces.map((entry) => ({
+  const unscheduled: TripUnscheduledPlace[] = [...scheduling.unscheduledPlaces, ...improved.conflicts].map((entry) => ({
     place: toItineraryStop(entry.place),
     dayIndex: entry.dayIndex,
     reason: entry.reason,

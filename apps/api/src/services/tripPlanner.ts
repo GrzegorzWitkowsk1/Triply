@@ -14,6 +14,8 @@ import {
   type TripRoutingResult,
 } from "./routePlanning.js";
 import { buildDailySchedules } from "./scheduling.js";
+import { improveOpeningHoursRoute } from "./openingHoursPlanning.js";
+import { createRoutingProvider } from "../routing/index.js";
 
 export interface PlanTripInput<T extends SchedulablePoi = SchedulablePoi> {
   pois: readonly T[];
@@ -51,6 +53,16 @@ export async function planTrip<T extends SchedulablePoi = SchedulablePoi>(
   });
 
   const routing = await buildTripRouting<T>(clustering, input.routing ?? {});
+  const openingConflicts: DailySchedulingResult<T>["unscheduledPlaces"] = [];
+  for (let index = 0; index < routing.dayRoutes.length; index++) {
+    const improved = await improveOpeningHoursRoute(routing.dayRoutes[index], {
+      ...input, travelMode: routing.mode, start: input.routing?.start,
+    }, { ...input.routing, mode: routing.mode, returnToStart: input.routing?.returnToStart ?? routing.dayRoutes[index].returnsToStart,
+      provider: input.routing?.provider !== undefined ? input.routing.provider : createRoutingProvider() });
+    routing.dayRoutes[index] = improved.route;
+    openingConflicts.push(...improved.conflicts);
+  }
+  if (routing.dayRoutes.some(route => route.routingSource === "approximation")) routing.source = "approximation";
 
   const schedules = buildDailySchedules<T>({
     dayRoutes: routing.dayRoutes,
@@ -67,7 +79,10 @@ export async function planTrip<T extends SchedulablePoi = SchedulablePoi>(
     departureTimeMinutes: input.departureTimeMinutes,
   });
 
-  const unscheduledPlaces = [...schedules.unscheduledPlaces];
+  const unscheduledPlaces = [...schedules.unscheduledPlaces, ...openingConflicts];
+  for (const conflict of openingConflicts) {
+    schedules.days.find(day => day.dayIndex === conflict.dayIndex)?.warnings.push(`${conflict.place.name}: ${conflict.detail}`);
+  }
 
   for (const place of clustering.unassigned) {
     unscheduledPlaces.push({
