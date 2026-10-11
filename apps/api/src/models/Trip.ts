@@ -126,6 +126,27 @@ const dayWeatherSchema = new Schema<TripDayWeather>(
   { _id: false },
 );
 
+const admissionSchema = new Schema({
+  status: { type: String, enum: ["free", "paid", "unknown"], required: true },
+  price: { type: new Schema({
+    amountMinor: { type: Number, required: true, min: 0, max: Number.MAX_SAFE_INTEGER, validate: Number.isSafeInteger },
+    currency: { type: String, required: true, match: /^[A-Z]{3}$/ },
+    fractionDigits: { type: Number, required: true, min: 0, max: 3, validate: Number.isInteger },
+    priceType: { type: String, enum: ["adult", "general"], required: true },
+    unit: { type: String, enum: ["per_person", "per_group", "unknown"], required: true },
+  }, { _id: false }), default: null },
+  source: { type: String, enum: ["osm", "official", null], default: null },
+  sourceUrl: { type: String, default: null, maxlength: 2000 },
+  checkedAt: { type: String, default: null },
+  retrievedAt: { type: String, default: null },
+  rawFee: { type: String, default: null },
+  rawCharge: { type: String, default: null },
+  rawFeeConditional: { type: String, default: null },
+  rawChargeConditional: { type: String, default: null },
+  rawCurrency: { type: String, default: null },
+  menuUrl: { type: String, default: null },
+  notes: { type: String, default: null },
+}, { _id: false });
 const attractionSchema = new Schema<TripAttraction>(
   {
     name: { type: String, required: true, trim: true, maxlength: 200 },
@@ -136,6 +157,7 @@ const attractionSchema = new Schema<TripAttraction>(
     placeId: { type: String, default: null, trim: true },
     environment: { type: String, enum: [...POI_ENVIRONMENT_VALUES, null], default: null },
     visitDurationMinutes: { type: Number, default: null, min: 1, max: 1440 },
+    admission: { type: admissionSchema, default: undefined },
     openingHours: { type: new Schema({
       raw: { type: String, default: null, maxlength: 10000 },
       source: { type: String, enum: ["osm", "official", null], default: null },
@@ -189,6 +211,7 @@ const clusteringSchema = new Schema<ClusteringRecord>(
 
 const itineraryStopSchema = new Schema<ItineraryStop>(
   {
+    admission: { type: admissionSchema, default: undefined },
     placeId: { type: String, default: null, trim: true },
     name: { type: String, required: true, trim: true, maxlength: 200 },
     category: { type: String, required: true, trim: true, maxlength: 60 },

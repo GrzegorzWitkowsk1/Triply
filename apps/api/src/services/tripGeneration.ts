@@ -100,10 +100,12 @@ export function toSchedulablePois(
     environment: attraction.environment ?? undefined,
     visitDurationMinutes: attraction.visitDurationMinutes ?? undefined,
     openingHours: attraction.openingHours ?? undefined,
+    admission: attraction.admission ?? undefined,
   }));
 }
 
 interface StoppablePoi {
+  admission?: TripAttraction["admission"];
   name: string;
   category?: string | null;
   lat: number;
@@ -114,6 +116,7 @@ interface StoppablePoi {
 
 export function toItineraryStop(poi: StoppablePoi): ItineraryStop {
   return {
+    admission: poi.admission,
     placeId: poi.placeId ?? null,
     name: poi.name,
     category: poi.category ?? "attraction",

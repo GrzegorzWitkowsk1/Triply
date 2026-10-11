@@ -1,4 +1,5 @@
 import { ScheduleOutlined } from "@mui/icons-material";
+import { admissionLabel } from "@triply/shared";
 import type { TimelineAttraction } from "../../config/itineraryAdapters";
 import { formatDuration } from "../../config/itineraryAdapters";
 
@@ -28,6 +29,7 @@ export default function TripAttractionCard({
     >
       <span className="activity-name">{entry.name}</span>
       <span className="activity-category">{entry.category}</span>
+      <span className="activity-category" title={entry.admission ? `Source: ${entry.admission.source ?? "unavailable"}${entry.admission.sourceUrl ? ` (${entry.admission.sourceUrl})` : ""}. Prices may change; verify before visiting.` : undefined}>{admissionLabel(entry.admission)}</span>
       <span className="activity-time">
         <ScheduleOutlined /> {formatDuration(entry.durationMinutes)} visit
       </span>

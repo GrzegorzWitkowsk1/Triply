@@ -60,7 +60,7 @@ export async function sendAssistantMessage(tripId: string, userId: string, input
     else if (intent.intent === "clarification") response = clarify("Please specify the trip question or itinerary change you want.");
     else if ((intent.day && !day) || ((intent.intent === "regenerate_day" || intent.operation === "add") && !day)) response = clarify(`Which itinerary day do you mean? Available days: ${trip.itinerary!.days.map(d => `${d.dayIndex}${d.date ? ` (${d.date})` : ""}`).join(", ")}.`);
     else if (intent.intent === "trip_question") {
-      if ((intent.question === "why" || (intent.question === "opening_hours" && intent.attraction)) && !attraction) response = clarify(`Which attraction do you mean? ${attractions.map(a => a.name).join(", ")}`);
+      if ((intent.question === "why" || (["opening_hours", "admission"].includes(intent.question) && intent.attraction)) && !attraction) response = clarify(`Which attraction do you mean? ${attractions.map(a => a.name).join(", ")}`);
       else response = { type: "message", message: factualAnswer(trip, intent.question, intent.day || (stored.lastDay && ["schedule", "first", "last", "duration"].includes(intent.question)) ? day : undefined, attraction?.id ?? undefined, input.message) };
     } else if (intent.intent === "regenerate_day" && day) {
       if (!Object.values(intent.preferences).some(Boolean)) response = clarify("How should this day change: less walking, more food, relaxed pace, indoor attractions, or a different plan?");

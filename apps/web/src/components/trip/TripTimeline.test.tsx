@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { TimelineEntry } from "../../config/itineraryAdapters";
 import TripTimeline from "./TripTimeline";
+import type { AttractionAdmission } from "@triply/shared";
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -40,6 +41,18 @@ const entries: TimelineEntry[] = [
 ];
 
 describe("TripTimeline", () => {
+  it.each([
+    ["free", null, "Free admission"],
+    ["paid", null, "Paid admission — price unavailable"],
+    ["paid", { amountMinor: 1250, currency: "EUR", fractionDigits: 2, priceType: "general", unit: "per_person" }, "€12.50 admission per person"],
+    ["unknown", null, "Admission price unavailable"],
+  ] as const)("renders %s admission without turning unknown prices into zero", (status, price, label) => {
+    const admission: AttractionAdmission = { status, price, source: "osm", sourceUrl: "https://museum.example", checkedAt: null, retrievedAt: "2026-10-11", rawFee: null, rawCharge: null, rawFeeConditional: null, rawChargeConditional: null, rawCurrency: null, menuUrl: null, notes: null };
+    const entry: TimelineEntry = { ...entries[1] as Extract<TimelineEntry, { kind: "attraction" }>, admission };
+    render(<TripTimeline entries={[entry]} activeStop={0} onSelectStop={() => {}} />);
+    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.getByText(label).title).toContain("Prices may change");
+  });
   it("summarizes 24/7 availability without a misleading midnight-to-midnight label", () => {
     const entry: TimelineEntry = { ...entries[1] as Extract<TimelineEntry, { kind: "attraction" }>,
       openingHoursCheck: { status: "open", reason: "Open all day", source: "osm", timeZone: "Europe/Paris",

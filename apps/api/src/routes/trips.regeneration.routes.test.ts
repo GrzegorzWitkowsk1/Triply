@@ -5,6 +5,7 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import request from "supertest";
 import { env } from "../config/env.js";
 import { TripModel } from "../models/Trip.js";
+import { normalizeAdmission } from "../services/admissionPricingService.js";
 
 vi.mock("../ai/index.js", () => ({
   aiService: {
@@ -244,7 +245,8 @@ describe("POST /api/trips/:id/days/:dayId/regenerate", () => {
 describe("POST /api/trips/:id/days/:dayId/apply", () => {
   it("applies a valid preview and replaces only that day", async () => {
     const { agent, userId } = await registerAgent();
-    const trip = await seedReadyTrip(userId);
+    const admission = normalizeAdmission({ tourism: "museum", charge: "12 EUR/person" });
+    const trip = await seedReadyTrip(userId, { attractions: ATTRACTIONS.map(p => ({ ...p, admission })) });
 
     const previewResponse = await agent
       .post(`/api/trips/${trip._id.toString()}/days/1/regenerate`)
@@ -252,6 +254,7 @@ describe("POST /api/trips/:id/days/:dayId/apply", () => {
       .send({ preferences: { relaxedPace: true } });
 
     expect(previewResponse.status).toBe(200);
+    expect(previewResponse.body.day.stops.every((p: { admission?: unknown }) => p.admission)).toBe(true);
 
     const applyResponse = await agent
       .post(`/api/trips/${trip._id.toString()}/days/1/apply`)
@@ -261,9 +264,13 @@ describe("POST /api/trips/:id/days/:dayId/apply", () => {
     expect(applyResponse.status).toBe(200);
     expect(applyResponse.body.itinerary.days[0].stops).toHaveLength(3);
     expect(applyResponse.body.itinerary.days).toHaveLength(1);
+    const scheduledCount = applyResponse.body.itinerary.days[0].activities.filter((a: { type: string }) => a.type === "attraction").length;
+    expect(applyResponse.body.admissionSummary.paidWithKnownPrice).toBe(scheduledCount);
+    expect(applyResponse.body.admissionSummary.knownAdmissionTotals[0].amountMinor).toBe(1200 * scheduledCount * COMPLETE_ANALYSIS.travelers);
 
     const stored = await TripModel.findById(trip._id).exec();
     expect(stored?.itinerary?.days[0].stops).toHaveLength(3);
+    expect(stored?.itinerary?.days[0].stops.every(p => p.admission?.price?.amountMinor === 1200)).toBe(true);
     expect(stored?.itineraryVersion).toBe(4);
     expect(stored?.regeneration).toBeNull();
   });

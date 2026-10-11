@@ -1,4 +1,5 @@
 import type { ItineraryDay } from "@triply/shared";
+import { admissionLabel, formatAdmissionPrice, summarizeAdmission } from "@triply/shared";
 import type { TripDocument } from "../models/Trip.js";
 import { evaluateOpeningHours, resolvePoiTimeZone } from "./openingHoursService.js";
 import { resolveVisit } from "./scheduling.js";
@@ -46,6 +47,8 @@ export function buildAssistantContext(trip: TripDocument, selected?: string) {
   return { destination: trip.analysis.destination, dates: [trip.analysis.startDate, trip.analysis.endDate], travelers: trip.analysis.travelers,
     interests: trip.analysis.interests, pace: trip.analysis.pace, maxWalkingDistanceKm: trip.analysis.maxWalkingDistanceKm, budget: trip.analysis.budget, selectedDay: selected,
     days: trip.itinerary!.days.map(day => ({ dayIndex: day.dayIndex, date: day.date, count: day.activities.filter(a => a.type === "attraction").length })),
+    admissionSummary: summarizeAdmission(trip.itinerary!.days, trip.attractions, trip.analysis.travelers),
+    admission: trip.attractions.filter(p => trip.itinerary!.days.some(d => d.activities.some(a => a.type === "attraction" && a.placeId === p.placeId))).map(p => ({ id: p.placeId, name: p.name, admission: p.admission ?? null })),
     openingHours: trip.itinerary!.days.flatMap(day => day.activities.filter(a => a.type === "attraction").map(activity => ({ day, activity }))).slice(0, 40).map(({ day, activity }) => {
       const poi = trip.attractions.find(place => place.placeId === activity.placeId);
       return { id: activity.placeId, name: activity.title, date: day.date,
@@ -67,6 +70,17 @@ export function buildAssistantContext(trip: TripDocument, selected?: string) {
 export function factualAnswer(trip: TripDocument, question: string, day?: ItineraryDay, attractionId?: string, message = ""): string {
   const days = day ? [day] : trip.itinerary!.days;
   const activities = days.flatMap(d => d.activities.filter(a => a.type === "attraction"));
+  if (question === "admission") {
+    const people = /\b(\d+|two|three|four)\s+(?:people|persons|travelers)\b/i.exec(message)?.[1];
+    const travelers = people ? ({ two: 2, three: 3, four: 4 }[people.toLowerCase()] ?? Number(people)) : trip.analysis.travelers;
+    const selected = trip.attractions.filter(p => attractionId ? p.placeId === attractionId : activities.some(a => a.placeId === p.placeId));
+    const filtered = /\bfree\b/i.test(message) ? selected.filter(p => p.admission?.status === "free")
+      : /unknown|unavailable/i.test(message) ? selected.filter(p => !p.admission || p.admission.status === "unknown" || (p.admission.status === "paid" && !p.admission.price))
+      : /require tickets|paid/i.test(message) ? selected.filter(p => p.admission?.status === "paid") : selected;
+    const summary = summarizeAdmission(days, trip.attractions, travelers);
+    const totals = summary.knownAdmissionTotals.map(t => `${formatAdmissionPrice({ ...t, priceType: "general" })} (${t.unit === "per_person" ? `per-person prices${Number.isSafeInteger(travelers) && travelers! > 0 && travelers! <= 50 ? ` for ${travelers} people` : ", traveler count unavailable"}` : t.unit === "per_group" ? "group prices" : "unit unconfirmed; not multiplied"})`).join("; ") || "no confirmed prices";
+    return `${filtered.map(p => `${p.name}: ${admissionLabel(p.admission)}. Source: ${p.admission?.source ?? "unavailable"}${p.admission?.sourceUrl ? `, ${p.admission.sourceUrl}` : ""}.`).join("\n") || "No matching attractions with confirmed pricing information."}\nKnown admission amounts: ${totals}. ${summary.isComplete ? "All scheduled admission fees are accounted for." : "This is partial: some prices, admission statuses or pricing units are unknown."} Admission costs are separate from the entire trip budget. Prices may change; verify with the attraction.`;
+  }
   if (question === "opening_hours") {
     const clock = /\b([01]?\d|2[0-3]):([0-5]\d)\b/.exec(message);
     const config = mergeSchedulingConfig();

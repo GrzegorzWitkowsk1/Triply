@@ -29,6 +29,7 @@ export interface OpeningHours {
  * optional so existing `TripAttraction` objects remain valid inputs.
  */
 export interface SchedulablePoi extends ClusterablePoi {
+  admission?: import("./admission.js").AttractionAdmission | null;
   placeId?: string;
   category?: string;
   visitDurationMinutes?: number | null;

@@ -1,6 +1,7 @@
 import { isPoiCategory, type PoiCategory, type PoiEnvironment, type AttractionOpeningHours } from "@triply/shared";
 import { categoryForTags, environmentForTags } from "./poiCategories.js";
 import { distanceMeters, isValidCoordinate } from "./geo.js";
+import { normalizeAdmission, preferAdmission } from "./admissionPricingService.js";
 
 const DUPLICATE_RADIUS_M = 50;
 const MAX_NAME_LENGTH = 200;
@@ -32,6 +33,7 @@ export interface NormalizedPoi {
   environment: PoiEnvironment;
   metadataCount: number;
   openingHours?: AttractionOpeningHours;
+  admission?: import("@triply/shared").AttractionAdmission;
 }
 
 export interface NormalizePoisOptions {
@@ -132,6 +134,7 @@ function prepare(candidates: readonly RawPoiCandidate[], options: NormalizePoisO
       environment: environmentForTags(tags),
       metadataCount: countMetadata(tags),
       ...openingMetadata(tags),
+      admission: normalizeAdmission(tags),
     });
   });
 
@@ -174,6 +177,7 @@ function dedupe(prepared: readonly PreparedPoi[]): PreparedPoi[] {
     if (poi.osmKey !== null) {
       if (seenOsmKeys.has(poi.osmKey)) {
         const existing = seenOsmKeys.get(poi.osmKey)!;
+        if (poi.admission) existing.admission = preferAdmission(existing.admission, poi.admission);
         if (!existing.openingHours?.raw && poi.openingHours?.raw) existing.openingHours = poi.openingHours;
         continue;
       }
@@ -213,6 +217,7 @@ function dedupe(prepared: readonly PreparedPoi[]): PreparedPoi[] {
       if (!duplicate) {
         kept.push(candidate);
       }
+      else if (candidate.admission) duplicate.admission = preferAdmission(duplicate.admission, candidate.admission);
     }
 
     survivors.push(...kept);

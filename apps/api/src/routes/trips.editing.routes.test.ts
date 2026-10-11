@@ -8,6 +8,7 @@ import { env } from "../config/env.js";
 import { TripModel } from "../models/Trip.js";
 import { fetchAttractions } from "../services/attractions.js";
 import { editTripItinerary } from "../services/tripItineraryEditor.js";
+import { normalizeAdmission } from "../services/admissionPricingService.js";
 import { TripAssistantConversationModel } from "../models/TripAssistantConversation.js";
 const assistantMock = vi.hoisted(() => ({ generate: vi.fn() }));
 vi.mock("../ai/providers/factory.js", () => ({ createAIProvider: () => ({ generate: assistantMock.generate }) }));
@@ -175,13 +176,18 @@ describe("manual itinerary editing", () => {
   it("persists OSM metadata and date-specific checks through MongoDB and the detail API", async () => {
     const { edit, trip, agent } = await setup();
     const metadata = { raw: "Mo-Fr 10:00-18:00", source: "osm", checkedAt: "2026-05-01", website: "https://museum.example", legacyCovid19: "off" };
-    await TripModel.updateOne({ _id: trip._id }, { $set: { "attractions.3.openingHours": metadata } });
+    const admission = normalizeAdmission({ tourism: "museum", fee: "yes", charge: "12 EUR/person" });
+    await TripModel.updateOne({ _id: trip._id }, { $set: { "attractions.3.openingHours": metadata, "attractions.3.admission": admission } });
     const result = await edit({ type: "add", dayIndex: 3, attractionId: "node/4" });
     expect(result.status).toBe(200);
     const persisted = await TripModel.findById(trip._id);
     expect(persisted?.attractions[3].openingHours?.raw).toBe(metadata.raw);
+    expect(persisted?.attractions[3].admission?.price?.amountMinor).toBe(1200);
     expect(persisted?.attractions[3].openingHours?.legacyCovid19).toBe("off");
     const response = await agent.get(`/api/trips/${trip.id}`);
+    expect(response.body.itinerary.days[2].stops.find((p: { placeId: string }) => p.placeId === "node/4").admission.price.amountMinor).toBe(1200);
+    expect(response.body.admissionSummary.paidWithKnownPrice).toBe(1);
+    expect(response.body.admissionSummary.isComplete).toBe(false);
     const activity = response.body.itinerary.days[2].activities.find((entry: { placeId?: string }) => entry.placeId === "node/4" && "openingHoursCheck" in entry);
     expect(activity.openingHoursCheck).toMatchObject({ status: "open", source: "osm", timeZone: "Europe/Paris" });
     expect(activity.startTime).toContain("T10:00");

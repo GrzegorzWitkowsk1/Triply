@@ -163,6 +163,7 @@ function toAttractions(
     placeId: poi.osmKey ?? null,
     environment: poi.environment,
     ...(poi.openingHours ? { openingHours: poi.openingHours } : {}),
+    ...(poi.admission ? { admission: poi.admission } : {}),
   }));
 }
 

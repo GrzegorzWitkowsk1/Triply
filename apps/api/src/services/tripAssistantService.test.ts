@@ -5,6 +5,7 @@ import { assistantIntentSchema, interpretAssistantIntent } from "./assistantInte
 import { factualAnswer, resolveAttraction, resolveDay } from "./assistantContext.js";
 import { confirmAssistantEdit, getAssistantConversation, sendAssistantMessage } from "./tripAssistantService.js";
 import type { TripDocument } from "../models/Trip.js";
+import { normalizeAdmission } from "./admissionPricingService.js";
 
 const mocks = vi.hoisted(() => ({ generate: vi.fn(), load: vi.fn(), recalculate: vi.fn(), edit: vi.fn(), preview: vi.fn() }));
 vi.mock("../ai/providers/factory.js", () => ({ createAIProvider: () => ({ generate: mocks.generate }) }));
@@ -65,6 +66,14 @@ describe("assistant grounding and resolution", () => {
   });
 });
 describe("assistant orchestration", () => {
+  it("routes a ticket-price question to deterministic pricing without inventing group units", async () => {
+    trip.attractions[0].admission = normalizeAdmission({ tourism: "museum", fee: "yes", charge: "12 EUR" });
+    mocks.generate.mockResolvedValue({ ...baseIntent, question: "admission", attraction: "Prado Museum" });
+    const result = await sendAssistantMessage(tripId, userId, { message: "How much does Prado Museum cost for two people?" });
+    expect(result.response.message).toContain("€12.00");
+    expect(result.response.message).toContain("not multiplied");
+    expect(result.response.message).toContain("partial");
+  });
   it("answers an opening-hours question deterministically on the requested day", async () => {
     trip.attractions[0].openingHours = { raw: "Tu-Su 10:00-18:00; Mo off", source: "osm", checkedAt: null };
     trip.attractions[0].visitDurationMinutes = 90;

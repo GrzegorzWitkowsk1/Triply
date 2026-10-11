@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { attractionOpeningHoursSchema } from "./openingHours.js";
+import { attractionAdmissionSchema, type AttractionAdmission, type AdmissionSummary } from "./admission.js";
 import { addDays, diffDaysInclusive, isAfter, isIsoDate } from "./dates.js";
 import type { GeoLineString, RouteSegment, RouteSource } from "./planner.js";
 import type { ScheduledActivity, UnscheduledReason } from "./scheduling.js";
@@ -112,12 +113,14 @@ export const tripAttractionSchema = z.object({
   /** Known or provider-supplied visit duration in minutes, when available. */
   visitDurationMinutes: z.number().int().positive().max(1440).nullish(),
   openingHours: attractionOpeningHoursSchema.nullish(),
+  admission: attractionAdmissionSchema.nullish(),
 });
 
 export type TripAttraction = z.infer<typeof tripAttractionSchema>;
 
 /** A scheduled attraction as rendered on the timeline and map. */
 export interface ItineraryStop {
+  admission?: AttractionAdmission | null;
   placeId: string | null;
   name: string;
   category: string;
@@ -289,6 +292,7 @@ export interface TripSummary {
 }
 
 export interface TripDetail extends TripAnalysisResult {
+  admissionSummary?: AdmissionSummary;
   /** Persisted itinerary revision; optional for compatibility with older clients. */
   itineraryVersion?: number;
   id: string;

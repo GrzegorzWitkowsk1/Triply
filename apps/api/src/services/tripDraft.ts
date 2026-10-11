@@ -1,5 +1,6 @@
 import {
   deriveTripSchedule,
+  summarizeAdmission,
   missingFields,
   LIMITS,
   tripAnalysisSchema,
@@ -386,6 +387,10 @@ export async function ensureAttractions(
   });
 
   if (fresh) {
+    for (const attraction of fresh) {
+      const saved = current.find(p => attraction.placeId && p.placeId === attraction.placeId);
+      if (saved?.admission?.source === "official" && saved.admission.checkedAt && saved.admission.status !== "unknown") attraction.admission = saved.admission;
+    }
     return { attractions: fresh, fetchedAt: new Date(), query: nextQuery };
   }
 
@@ -671,6 +676,7 @@ export function toTripDetail(trip: TripDocument): TripDetail {
       temperatureMax: day.temperatureMax,
     })),
     itinerary: toTripItinerary(trip, generatedAt),
+    admissionSummary: summarizeAdmission(trip.itinerary?.days ?? [], trip.attractions, trip.analysis.travelers),
     generation: {
       startedAt: trip.generation?.startedAt ? trip.generation.startedAt.toISOString() : null,
       generatedAt,
