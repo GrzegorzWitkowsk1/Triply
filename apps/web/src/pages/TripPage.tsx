@@ -573,7 +573,7 @@ export default function TripPage() {
           setRegenerationPreview(null);
         }}
       />
-      <TripAssistant key={id} city={city} />
+      {id && <TripAssistant key={id} city={city} tripId={id} selectedDayId={String(dayIndex)} />}
     </div>
   );
 }

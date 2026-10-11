@@ -4,6 +4,7 @@ import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, 
 import { getItineraryCandidates } from "../../api/trips";
 
 interface Props {
+  zIndex?: number;
   tripId: string;
   open: boolean;
   replace: boolean;
@@ -14,7 +15,7 @@ interface Props {
   onConfirm: (placeId: string, position: number) => void;
 }
 
-export default function AttractionPicker({ tripId, open, replace, stopCount, saving, error, onClose, onConfirm }: Props) {
+export default function AttractionPicker({ zIndex, tripId, open, replace, stopCount, saving, error, onClose, onConfirm }: Props) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [position, setPosition] = useState(stopCount);
@@ -39,7 +40,7 @@ export default function AttractionPicker({ tripId, open, replace, stopCount, sav
     finally { setDiscovering(false); }
   };
   const selectedCandidate = candidates.data?.candidates.find((place) => place.placeId === selected);
-  return <Dialog open={open} onClose={saving || discovering ? undefined : onClose} fullWidth maxWidth="sm">
+  return <Dialog sx={zIndex === undefined ? undefined : { zIndex }} open={open} onClose={saving || discovering ? undefined : onClose} fullWidth maxWidth="sm">
     <DialogTitle>{replace ? "Replace Attraction" : "Add Attraction"}</DialogTitle>
     <DialogContent>
       <TextField label="Search attractions" value={search} onChange={(event) => setSearch(event.target.value)} fullWidth margin="dense" />

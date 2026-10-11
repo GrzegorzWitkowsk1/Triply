@@ -8,6 +8,9 @@ import { env } from "../config/env.js";
 import { TripModel } from "../models/Trip.js";
 import { fetchAttractions } from "../services/attractions.js";
 import { editTripItinerary } from "../services/tripItineraryEditor.js";
+import { TripAssistantConversationModel } from "../models/TripAssistantConversation.js";
+const assistantMock = vi.hoisted(() => ({ generate: vi.fn() }));
+vi.mock("../ai/providers/factory.js", () => ({ createAIProvider: () => ({ generate: assistantMock.generate }) }));
 
 const { provider } = vi.hoisted(() => ({ provider: {
   name: "test", supportedModes: ["walking"] as const, supportsMode: () => true,
@@ -81,6 +84,78 @@ async function setup() {
   return { agent, trip, userId, edit };
 }
 const stopIds = (day: ItineraryDay) => day.stops.map((stop) => stop.placeId);
+
+const assistantIntent = { intent: "edit_itinerary", question: "schedule", day: "day 1", targetDay: null,
+  attraction: "node/1", replacement: null, before: null, operation: "remove", multipleActions: false,
+  preferences: { lessWalking: false, moreFood: false, relaxedPace: false, preferIndoor: false, surpriseMe: false } };
+describe("assistant HTTP integration and confirmation", () => {
+  it("invalidates canceled previews on the server", async () => {
+    const { agent, trip } = await setup();
+    assistantMock.generate.mockResolvedValue(assistantIntent);
+    const response = await agent.post(`/api/trips/${trip.id}/assistant/messages`).set("Origin", env.WEB_ORIGIN).send({ message: "Remove the first attraction" });
+    const base = `/api/trips/${trip.id}/assistant/actions/${response.body.response.previewId}`;
+    expect((await agent.delete(base).set("Origin", env.WEB_ORIGIN)).status).toBe(204);
+    expect((await agent.post(`${base}/apply`).set("Origin", env.WEB_ORIGIN).send({})).status).toBe(410);
+    expect((await TripModel.findById(trip._id))?.itineraryVersion).toBe(3);
+  });
+  it("persists history, previews without mutation, applies explicitly and rejects duplicate confirmation", async () => {
+    const { agent, trip } = await setup();
+    assistantMock.generate.mockResolvedValue(assistantIntent);
+    const response = await agent.post(`/api/trips/${trip.id}/assistant/messages`).set("Origin", env.WEB_ORIGIN).send({ message: "Remove the first attraction", selectedDayId: "1" });
+    expect(response.status).toBe(200);
+    expect(response.body.response.type).toBe("action_preview");
+    const unchanged = await TripModel.findById(trip._id);
+    expect(unchanged?.itineraryVersion).toBe(3);
+    expect(unchanged?.itinerary?.days[0].activities).toHaveLength(2);
+    const history = await agent.get(`/api/trips/${trip.id}/assistant/conversations/${response.body.conversationId}`);
+    expect(history.status).toBe(200);
+    expect(history.body.messages).toHaveLength(2);
+    const url = `/api/trips/${trip.id}/assistant/actions/${response.body.response.previewId}/apply`;
+    const applied = await agent.post(url).set("Origin", env.WEB_ORIGIN).send({});
+    expect(applied.status).toBe(200);
+    expect(applied.body.itineraryVersion).toBe(4);
+    expect((applied.body.trip.itinerary.days[0] as ItineraryDay).activities.filter(activity => activity.type === "attraction")).toHaveLength(1);
+    expect((await agent.post(url).set("Origin", env.WEB_ORIGIN).send({})).status).toBe(410);
+    expect((await agent.get(`/api/trips/${trip.id}/assistant/conversations`)).body.messages.at(-1).text).toContain("Confirmed");
+  });
+  it("rejects stale versions, expiry and arbitrary client operations", async () => {
+    const { agent, trip } = await setup();
+    assistantMock.generate.mockResolvedValue(assistantIntent);
+    const response = await agent.post(`/api/trips/${trip.id}/assistant/messages`).set("Origin", env.WEB_ORIGIN).send({ message: "Remove the first attraction" });
+    await TripModel.updateOne({ _id: trip._id }, { $inc: { itineraryVersion: 1 } });
+    const url = `/api/trips/${trip.id}/assistant/actions/${response.body.response.previewId}/apply`;
+    expect((await agent.post(url).set("Origin", env.WEB_ORIGIN).send({ operation: { type: "remove", dayIndex: 2, attractionId: "node/3" } })).status).toBe(409);
+    const fresh = await agent.post(`/api/trips/${trip.id}/assistant/messages`).set("Origin", env.WEB_ORIGIN).send({ message: "Prepare the removal again" });
+    await TripAssistantConversationModel.updateOne({ tripId: trip._id }, { $set: { "prepared.expiresAt": new Date(0) } });
+    expect((await agent.post(`/api/trips/${trip.id}/assistant/actions/${fresh.body.response.previewId}/apply`).set("Origin", env.WEB_ORIGIN).send({})).status).toBe(410);
+    expect((await TripModel.findById(trip._id))?.itinerary?.days[1].activities).toHaveLength(1);
+  });
+  it("isolates conversations across users and trips and handles deleted trips", async () => {
+    const { agent, trip } = await setup();
+    const history = await agent.get(`/api/trips/${trip.id}/assistant/conversations`);
+    const other = request.agent(app);
+    await other.post("/api/auth/register").set("Origin", env.WEB_ORIGIN).send({ email: "other-assistant@example.com", password: "Password123!Aa" });
+    const url = `/api/trips/${trip.id}/assistant/conversations/${history.body.conversationId}`;
+    expect((await request(app).get(url)).status).toBe(401);
+    expect((await other.get(url)).status).toBe(404);
+    const copy = trip.toObject();
+    const second = await TripModel.create({ ...copy, _id: new mongoose.Types.ObjectId() });
+    expect((await agent.get(`/api/trips/${second.id}/assistant/conversations/${history.body.conversationId}`)).status).toBe(404);
+    await TripModel.deleteOne({ _id: trip._id });
+    expect((await agent.get(url)).status).toBe(404);
+  });
+  it("validates message size and prepares candidate selections from the existing pool", async () => {
+    const { agent, trip } = await setup();
+    expect((await agent.post(`/api/trips/${trip.id}/assistant/messages`).set("Origin", env.WEB_ORIGIN).send({ message: "a".repeat(2001) })).status).toBe(400);
+    assistantMock.generate.mockResolvedValue({ ...assistantIntent, operation: "add", attraction: "restaurant" });
+    const response = await agent.post(`/api/trips/${trip.id}/assistant/messages`).set("Origin", env.WEB_ORIGIN).send({ message: "Add a restaurant to day 1" });
+    expect(response.body.response.picker.dayIndex).toBe(1);
+    const selected = await agent.post(`/api/trips/${trip.id}/assistant/messages`).set("Origin", env.WEB_ORIGIN).send({ message: "Use selected attraction", conversationId: response.body.conversationId, candidate: { attractionId: "node/4", position: 0 } });
+    expect(selected.body.response.type).toBe("action_preview");
+    expect(selected.body.response.days[0].activities[0].placeId).toBe("node/4");
+    expect((await TripModel.findById(trip._id))?.itineraryVersion).toBe(3);
+  });
+});
 
 describe("manual itinerary editing", () => {
   it("retries routing through the edit endpoint while preserving attraction order and other days", async () => {

@@ -15,6 +15,8 @@ import {
   type UpdateTripRequirements,
 } from "@triply/shared";
 import { aiService } from "../ai/index.js";
+import { assistantMessageRequestSchema } from "@triply/shared";
+import { cancelAssistantAction, confirmAssistantEdit, getAssistantConversation, recordAssistantRegeneration, sendAssistantMessage } from "../services/tripAssistantService.js";
 import { itineraryCandidatesRequestSchema, itineraryEditRequestSchema } from "@triply/shared";
 import { editTripItinerary, itineraryCandidates, ItineraryEditError } from "../services/tripItineraryEditor.js";
 import { TripModel } from "../models/Trip.js";
@@ -91,6 +93,42 @@ const aiLimiter = rateLimit({
 });
 
 export const tripsRouter = Router();
+
+tripsRouter.get(["/:id/assistant/conversations", "/:id/assistant/conversations/:conversationId"], asyncHandler(async (req, res) => {
+  try {
+    res.json(await getAssistantConversation(tripIdParam(req) ?? "", currentUserId(res), typeof req.params.conversationId === "string" ? req.params.conversationId : undefined));
+  } catch (error) {
+    if (!(error instanceof ItineraryEditError)) throw error;
+    res.status(error.status).json({ error: error.message });
+  }
+}));
+tripsRouter.post("/:id/assistant/messages", aiLimiter, asyncHandler(async (req, res) => {
+  const parsed = assistantMessageRequestSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Enter a message of 1–2000 characters and valid conversation/day identifiers." }); return; }
+  try { res.json(await sendAssistantMessage(tripIdParam(req) ?? "", currentUserId(res), parsed.data)); }
+  catch (error) {
+    if (!(error instanceof ItineraryEditError)) throw error;
+    res.status(error.status).json({ error: error.message });
+  }
+}));
+tripsRouter.post("/:id/assistant/actions/:previewId/apply", asyncHandler(async (req, res) => {
+  const previewId = req.params.previewId;
+  if (typeof previewId !== "string" || !/^[a-f\d-]{36}$/i.test(previewId)) { res.status(400).json({ error: "Invalid preview" }); return; }
+  try { const result = await confirmAssistantEdit(tripIdParam(req) ?? "", currentUserId(res), previewId); res.json({ ...result, trip: toTripDetail(result.trip) }); }
+  catch (error) {
+    if (!(error instanceof ItineraryEditError)) throw error;
+    res.status(error.status).json({ error: error.message });
+  }
+}));
+tripsRouter.delete("/:id/assistant/actions/:previewId", asyncHandler(async (req, res) => {
+  const previewId = req.params.previewId;
+  if (typeof previewId !== "string" || !/^[a-f\d-]{36}$/i.test(previewId)) { res.status(400).json({ error: "Invalid preview" }); return; }
+  try { await cancelAssistantAction(tripIdParam(req) ?? "", currentUserId(res), previewId); res.status(204).end(); }
+  catch (error) {
+    if (!(error instanceof ItineraryEditError)) throw error;
+    res.status(error.status).json({ error: error.message });
+  }
+}));
 
 tripsRouter.post("/:id/itinerary/edit", asyncHandler(async (req, res) => {
   const parsed = itineraryEditRequestSchema.safeParse(req.body);
@@ -600,6 +638,7 @@ tripsRouter.post(
 
     try {
       const updated = await applyDayRegeneration(trip, parsed.data.previewId, dayIndex);
+      await recordAssistantRegeneration(id, currentUserId(res)).catch(() => { console.warn("[assistant] Applied regeneration; conversation confirmation could not be saved."); });
       res.json(toTripDetail(updated));
     } catch (error) {
       if (error instanceof RegenerationNotFoundError) {

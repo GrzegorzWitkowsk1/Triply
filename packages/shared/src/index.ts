@@ -1,4 +1,5 @@
 export * from "./currency.js";
+export * from "./assistant.js";
 export * from "./itineraryEditing.js";
 export * from "./dates.js";
 export * from "./planner.js";

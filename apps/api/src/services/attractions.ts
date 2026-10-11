@@ -5,7 +5,7 @@ import { scorePois } from "./poiScoring.js";
 
 const DEFAULT_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
-  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
 const DEFAULT_TIMEOUT_MS = 25_000;

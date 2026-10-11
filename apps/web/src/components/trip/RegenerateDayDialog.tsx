@@ -59,6 +59,7 @@ function MetricRow({ label, before, after }: MetricRowProps) {
 }
 
 interface RegenerateDayDialogProps {
+  zIndex?: number;
   open: boolean;
   dayNumber: number;
   preview: RegenerateDayPreview | null;
@@ -72,6 +73,7 @@ interface RegenerateDayDialogProps {
 }
 
 export default function RegenerateDayDialog({
+  zIndex,
   open,
   dayNumber,
   preview,
@@ -114,6 +116,7 @@ export default function RegenerateDayDialog({
 
   return (
     <Dialog
+      sx={zIndex === undefined ? undefined : { zIndex }}
       open={open}
       onClose={busy ? undefined : onClose}
       fullWidth
