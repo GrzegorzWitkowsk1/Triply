@@ -412,13 +412,13 @@ export default function TripPage() {
             >
               <BackpackOutlined />
             </button>
-            <button
+            {/* <button
               type="button"
               className="trip-action"
               onClick={() => navigate("/", { state: { focusPrompt: true } })}
             >
               <EditOutlined /> Edit
-            </button>
+            </button> */}
             <button type="button" className="trip-action">
               <ShareOutlined /> Share
             </button>

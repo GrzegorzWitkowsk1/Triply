@@ -114,6 +114,10 @@ export const tripAttractionSchema = z.object({
   visitDurationMinutes: z.number().int().positive().max(1440).nullish(),
   openingHours: attractionOpeningHoursSchema.nullish(),
   admission: attractionAdmissionSchema.nullish(),
+  source: z.enum(["overpass", "geoapify"]).optional(),
+  sourceId: z.string().max(2000).optional(),
+  address: z.string().max(2000).optional(),
+  description: z.string().max(10000).optional(),
 });
 
 export type TripAttraction = z.infer<typeof tripAttractionSchema>;

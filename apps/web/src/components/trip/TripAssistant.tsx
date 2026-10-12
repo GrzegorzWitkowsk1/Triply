@@ -126,7 +126,7 @@ export default function TripAssistant({ city, tripId, selectedDayId }: TripAssis
           <div className="assistant-overlay" onClick={() => setOpen(false)} />
           <aside className="assistant-panel" aria-label={`Ask Triply about ${city}`}>
             <div className="assistant-top">
-              <h2 className="assistant-title">{`Ask Triply about ${city} Trip (day ${selectedDayId})`}</h2>
+              <h2 className="assistant-title">{`Ask Triply about ${city} Trip)`}</h2>
               <button
                 type="button"
                 className="assistant-close"

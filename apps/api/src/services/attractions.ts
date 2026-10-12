@@ -3,6 +3,7 @@ import { retryAfterMilliseconds, classifyExternalFailure } from "./providerRelia
 import { INTEREST_FILTERS, type TagValuesFilter } from "./poiCategories.js";
 import { normalizeInterests, normalizePois, type RawPoiCandidate } from "./poiFiltering.js";
 import { scorePois } from "./poiScoring.js";
+import { fetchGeoapifyPlaces } from "./geoapify.js";
 
 const DEFAULT_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
@@ -241,6 +242,10 @@ async function fetchAttractionsFromProviders(
   const startedAt = Date.now();
   let lastReason = "not attempted";
   const notBefore = new Map<string, number>();
+  let providerFailed = false;
+  const fallback = () => providerFailed
+    ? fetchGeoapifyPlaces(lat, lng, normalized, { weather, radiusMeters: ATTRACTIONS_RADIUS_M, limit: ATTRACTIONS_RESULT_CAP })
+    : Promise.resolve(null);
 
   // Give every provider a chance before retrying any of them.
   for (let attempt = 0; attempt <= backoffMs.length; attempt += 1) {
@@ -261,7 +266,7 @@ async function fetchAttractionsFromProviders(
         console.error(
           `[attractions] gave up after ${Date.now() - startedAt}ms: ${lastReason}`,
         );
-        return null;
+        return fallback();
       }
 
       const providerBudget = Math.max(1, Math.floor(remaining / (endpoints.length - endpointIndex)));
@@ -284,6 +289,7 @@ async function fetchAttractionsFromProviders(
       }
 
       lastReason = `${new URL(endpoint).host}: ${outcome.reason}`;
+      providerFailed = providerFailed || outcome.retryable;
       if (outcome.retryAfterMs) notBefore.set(endpoint, Date.now() + outcome.retryAfterMs);
       console.info({ event: "external-request", provider: "overpass", status: "failure", category: classifyExternalFailure(outcome.status), retryCount: attempt });
       console.error(
@@ -298,7 +304,7 @@ async function fetchAttractionsFromProviders(
   }
 
   console.error(`[attractions] all endpoints failed: ${lastReason}`);
-  return null;
+  return fallback();
 }
 
 interface CachedAttractions {
