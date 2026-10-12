@@ -58,6 +58,13 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("TripPage generation states", () => {
+  it("shows actionable quality warnings through the existing alert", () => {
+    mocks.trip.data!.status = "ready";
+    mocks.trip.data!.itinerary = { timeZone: "Europe/Paris", routingSource: "unavailable", generatedAt: null, days: [], unscheduled: [] };
+    mocks.trip.data!.quality = { valid: true, score: null, dimensions: { schedule: null, routing: null, openingHours: null, budget: null, relevance: null, workload: null, dataCompleteness: 0 }, issues: [{ code: "ADMISSION_PRICE_UNKNOWN", severity: "warning", dimension: "budget", message: "Some admission prices are unknown. Check ticket costs." }] };
+    render(<Page />);
+    expect(screen.getByText("Some admission prices are unknown. Check ticket costs.")).toBeTruthy();
+  });
   function preferences() {
     mocks.trip.data!.status = "ready";
     mocks.trip.data!.analysis.maxWalkingDistanceKm = 7;

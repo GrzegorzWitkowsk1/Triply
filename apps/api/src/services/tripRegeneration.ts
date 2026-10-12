@@ -26,6 +26,8 @@ import { buildDailySchedules } from "./scheduling.js";
 import { improveOpeningHoursRoute, planningAvailability } from "./openingHoursPlanning.js";
 import { resolvePoiTimeZone } from "./openingHoursService.js";
 import { toItineraryDay, toItineraryStop, toSchedulablePois } from "./tripGeneration.js";
+import { repairItinerary } from "./itineraryRepairService.js";
+import { assessTripQuality } from "./tripQualityService.js";
 
 export const PREVIEW_TTL_MS = 30 * 60 * 1000;
 
@@ -601,6 +603,13 @@ export async function createDayRegenerationPreview(
 ): Promise<RegenerateDayPreview> {
   const now = input.now ?? new Date();
   const result = await regenerateTripDay({ ...input, now });
+  const candidate = { ...input.trip.toObject(), attractions: [...input.trip.attractions, ...result.newAttractions], itinerary: { ...input.trip.toObject().itinerary!, days: input.trip.itinerary!.days.map(d => d.dayIndex === input.dayIndex ? result.day : d) } };
+  const repaired = repairItinerary(candidate, { dayIndex: input.dayIndex });
+  const quality = assessTripQuality(repaired.trip, { dayIndex: input.dayIndex });
+  if (!quality.valid) throw new NoSuitableAlternativesError(quality.issues.map(i => i.message));
+  result.day = repaired.trip.itinerary!.days.find(d => d.dayIndex === input.dayIndex)!;
+  result.warnings = [...new Set([...result.warnings, ...quality.issues.map(i => i.message)])];
+  result.comparison.proposed = dayMetrics(result.day);
 
   const previewId = randomUUID();
   const expiresAt = new Date(now.getTime() + PREVIEW_TTL_MS);
@@ -635,6 +644,7 @@ export async function createDayRegenerationPreview(
   return {
     previewId,
     tripId: input.trip._id.toString(),
+    quality,
     dayIndex: input.dayIndex,
     baseItineraryVersion,
     expiresAt: expiresAt.toISOString(),
@@ -668,6 +678,8 @@ export async function applyDayRegeneration(
 
   const preview = toPlainRecord(stored);
   const base = preview.baseItineraryVersion;
+  const quality = assessTripQuality({ ...trip.toObject(), attractions: [...trip.attractions, ...preview.newAttractions], itinerary: { ...trip.toObject().itinerary!, days: trip.itinerary!.days.map(d => d.dayIndex === dayIndex ? preview.day : d) } }, { dayIndex });
+  if (!quality.valid) throw new NoSuitableAlternativesError(quality.issues.map(i => i.message));
 
   const remainingUnscheduled = (trip.itinerary?.unscheduled ?? [])
     .filter((entry) => entry.dayIndex !== dayIndex)

@@ -504,6 +504,11 @@ export default function TripPage() {
                     ))}
                   </ul>
                 )}
+                {trip.data.quality && trip.data.quality.issues.filter(issue => !issue.dayId || issue.dayId === String(day?.dayIndex)).length > 0 && (
+                  <Alert severity={trip.data.quality.valid ? "warning" : "error"}>
+                    {[...new Set(trip.data.quality.issues.filter(issue => !issue.dayId || issue.dayId === String(day?.dayIndex)).sort((a, b) => Number(b.severity === "error") - Number(a.severity === "error")).map(issue => issue.message))].slice(0, 4).join(" ")}
+                  </Alert>
+                )}
               </div>
             </div>
 

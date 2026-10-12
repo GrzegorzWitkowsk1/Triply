@@ -13,10 +13,13 @@ import { optimizeClusterRoute } from "./routeOptimizer.js";
 import { buildDailySchedules } from "./scheduling.js";
 import { resolvePoiTimeZone } from "./openingHoursService.js";
 import { toItineraryDay, toItineraryStop, toSchedulablePois } from "./tripGeneration.js";
+import { repairItinerary } from "./itineraryRepairService.js";
+import { validateItinerary } from "./itineraryValidationService.js";
 
 export class ItineraryEditError extends Error {
   constructor(message: string, readonly status = 400,
-    readonly warnings: string[] = [], readonly conflicts: TripUnscheduledPlace[] = []) {
+    readonly warnings: string[] = [], readonly conflicts: TripUnscheduledPlace[] = [],
+    readonly issues: import("@triply/shared").ItineraryIssue[] = []) {
     super(message);
   }
 }
@@ -203,7 +206,13 @@ export async function recalculateEditedDay(trip: TripDocument, day: ItineraryDay
     updated.warnings.push("Routing is unavailable. Travel distance and time are estimates. Route geometry is unavailable.");
     updated.partiallyEstimated = true;
   }
-  return updated;
+  const candidate = { ...trip.toObject(), itinerary: { ...trip.toObject().itinerary!, days: trip.itinerary!.days.map(d => d.dayIndex === day.dayIndex ? updated : d) } };
+  const repaired = repairItinerary(candidate, { dayIndex: day.dayIndex, allowDuplicates: true });
+  const validation = validateItinerary(repaired.trip, { dayIndex: day.dayIndex, allowDuplicates: true });
+  if (!validation.valid) throw new ItineraryEditError("These changes have confirmed conflicts. No changes were saved.", 422, validation.issues.map(i => i.message), [], validation.issues);
+  const finalDay = repaired.trip.itinerary!.days.find(d => d.dayIndex === day.dayIndex)!;
+  finalDay.warnings = [...new Set([...finalDay.warnings, ...validation.issues.filter(i => i.dayId === String(day.dayIndex)).map(i => i.message)])];
+  return finalDay;
 }
 
 /** The entry point for all callers, including a future assistant: authorized load + validated edit + CAS. */
@@ -227,6 +236,10 @@ export async function editTripItinerary(tripId: string, userId: string, input: I
   itinerary.unscheduled = itinerary.unscheduled.filter((entry) => !scheduledIds.has(entry.place.placeId ?? undefined));
   itinerary.routingSource = itinerary.days.some((day) => day.partiallyEstimated) ? "approximation"
     : itinerary.days.some((day) => day.segments.length > 0) ? "provider" : "unavailable";
+  for (const dayIndex of affectedDayIndices) {
+    const validation = validateItinerary({ ...trip.toObject(), itinerary }, { dayIndex });
+    if (!validation.valid) throw new ItineraryEditError("These changes have confirmed conflicts. No changes were saved.", 422, validation.issues.map(i => i.message), [], validation.issues);
+  }
   const updated = await TripModel.findOneAndUpdate({ _id: trip._id, user: trip.user,
     status: "ready", itineraryVersion: parsed.data.expectedVersion }, {
     $set: { itinerary, regeneration: null }, $inc: { itineraryVersion: 1 },

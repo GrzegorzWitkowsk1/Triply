@@ -15,6 +15,8 @@ import { TripModel, type TripDocument, type TripItineraryRecord } from "../model
 import { ensureAttractions, ensureWeather } from "./tripDraft.js";
 import { planTrip, type PlanTripResult } from "./tripPlanner.js";
 import { resolvePoiTimeZone } from "./openingHoursService.js";
+import { repairItinerary } from "./itineraryRepairService.js";
+import { assessTripQuality } from "./tripQualityService.js";
 
 /** A generation that has been running longer than this is considered abandoned. */
 export const STALE_GENERATION_MS = 2 * 60 * 1000;
@@ -147,6 +149,10 @@ export function toItineraryDay(
 ): ItineraryDay {
   return {
     dayIndex: day.dayIndex,
+    routeStopOffset: route?.segments.length ? Math.max(0, route.segments.length - route.orderedPlaces.length + 1 - (route.returnsToStart ? 1 : 0)) : 0,
+    routeReturnsToStart: route?.returnsToStart ?? false,
+    travelMode: route?.travelMode,
+    routingSource: route?.routingSource,
     date: day.date,
     timeZone: day.timeZone,
     activities: day.activities,
@@ -183,6 +189,7 @@ export function toItineraryRecord(
 }
 
 export async function runTripGeneration(trip: TripDocument): Promise<TripDocument> {
+  const started = performance.now();
   const analysis = trip.analysis;
   const location = analysis.location;
 
@@ -190,7 +197,10 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
     throw new Error("Trip is missing a destination or duration");
   }
 
+  let stageStarted = performance.now();
   const weather = await ensureWeather(analysis, trip.weather, trip.weatherFetchedAt);
+  console.info({ event: "trip-generation", stage: "weather", provider: "open-meteo", durationMs: Math.round(performance.now() - stageStarted), status: weather.days.length ? "available" : "unavailable" });
+  stageStarted = performance.now();
   const attractions = await ensureAttractions(
     analysis,
     trip.attractions,
@@ -198,6 +208,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
     trip.attractionsQuery,
     weather.days,
   );
+  console.info({ event: "trip-generation", stage: "attractions", provider: "overpass-or-cache", durationMs: Math.round(performance.now() - stageStarted), status: attractions.query === null ? "unavailable" : "available", count: attractions.attractions.length });
 
   if (attractions.attractions.length === 0) {
     throw new GenerationUnavailableError(
@@ -209,6 +220,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
 
   const start: Coordinates = { lat: location.lat, lng: location.lng };
 
+  stageStarted = performance.now();
   const result = await planTrip({
     pois: toSchedulablePois(selectBudgetCandidates(attractions.attractions, trip.toObject())),
     durationDays: analysis.durationDays,
@@ -223,6 +235,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
       returnToStart: env.ROUTING_RETURN_TO_START,
     },
   });
+  console.info({ event: "trip-generation", stage: "planning", durationMs: Math.round(performance.now() - stageStarted), status: "completed", routingSource: result.routing.source });
 
   const now = new Date();
   if (!result.days.some((day) => day.activities.some((activity) => activity.type === "attraction"))) {
@@ -231,6 +244,11 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
     );
   }
 
+  const candidate = { ...trip.toObject(), attractions: attractions.attractions, weather: weather.days, itinerary: toItineraryRecord(result, now) };
+  const repaired = repairItinerary(candidate);
+  const quality = assessTripQuality(repaired.trip);
+  console.info({ event: "trip-generation", stage: "validation", durationMs: Math.round(performance.now() - started), routingSource: result.routing.source, issueCount: quality.issues.length, repairAttempts: repaired.attempts, valid: quality.valid, dimensions: quality.dimensions });
+  if (!quality.valid) throw new GenerationUnavailableError(`The itinerary has scheduling conflicts. ${quality.issues.filter(i => i.severity === "error").map(i => i.message).slice(0, 3).join(" ")}`);
   const saved = await TripModel.findOneAndUpdate(
     { _id: trip._id, user: trip.user, status: "generating", "generation.startedAt": trip.generation.startedAt },
     {
@@ -240,7 +258,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
         attractions: attractions.attractions,
         attractionsFetchedAt: attractions.fetchedAt,
         attractionsQuery: attractions.query,
-        itinerary: toItineraryRecord(result, now),
+        itinerary: repaired.trip.itinerary,
         regeneration: null,
         status: "ready",
         "generation.generatedAt": now,
@@ -251,6 +269,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
     { new: true, runValidators: true },
   ).exec();
   if (!saved) throw new GenerationSupersededError();
+  console.info({ event: "trip-generation", stage: "persistence", status: "ready", durationMs: Math.round(performance.now() - started), issueCount: quality.issues.length });
   return saved;
 }
 

@@ -143,7 +143,7 @@ tripsRouter.post("/:id/itinerary/edit", asyncHandler(async (req, res) => {
     res.json({ ...result, trip: toTripDetail(result.trip) });
   } catch (error) {
     if (!(error instanceof ItineraryEditError)) throw error;
-    res.status(error.status).json({ error: error.message, warnings: error.warnings, conflicts: error.conflicts });
+    res.status(error.status).json({ error: error.message, warnings: error.warnings, conflicts: error.conflicts, issues: error.issues });
   }
 }));
 

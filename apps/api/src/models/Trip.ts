@@ -277,6 +277,10 @@ const itineraryActivitySchema = new Schema<ScheduledActivity>(
 
 const itineraryDaySchema = new Schema<ItineraryDay>(
   {
+    routeStopOffset: { type: Number },
+    routeReturnsToStart: { type: Boolean },
+    travelMode: { type: String, enum: ["walking", "cycling", "driving"] },
+    routingSource: { type: String, enum: ["provider", "approximation", "unavailable"] },
     dayIndex: { type: Number, required: true },
     date: { type: String, default: "" },
     timeZone: { type: String, required: true },

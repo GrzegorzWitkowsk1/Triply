@@ -1,4 +1,5 @@
 import type { ItineraryDay } from "@triply/shared";
+import { assessTripQuality } from "./tripQualityService.js";
 import { admissionLabel, formatAdmissionPrice, summarizeAdmission } from "@triply/shared";
 import type { TripDocument } from "../models/Trip.js";
 import { summarizeBudget } from "./budgetSummary.js";
@@ -49,6 +50,7 @@ export function buildAssistantContext(trip: TripDocument, selected?: string) {
   return { destination: trip.analysis.destination, dates: [trip.analysis.startDate, trip.analysis.endDate], travelers: trip.analysis.travelers,
     interests: trip.analysis.interests, pace: trip.analysis.pace, maxWalkingDistanceKm: trip.analysis.maxWalkingDistanceKm, budget: trip.analysis.budget, selectedDay: selected,
     days: trip.itinerary!.days.map(day => ({ dayIndex: day.dayIndex, date: day.date, count: day.activities.filter(a => a.type === "attraction").length })),
+    quality: assessTripQuality(trip.toObject()),
     budgetSummary: summarizeBudget(trip.toObject()),
     admissionSummary: summarizeAdmission(trip.itinerary!.days, trip.attractions, trip.analysis.travelers),
     admission: trip.attractions.filter(p => trip.itinerary!.days.some(d => d.activities.some(a => a.type === "attraction" && a.placeId === p.placeId))).map(p => ({ id: p.placeId, name: p.name, admission: p.admission ?? null })),
@@ -71,6 +73,10 @@ export function buildAssistantContext(trip: TripDocument, selected?: string) {
 }
 
 export function factualAnswer(trip: TripDocument, question: string, day?: ItineraryDay, attractionId?: string, message = ""): string {
+  if (question === "quality") {
+    const report = assessTripQuality(trip.toObject(), day ? { dayIndex: day.dayIndex } : {});
+    return `Internal quality indicator: ${report.score ?? "unavailable because some data is unconfirmed"}. This does not guarantee real-world feasibility. ${report.valid ? "No blocking conflicts were detected in available data." : "Confirmed conflicts need attention."}\n${report.issues.map(i => `${i.dayId ? `Day ${i.dayId}: ` : ""}${i.message}`).join("\n")}`;
+  }
   const days = day ? [day] : trip.itinerary!.days;
   const activities = days.flatMap(d => d.activities.filter(a => a.type === "attraction"));
   if (question === "admission") {

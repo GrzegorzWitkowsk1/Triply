@@ -1,4 +1,5 @@
 import type { TripAttraction, TripDayWeather } from "@triply/shared";
+import { retryAfterMilliseconds, classifyExternalFailure } from "./providerReliability.js";
 import { INTEREST_FILTERS, type TagValuesFilter } from "./poiCategories.js";
 import { normalizeInterests, normalizePois, type RawPoiCandidate } from "./poiFiltering.js";
 import { scorePois } from "./poiScoring.js";
@@ -43,7 +44,7 @@ interface OverpassElement {
 
 type AttemptOutcome =
   | { ok: true; payload: unknown }
-  | { ok: false; retryable: boolean; reason: string };
+  | { ok: false; retryable: boolean; reason: string; retryAfterMs?: number; status?: number };
 
 export function selectFilters(interests: readonly string[]): TagValuesFilter[] {
   const byKey = new Map<string, string[]>();
@@ -192,6 +193,8 @@ async function attemptRequest(
         ok: false,
         retryable: response.status === 429 || response.status >= 500,
         reason: `HTTP ${response.status}`,
+        retryAfterMs: retryAfterMilliseconds(response.headers?.get("Retry-After")),
+        status: response.status,
       };
     }
 
@@ -213,7 +216,7 @@ async function attemptRequest(
   } catch (error) {
     const name = error instanceof Error ? error.name : String(error);
 
-    return { ok: false, retryable: true, reason: `request failed (${name})` };
+    return { ok: false, retryable: classifyExternalFailure(undefined, error) !== "cancelled", reason: `request failed (${name})` };
   }
 }
 
@@ -237,6 +240,7 @@ async function fetchAttractionsFromProviders(
   const query = buildOverpassQuery(lat, lng, normalized);
   const startedAt = Date.now();
   let lastReason = "not attempted";
+  const notBefore = new Map<string, number>();
 
   // Give every provider a chance before retrying any of them.
   for (let attempt = 0; attempt <= backoffMs.length; attempt += 1) {
@@ -247,6 +251,9 @@ async function fetchAttractionsFromProviders(
     }
     for (let endpointIndex = 0; endpointIndex < endpoints.length; endpointIndex += 1) {
       const endpoint = endpoints[endpointIndex];
+      const wait = Math.max(0, (notBefore.get(endpoint) ?? 0) - Date.now());
+      if (Date.now() - startedAt + wait >= totalBudgetMs) continue;
+      if (wait) await sleep(wait);
 
       const remaining = totalBudgetMs - (Date.now() - startedAt);
 
@@ -277,6 +284,8 @@ async function fetchAttractionsFromProviders(
       }
 
       lastReason = `${new URL(endpoint).host}: ${outcome.reason}`;
+      if (outcome.retryAfterMs) notBefore.set(endpoint, Date.now() + outcome.retryAfterMs);
+      console.info({ event: "external-request", provider: "overpass", status: "failure", category: classifyExternalFailure(outcome.status), retryCount: attempt });
       console.error(
         `[attractions] round ${attempt + 1}/${backoffMs.length + 1} failed (${lastReason}) after ${Date.now() - startedAt}ms`,
       );

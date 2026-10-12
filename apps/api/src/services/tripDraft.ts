@@ -1,4 +1,5 @@
 import { budgetData } from "./budgetSummary.js";
+import { assessTripQuality } from "./tripQualityService.js";
 import {
   deriveTripSchedule,
   summarizeAdmission,
@@ -633,6 +634,10 @@ function toTripItinerary(trip: TripDocument, generatedAt: string | null): TripIt
     generatedAt,
     days: record.days.map((day) => ({
       dayIndex: day.dayIndex,
+      routeStopOffset: day.routeStopOffset,
+      routeReturnsToStart: day.routeReturnsToStart,
+      travelMode: day.travelMode,
+      routingSource: day.routingSource,
       date: day.date,
       timeZone: day.timeZone,
       activities: day.activities.map((activity) => ({
@@ -665,6 +670,7 @@ export function toTripDetail(trip: TripDocument): TripDetail {
 
   return {
     ...result,
+    quality: trip.itinerary ? assessTripQuality(trip.toObject()) : null,
     budgetData: budgetData(trip.toObject()),
     itineraryVersion: trip.itineraryVersion ?? 0,
     id: trip._id.toString(),

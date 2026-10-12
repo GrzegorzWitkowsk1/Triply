@@ -99,6 +99,7 @@ export interface RegeneratedDayComparison {
 }
 
 export interface RegenerateDayPreview {
+  quality?: import("./quality.js").TripQualityReport;
   previewId: string;
   tripId: string;
   dayIndex: number;

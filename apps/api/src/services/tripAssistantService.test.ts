@@ -67,6 +67,13 @@ describe("assistant grounding and resolution", () => {
   });
 });
 describe("assistant orchestration", () => {
+  it("answers itinerary realism from deterministic validation", async () => {
+    mocks.generate.mockResolvedValue({ ...baseIntent, question: "quality" });
+    const result = await sendAssistantMessage(tripId, userId, { message: "Is my itinerary realistic?" });
+    expect(result.response.type).toBe("message");
+    expect(result.response.message).toContain("Internal quality indicator");
+    expect(result.response.message).toContain("does not guarantee real-world feasibility");
+  });
   it("routes a ticket-price question to deterministic pricing without inventing group units", async () => {
     trip.attractions[0].admission = normalizeAdmission({ tourism: "museum", fee: "yes", charge: "12 EUR" });
     mocks.generate.mockResolvedValue({ ...baseIntent, question: "admission", attraction: "Prado Museum" });

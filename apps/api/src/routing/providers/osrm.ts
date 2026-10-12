@@ -1,4 +1,5 @@
 import type { Coordinates, GeoLineString, TravelMode } from "@triply/shared";
+import { retryAfterMilliseconds, classifyExternalFailure } from "../../services/providerReliability.js";
 import {
   routingConnectionError,
   routingErrorFromHttpStatus,
@@ -47,7 +48,7 @@ interface OsrmRoutePayload {
 
 type AttemptOutcome =
   | { ok: true; payload: unknown }
-  | { ok: false; retryable: boolean; reason: string; status?: number; error?: unknown };
+  | { ok: false; retryable: boolean; reason: string; status?: number; error?: unknown; retryAfterMs?: number };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -156,6 +157,7 @@ export function createOsrmProvider(config: OsrmConfig): RoutingProvider {
           retryable: response.status === 429 || response.status >= 500,
           reason: `HTTP ${response.status}`,
           status: response.status,
+          retryAfterMs: retryAfterMilliseconds(response.headers?.get("Retry-After")),
         };
       }
 
@@ -169,7 +171,7 @@ export function createOsrmProvider(config: OsrmConfig): RoutingProvider {
     } catch (error) {
       const name = error instanceof Error ? error.name : String(error);
 
-      return { ok: false, retryable: true, reason: `request failed (${name})`, error };
+      return { ok: false, retryable: classifyExternalFailure(undefined, error) !== "cancelled", reason: `request failed (${name})`, error };
     }
   }
 
@@ -177,10 +179,13 @@ export function createOsrmProvider(config: OsrmConfig): RoutingProvider {
     const startedAt = Date.now();
     let lastReason = "not attempted";
     let lastError: unknown;
+    let retryAfterMs = 0;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       if (attempt > 0) {
-        await sleep(backoffMs[attempt - 1] ?? 0);
+        const delay = Math.max(backoffMs[attempt - 1] ?? 0, retryAfterMs);
+        if (Date.now() - startedAt + delay >= totalBudgetMs) break;
+        await sleep(delay);
       }
 
       const remaining = totalBudgetMs - (Date.now() - startedAt);
@@ -201,6 +206,8 @@ export function createOsrmProvider(config: OsrmConfig): RoutingProvider {
 
       lastReason = outcome.reason;
       lastError = outcome.error;
+      retryAfterMs = outcome.retryAfterMs ?? 0;
+      console.info({ event: "external-request", provider: "osrm", status: "failure", category: classifyExternalFailure(outcome.status, outcome.error), retryCount: attempt });
       console.error(
         `[routing] attempt ${attempt + 1}/${maxAttempts} failed (${lastReason}) after ${Date.now() - startedAt}ms`,
       );

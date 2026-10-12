@@ -130,6 +130,10 @@ export interface ItineraryStop {
 }
 
 export interface ItineraryDay {
+  routeStopOffset?: number;
+  routeReturnsToStart?: boolean;
+  travelMode?: import("./planner.js").TravelMode;
+  routingSource?: RouteSource;
   dayIndex: number;
   /** Destination-local calendar date (YYYY-MM-DD), or "" when unknown. */
   date: string;
@@ -292,6 +296,7 @@ export interface TripSummary {
 }
 
 export interface TripDetail extends TripAnalysisResult {
+  quality?: import("./quality.js").TripQualityReport | null;
   budgetData?: import("./budget.js").TripBudgetData;
   admissionSummary?: AdmissionSummary;
   /** Persisted itinerary revision; optional for compatibility with older clients. */
