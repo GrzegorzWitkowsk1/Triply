@@ -14,6 +14,31 @@ const result: TripWeatherRefresh = { id: "rome", weather: [{ date: "2026-10-12",
     timeZone: "Europe/Rome", forecastStart: "2026-10-12", forecastEnd: "2026-10-27" }, weatherIssues: [], updatedAt: "2026-10-12T12:00:00Z" };
 
 describe("weather refresh query mutation", () => {
+  it("merges an in-flight weather response into the latest edited itinerary cache", async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const initial = { id: "rome", itineraryVersion: 8, weather: [], updatedAt: "2026-10-12T11:00:00Z",
+      itinerary: { days: [{ dayIndex: 1, stops: [{ placeId: "node/1" }, { placeId: "node/2" }] }] } } as unknown as TripDetail;
+    client.setQueryData(tripQueryKey("rome"), initial);
+    let complete!: (value: TripWeatherRefresh) => void;
+    vi.mocked(refreshTripWeather).mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const wrapper = ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const hook = renderHook(() => useRefreshTripWeather(), { wrapper });
+    act(() => hook.result.current.mutate("rome"));
+    await waitFor(() => expect(refreshTripWeather).toHaveBeenCalledTimes(1));
+    client.setQueryData(tripQueryKey("rome"), { ...initial, itineraryVersion: 9, updatedAt: "2026-10-12T11:59:00Z",
+      itinerary: { days: [{ dayIndex: 1, stops: [{ placeId: "node/2" }, { placeId: "node/1" }] }] } });
+    const edited = client.getQueryData<TripDetail>(tripQueryKey("rome"))!;
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    act(() => complete(result));
+    await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+    const saved = client.getQueryData<TripDetail>(tripQueryKey("rome"))!;
+    expect(saved.itinerary).toBe(edited.itinerary);
+    expect(saved.itineraryVersion).toBe(9);
+    expect(saved.weather).toEqual(result.weather);
+    expect(invalidate).not.toHaveBeenCalled();
+    client.clear();
+  });
+
   it("does not overwrite a newer cached weather result with a delayed response", async () => {
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const current = { id: "rome", weather: [{ date: "2026-10-12", weatherCode: 0, temperatureMax: 30 }],

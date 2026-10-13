@@ -47,6 +47,8 @@ export interface ScheduledActivity {
   type: ScheduledActivityType;
   /** Local ISO 8601 date-time without offset, e.g. `2026-06-01T10:00:00`. */
   startTime: string;
+  /** An unresolved visit is retained in manual order without fabricated timestamps. */
+  schedulingStatus?: "unresolved";
   endTime: string;
   placeId?: string;
   title: string;
@@ -141,6 +143,8 @@ export interface DayWindowOverride {
 }
 
 export interface DailySchedulingInput<T extends ClusterablePoi = SchedulablePoi> {
+  /** Manual recovery retains a conflicting visit without times and tries later visits. */
+  retainUnresolvedVisits?: boolean;
   dayRoutes: readonly OptimizedDayRoute<T>[];
   travelMode: TravelMode;
   pace?: Pace | null;

@@ -10,8 +10,9 @@ import { createRoutingProvider } from "../routing/index.js";
 import type { RoutingProvider } from "../routing/types.js";
 import { fetchAttractions } from "./attractions.js";
 import { optimizeClusterRoute } from "./routeOptimizer.js";
-import { buildDailySchedules } from "./scheduling.js";
-import { resolvePoiTimeZone } from "./openingHoursService.js";
+import { buildDailySchedules, resolveVisit } from "./scheduling.js";
+import { evaluateOpeningHours, resolvePoiTimeZone } from "./openingHoursService.js";
+import { mergeSchedulingConfig } from "./schedulingConfig.js";
 import { toItineraryDay, toItineraryStop, toSchedulablePois } from "./tripGeneration.js";
 import { repairItinerary } from "./itineraryRepairService.js";
 import { validateItinerary } from "./itineraryValidationService.js";
@@ -179,28 +180,61 @@ export function applyItineraryOperation(days: ItineraryDay[], pool: readonly Tri
   return affected;
 }
 
-export async function recalculateEditedDay(trip: TripDocument, day: ItineraryDay, provider: RoutingProvider | null): Promise<ItineraryDay> {
+interface SchedulingRecovery {
+  allowedConflicts: ReadonlySet<string> | "all";
+  diagnostics?: TripUnscheduledPlace[];
+}
+const conflictKey = (entry: TripUnscheduledPlace) => `${entry.reason}:${entry.place.placeId}`;
+
+export async function recalculateEditedDay(trip: TripDocument, day: ItineraryDay, provider: RoutingProvider | null,
+  recovery?: SchedulingRecovery, useSavedRoute = false): Promise<ItineraryDay> {
   const pool = normalizeCandidates(trip.attractions);
   const pois = toSchedulablePois(day.stops.map((stop) => pool.find((place) => place.placeId === stop.placeId) ?? stop));
   const start = trip.analysis.location ?? null;
-  const route = await optimizeClusterRoute({ day: day.dayIndex, pois, center: null, medoid: null,
+  const route = useSavedRoute && day.segments.length ? {
+    dayIndex: day.dayIndex, orderedPlaces: pois, segments: day.segments,
+    totalDistanceMeters: day.totalDistanceMeters, totalDurationSeconds: null, geometry: day.geometry,
+    travelMode: day.travelMode ?? env.ROUTING_MODE, routingSource: day.routingSource ?? "approximation" as const,
+    returnsToStart: day.routeReturnsToStart ?? env.ROUTING_RETURN_TO_START,
+  } : await optimizeClusterRoute({ day: day.dayIndex, pois, center: null, medoid: null,
     count: pois.length, avgScore: 0, spreadMeters: 0 }, {
     preserveOrder: true, mode: env.ROUTING_MODE, start, returnToStart: env.ROUTING_RETURN_TO_START, provider,
   });
   const dates: (string | null)[] = [];
   dates[day.dayIndex - 1] = day.date || null;
   const scheduled = buildDailySchedules({ dayRoutes: [route], travelMode: env.ROUTING_MODE,
+    retainUnresolvedVisits: Boolean(recovery),
     pace: trip.analysis.pace, weather: trip.weather,
     timeZone: resolvePoiTimeZone(trip.analysis.location ?? {}, day.timeZone), dates, start });
   const result = scheduled.days[0];
   const actualIds = result.activities.filter((activity) => activity.type === "attraction").map((activity) => activity.placeId);
   const conflicts = scheduled.unscheduledPlaces.map((entry) => ({ place: toItineraryStop(entry.place),
     dayIndex: entry.dayIndex, reason: entry.reason, detail: entry.detail ?? null }));
-  if (conflicts.length || actualIds.length !== pois.length || actualIds.some((id, index) => id !== pois[index].placeId) ||
-    result.warnings.includes("Return travel does not fit within the daily time window.")) {
+  recovery?.diagnostics?.push(...conflicts);
+  const returnConflict = result.warnings.includes("Return travel does not fit within the daily time window.");
+  const recoverable = recovery && (!returnConflict || recovery.allowedConflicts === "all" || recovery.allowedConflicts.has("return-travel")) &&
+    conflicts.every(entry => entry.reason !== "invalid-location" &&
+      (recovery.allowedConflicts === "all" || recovery.allowedConflicts.has(conflictKey(entry))));
+  if (!recoverable && (conflicts.length || actualIds.length !== pois.length || actualIds.some((id, index) => id !== pois[index].placeId) ||
+    result.warnings.includes("Return travel does not fit within the daily time window."))) {
     throw new ItineraryEditError("These attractions cannot fit in the day's schedule. No changes were saved.", 422,
       [...result.warnings, ...conflicts.map((entry) => `${entry.place.name}: ${entry.detail}`)], conflicts);
   }
+  // Retain unresolved visits in the exact requested order, without inventing times.
+  // Later visits are attempted independently while unresolved visits remain editable.
+  for (const entry of conflicts) {
+    const poi = pois.find(p => p.placeId === entry.place.placeId)!;
+    const visit = resolveVisit(poi, mergeSchedulingConfig());
+    const check = evaluateOpeningHours({ metadata: trip.attractions.find(p => p.placeId === poi.placeId)?.openingHours,
+      date: day.date, startMinutes: 0, durationMinutes: visit.minutes,
+      timeZone: resolvePoiTimeZone(poi, day.timeZone) });
+    const warning = `${poi.name}: ${entry.detail ?? "Scheduling remains unresolved."}`;
+    const unknown = check.status === "unknown" ? `${poi.name} has unconfirmed opening hours; its availability cannot be verified.` : null;
+    const unresolved = result.activities.find(a => a.type === "attraction" && a.placeId === poi.placeId);
+    if (unresolved) unresolved.warnings = [warning, ...(unknown ? [unknown] : [])];
+    result.warnings.push(warning, ...(unknown ? [unknown] : []));
+  }
+  if (conflicts.length) result.warnings.push("Schedule unresolved. Visits without times are retained; adjust or remove attractions and recalculate.");
   const updated = toItineraryDay(result, route);
   if (route.routingSource === "approximation" && route.segments.length) {
     updated.warnings.push("Routing is unavailable. Travel distance and time are estimates. Route geometry is unavailable.");
@@ -209,7 +243,7 @@ export async function recalculateEditedDay(trip: TripDocument, day: ItineraryDay
   const candidate = { ...trip.toObject(), itinerary: { ...trip.toObject().itinerary!, days: trip.itinerary!.days.map(d => d.dayIndex === day.dayIndex ? updated : d) } };
   const repaired = repairItinerary(candidate, { dayIndex: day.dayIndex, allowDuplicates: true });
   const validation = validateItinerary(repaired.trip, { dayIndex: day.dayIndex, allowDuplicates: true });
-  if (!validation.valid) throw new ItineraryEditError("These changes have confirmed conflicts. No changes were saved.", 422, validation.issues.map(i => i.message), [], validation.issues);
+  if (validation.issues.some(i => i.severity === "error" && i.code !== "SCHEDULE_UNRESOLVED")) throw new ItineraryEditError("These changes have confirmed conflicts. No changes were saved.", 422, validation.issues.map(i => i.message), [], validation.issues);
   const finalDay = repaired.trip.itinerary!.days.find(d => d.dayIndex === day.dayIndex)!;
   finalDay.warnings = [...new Set([...finalDay.warnings, ...validation.issues.filter(i => i.dayId === String(day.dayIndex)).map(i => i.message)])];
   return finalDay;
@@ -225,20 +259,53 @@ export async function editTripItinerary(tripId: string, userId: string, input: I
     throw new ItineraryEditError("The itinerary has changed. Refresh it and try again.", 409);
   }
   const itinerary = trip.toObject().itinerary!;
+  const originalDays = structuredClone(itinerary.days);
   const affectedDayIndices = applyItineraryOperation(itinerary.days, trip.attractions, parsed.data);
+  const baseline = new Map<number, Set<string>>();
+  if (!["remove", "reroute"].includes(parsed.data.operation.type)) {
+    const indices = parsed.data.operation.type === "move"
+      ? [parsed.data.operation.sourceDayIndex, parsed.data.operation.targetDayIndex] : [parsed.data.operation.dayIndex];
+    for (const index of indices) {
+      const original = originalDays.find(d => d.dayIndex === index);
+      if (!original) continue;
+      const keys = new Set<string>();
+      // Compare independently diagnosed conflicts, never the old cascading suffix errors.
+      const days = structuredClone(originalDays);
+      applyItineraryOperation(days, trip.attractions, { expectedVersion: parsed.data.expectedVersion, operation: { type: "reroute", dayIndex: index } });
+      const diagnostics: TripUnscheduledPlace[] = [];
+      const before = await recalculateEditedDay(trip, days.find(d => d.dayIndex === index)!, null,
+        { allowedConflicts: "all", diagnostics }, true);
+      diagnostics.forEach(entry => keys.add(conflictKey(entry)));
+      if (before.warnings.includes("Return travel does not fit within the daily time window.")) keys.add("return-travel");
+      baseline.set(index, keys);
+    }
+  }
   const provider = options.provider !== undefined ? options.provider : createRoutingProvider();
+  const diagnostics: TripUnscheduledPlace[] = [];
   for (const index of affectedDayIndices) {
     const position = itinerary.days.findIndex((day) => day.dayIndex === index);
-    itinerary.days[position] = await recalculateEditedDay(trip, itinerary.days[position], provider);
+    itinerary.days[position] = await recalculateEditedDay(trip, itinerary.days[position], provider, {
+      allowedConflicts: ["remove", "reroute"].includes(parsed.data.operation.type) ? "all" : baseline.get(index) ?? new Set(),
+      diagnostics,
+    });
   }
-  const scheduledIds = new Set(itinerary.days.flatMap((day) => day.activities
+  const scheduledIds = new Set(itinerary.days.filter(day => affectedDayIndices.includes(day.dayIndex)).flatMap((day) => day.activities
     .filter((activity) => activity.type === "attraction").map((activity) => activity.placeId)));
-  itinerary.unscheduled = itinerary.unscheduled.filter((entry) => !scheduledIds.has(entry.place.placeId ?? undefined));
+  itinerary.unscheduled = [...itinerary.unscheduled.filter((entry) => !affectedDayIndices.includes(entry.dayIndex ?? -1) &&
+    !scheduledIds.has(entry.place.placeId ?? undefined)), ...diagnostics];
   itinerary.routingSource = itinerary.days.some((day) => day.partiallyEstimated) ? "approximation"
     : itinerary.days.some((day) => day.segments.length > 0) ? "provider" : "unavailable";
   for (const dayIndex of affectedDayIndices) {
     const validation = validateItinerary({ ...trip.toObject(), itinerary }, { dayIndex });
-    if (!validation.valid) throw new ItineraryEditError("These changes have confirmed conflicts. No changes were saved.", 422, validation.issues.map(i => i.message), [], validation.issues);
+    if (validation.issues.some(i => i.severity === "error" && i.code !== "SCHEDULE_UNRESOLVED")) throw new ItineraryEditError("These changes have confirmed conflicts. No changes were saved.", 422, validation.issues.map(i => i.message), [], validation.issues);
+  }
+  // Compare after the same Mongoose defaults/casting used by persistence.
+  if (JSON.stringify(new TripModel({ itinerary }).toObject().itinerary) === JSON.stringify(trip.toObject().itinerary)) {
+    const unchanged = await TripModel.findOne({ _id: trip._id, user: trip.user,
+      status: "ready", itineraryVersion: parsed.data.expectedVersion }).exec();
+    if (!unchanged) throw new ItineraryEditError("The itinerary has changed. Refresh it and try again.", 409);
+    return { trip: unchanged, itineraryVersion: unchanged.itineraryVersion, affectedDayIndices,
+      warnings: itinerary.days.filter(day => affectedDayIndices.includes(day.dayIndex)).flatMap(day => day.warnings) };
   }
   const updated = await TripModel.findOneAndUpdate({ _id: trip._id, user: trip.user,
     status: "ready", itineraryVersion: parsed.data.expectedVersion }, {

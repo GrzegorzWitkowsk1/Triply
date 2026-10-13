@@ -106,7 +106,7 @@ export function buildDayTimeline(day: ItineraryDay): TimelineEntry[] {
         placeId: activity.placeId,
         key,
         stopIndex,
-        time: formatClock(activity.startTime),
+        time: activity.schedulingStatus === "unresolved" ? "Unresolved" : formatClock(activity.startTime),
         name: activity.title,
         category: stop ? capitalize(stop.category) : "Sight",
         durationMinutes: Math.round(activity.durationMinutes),

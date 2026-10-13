@@ -104,6 +104,19 @@ async function openAction(action: string) {
 }
 
 describe("TripPage manual editing", () => {
+  it("keeps removal available for an unresolved visit and refreshes with remaining warnings", async () => {
+    trip.itinerary!.days[0].activities[0] = { ...trip.itinerary!.days[0].activities[0], startTime: "", endTime: "", schedulingStatus: "unresolved" };
+    trip.itinerary!.days[0].warnings = ["Schedule unresolved."];
+    client.setQueryData(["trips", "trip-1"], structuredClone(trip));
+    responseWarnings = ["Park has unconfirmed opening hours; its availability cannot be verified."];
+    renderPage();
+    expect(await screen.findByText("Unresolved")).toBeTruthy();
+    await openAction("Remove attraction");
+    await screen.findByText(`Saved. ${responseWarnings[0]}`);
+    expect(edits[0]).toEqual({ expectedVersion: 3, operation: { type: "remove", dayIndex: 1, attractionId: "node/1" } });
+    expect(screen.queryByRole("button", { name: "Edit Museum" })).toBeNull();
+    expect(await screen.findByRole("button", { name: "Edit Park" })).toBeTruthy();
+  });
   function unavailableRoute() {
     trip.itinerary!.days[0].geometry = null;
     client.setQueryData(["trips", "trip-1"], structuredClone(trip));
@@ -179,7 +192,7 @@ describe("TripPage manual editing", () => {
     fireEvent.keyDown(handle, { key: " ", code: "Space" });
     await waitFor(() => expect(handle.getAttribute("aria-pressed")).toBe("true"));
     fireEvent.keyDown(document, { key: "ArrowDown", code: "ArrowDown" });
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("position 2"));
+    await screen.findByText("Museum moved to position 2 of 2.");
     fireEvent.keyDown(document, { key: " ", code: "Space" });
     await screen.findByText("Itinerary saved.");
     expect(edits[0]).toEqual({ expectedVersion: 3, operation: { type: "reorder", dayIndex: 1, attractionIds: ["node/2", "node/1"] } });

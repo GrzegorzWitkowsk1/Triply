@@ -66,6 +66,13 @@ function makeDay(): ItineraryDay {
   };
 }
 
+it("retains unresolved attractions on the map and in the editable timeline without fabricated times", () => {
+  const day = makeDay();
+  day.activities[0] = { ...day.activities[0], startTime: "", endTime: "", schedulingStatus: "unresolved" };
+  expect(buildDayTimeline(day)[0]).toMatchObject({ kind: "attraction", placeId: "node/1", time: "Unresolved", stopIndex: 0 });
+  expect(dayStops(day)).toHaveLength(2);
+});
+
 function makeItinerary(): TripItinerary {
   return {
     timeZone: "Europe/Paris",

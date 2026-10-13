@@ -256,8 +256,9 @@ const routeSegmentSchema = new Schema<RouteSegment>(
 const itineraryActivitySchema = new Schema<ScheduledActivity>(
   {
     type: { type: String, enum: ["attraction", "travel", "break"], required: true },
-    startTime: { type: String, required: true },
-    endTime: { type: String, required: true },
+    schedulingStatus: { type: String, enum: ["unresolved"] },
+    startTime: { type: String, required: function (this: ScheduledActivity): boolean { return this.schedulingStatus !== "unresolved"; }, default: "" },
+    endTime: { type: String, required: function (this: ScheduledActivity): boolean { return this.schedulingStatus !== "unresolved"; }, default: "" },
     placeId: { type: String },
     title: { type: String, required: true },
     durationMinutes: { type: Number, required: true },

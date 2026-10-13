@@ -426,6 +426,24 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
     };
 
     const dropTrailing = (from: number, reason: UnscheduledReason, detail?: string): void => {
+      if (input.retainUnresolvedVisits) {
+        const place = validPlaces[from];
+        const visit = resolveVisit(place, config);
+        const segmentIndex = from + (hasStart ? 1 : 0) - 1;
+        const segment = route.segments[segmentIndex];
+        // Retain travel through this stop so the following leg has an honest origin.
+        if (segment && !activities.some(a => a.type === "travel" && a.placeId === place.placeId)) {
+          const travel = resolveTravel(segment, input.travelMode, config);
+          if (cursor + travel.minutes <= endMinutes) commitTravel(segment, `To ${place.name}`, place.placeId);
+        }
+        const message = detail ?? (reason === "opening-hours-conflict"
+          ? "This visit cannot fit within its confirmed opening hours." : "The attraction does not fit inside the daily time window.");
+        unscheduledPlaces.push({ place, dayIndex, reason, detail: message });
+        activities.push({ type: "attraction", placeId: place.placeId, title: place.name,
+          startTime: "", endTime: "", schedulingStatus: "unresolved", durationMinutes: visit.minutes,
+          durationSource: visit.source, warnings: [message] });
+        return;
+      }
       for (let index = from; index < validPlaces.length; index += 1) {
         unscheduledPlaces.push({
           place: validPlaces[index],
@@ -433,7 +451,7 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
           reason: index === from ? reason : "insufficient-time",
           detail:
             reason === "opening-hours-conflict"
-              ? index === from ? detail ?? "Opening hours prevent scheduling this attraction." : "An earlier opening-hours conflict prevents completing this route in its saved order."
+              ? index === from ? detail ?? "This visit cannot fit within its confirmed opening hours." : `Timing is unresolved after the conflict at ${validPlaces[from].name}; this attraction's availability has not been checked.`
               : "The attraction does not fit inside the daily time window.",
         });
       }
@@ -470,6 +488,7 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
       if (windows !== null) {
         if (windows.length === 0) {
           dropTrailing(placeIndex, "opening-hours-conflict", openingCheck?.reason);
+          if (input.retainUnresolvedVisits) continue;
           break;
         }
 
@@ -477,6 +496,7 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
 
         if (fit === null) {
           dropTrailing(placeIndex, "opening-hours-conflict");
+          if (input.retainUnresolvedVisits) continue;
           break;
         }
       } else {
@@ -485,6 +505,7 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
 
       if (anticipatedArrival + visit.minutes > endMinutes) {
         dropTrailing(placeIndex, "insufficient-time");
+        if (input.retainUnresolvedVisits) continue;
         break;
       }
 
@@ -502,6 +523,7 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
 
         if (refit === null) {
           dropTrailing(placeIndex, "opening-hours-conflict");
+          if (input.retainUnresolvedVisits) continue;
           break;
         }
 
@@ -510,6 +532,7 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
 
       if (activityStart + visit.minutes > endMinutes) {
         dropTrailing(placeIndex, "insufficient-time");
+        if (input.retainUnresolvedVisits) continue;
         break;
       }
 
@@ -518,6 +541,7 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
         openingCheck = evaluate(activityStart);
         if (openingCheck.status === "closed") {
           dropTrailing(placeIndex, "opening-hours-conflict", openingCheck.reason);
+          if (input.retainUnresolvedVisits) continue;
           break;
         }
         if (openingCheck.status === "unknown") activityWarnings.push(openingCheck.reason);
@@ -539,6 +563,7 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
         + (activityEndIso.iso.slice(0, 10) === date ? 0 : 1440) : activityStart + visit.minutes;
       if (elapsedEndMinutes > endMinutes) {
         dropTrailing(placeIndex, "insufficient-time");
+        if (input.retainUnresolvedVisits) continue;
         break;
       }
 

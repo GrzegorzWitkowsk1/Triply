@@ -1,20 +1,22 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Express } from "express";
 import type { MemoryStore } from "express-rate-limit";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import request from "supertest";
-import { addDays } from "@triply/shared";
+import { addDays, regenerationPreferencesSchema } from "@triply/shared";
 import { env } from "../config/env.js";
 import { TripModel } from "../models/Trip.js";
 import { aiService } from "../ai/index.js";
 import { planTrip } from "../services/tripPlanner.js";
-import { destinationToday } from "../services/weather.js";
+import { editTripItinerary } from "../services/tripItineraryEditor.js";
+import { createDayRegenerationPreview, applyDayRegeneration } from "../services/tripRegeneration.js";
 import { refreshTripWeather } from "../services/tripWeather.js";
 import { toTripDetail } from "../services/tripDraft.js";
 
 vi.mock("../ai/index.js", () => ({ aiService: { parseTrip: vi.fn(), parseRegeneration: vi.fn() } }));
 vi.mock("../services/tripPlanner.js", () => ({ planTrip: vi.fn() }));
+vi.mock("../routing/index.js", () => ({ createRoutingProvider: () => null }));
 const stores = vi.hoisted(() => [] as MemoryStore[]);
 vi.mock("express-rate-limit", async (importOriginal) => {
   const actual = await importOriginal<typeof import("express-rate-limit")>();
@@ -25,20 +27,26 @@ vi.mock("express-rate-limit", async (importOriginal) => {
 
 let app: Express;
 let mongod: MongoMemoryServer;
-const DAY = destinationToday(41.9, 12.5).today;
+const NOW = new Date("2026-10-12T12:00:00Z");
+const DAY = "2026-10-12";
 const NEXT = addDays(DAY, 1);
+const relaxedPreferences = regenerationPreferencesSchema.parse({ relaxedPace: true });
 const stops = [
   { placeId: "node/1", name: "Colosseum", category: "culture", lat: 41.89, lng: 12.49 },
   { placeId: "node/2", name: "Forum", category: "culture", lat: 41.892, lng: 12.485 },
+  { placeId: "node/3", name: "Pantheon", category: "culture", lat: 41.898, lng: 12.477 },
+  { placeId: "node/4", name: "Trevi Fountain", category: "culture", lat: 41.901, lng: 12.483 },
 ];
-const itineraryDay = (date: string, dayIndex: number) => ({ dayIndex, date, timeZone: "Europe/Rome", stops,
-  activities: stops.map((stop, i) => ({ type: "attraction", placeId: stop.placeId, title: stop.name,
+const itineraryDay = (date: string, dayIndex: number) => ({ dayIndex, date, timeZone: "Europe/Rome", stops: stops.slice((dayIndex - 1) * 2, dayIndex * 2),
+  activities: stops.slice((dayIndex - 1) * 2, dayIndex * 2).map((stop, i) => ({ type: "attraction", placeId: stop.placeId, title: stop.name,
     startTime: `${date}T${i === 0 ? "09" : "10"}:00:00`, endTime: `${date}T${i === 0 ? "10" : "11"}:00:00`, durationMinutes: 60 })),
   geometry: { type: "LineString", coordinates: [[12.49, 41.89], [12.485, 41.892]] },
   segments: [], totalVisitMinutes: 120, totalTravelMinutes: 0, totalDistanceMeters: 0, partiallyEstimated: false, warnings: [] });
 
 beforeAll(async () => { mongod = await MongoMemoryServer.create(); await mongoose.connect(mongod.getUri()); app = (await import("../app.js")).createApp(); }, 120_000);
+beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW); });
 afterEach(async () => {
+  vi.useRealTimers();
   vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks();
   for (const store of stores) store.resetAll();
   for (const collection of Object.values(mongoose.connection.collections)) await collection.deleteMany({});
@@ -70,6 +78,142 @@ function forecast(temperature = 22, dates = [DAY, NEXT]) {
 }
 
 describe("POST /api/trips/:id/weather/refresh", () => {
+  it("automatically backfills missing Rome weather on retrieval and reuses it on subsequent reads", async () => {
+    const { agent, trip } = await setup();
+    const before = trip.toObject();
+    const fetch = vi.fn(async () => forecast()); vi.stubGlobal("fetch", fetch);
+    const loaded = await agent.get(`/api/trips/${trip.id}`);
+    expect(loaded.status).toBe(200);
+    expect(loaded.body.weatherAvailability.status).toBe("available");
+    expect(loaded.body.weather).toHaveLength(2);
+    const after = (await TripModel.findById(trip._id))!.toObject();
+    expect(after.weather).toEqual(loaded.body.weather);
+    expect(after.weatherFetchedAt).toEqual(NOW);
+    const unrelated = (record: typeof after) => {
+      const { weather, weatherFetchedAt, weatherAvailability, updatedAt, ...rest } = record;
+      return rest;
+    };
+    expect(unrelated(after)).toEqual(unrelated(before));
+    expect((await agent.get(`/api/trips/${trip.id}`)).body.weather).toEqual(loaded.body.weather);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves edited routes, times, budget and a new regeneration preview during weather refresh", async () => {
+    const { agent, trip, path } = await setup();
+    const reordered = await editTripItinerary(trip.id, trip.user.toString(), {
+      expectedVersion: 8, operation: { type: "reorder", dayIndex: 1, attractionIds: ["node/2", "node/1"] },
+    }, { provider: null });
+    expect(reordered.itineraryVersion).toBe(9);
+    const preview = await createDayRegenerationPreview({ trip: reordered.trip, dayIndex: 1,
+      preferences: relaxedPreferences, provider: null, fetchCandidates: async () => [], now: NOW });
+    const before = (await TripModel.findById(trip._id))!.toObject();
+    const fetch = vi.fn(async () => forecast()); vi.stubGlobal("fetch", fetch);
+    const response = await agent.post(path).set("Origin", env.WEB_ORIGIN);
+    expect(response.status).toBe(200);
+    expect(response.body.weatherAvailability.status).toBe("available");
+    const refreshed = (await TripModel.findById(trip._id))!;
+    const after = refreshed.toObject();
+    expect(after.itinerary).toEqual(before.itinerary);
+    expect(after.regeneration).toEqual(before.regeneration);
+    expect(after.expenses).toEqual(before.expenses);
+    expect(after.budgetAllocations).toEqual(before.budgetAllocations);
+    expect(after.analysis).toEqual(before.analysis);
+    expect(after.attractions).toEqual(before.attractions);
+    expect(after.itineraryVersion).toBe(9);
+    const applied = await applyDayRegeneration(refreshed, preview.previewId, 1);
+    expect(applied.itineraryVersion).toBe(10);
+    expect(applied.toObject().weather).toEqual(after.weather);
+    expect(applied.toObject().expenses).toEqual(before.expenses);
+    expect(applied.toObject().itinerary!.days[1]).toEqual(before.itinerary!.days[1]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps recovered weather and financial data through removal/recalculation and rejects a stale preview", async () => {
+    const { agent, trip, path } = await setup();
+    const fetch = vi.fn(async () => forecast()); vi.stubGlobal("fetch", fetch);
+    expect((await agent.post(path).set("Origin", env.WEB_ORIGIN)).status).toBe(200);
+    const ready = (await TripModel.findById(trip._id))!;
+    const preview = await createDayRegenerationPreview({ trip: ready, dayIndex: 1,
+      preferences: relaxedPreferences, provider: null, fetchCandidates: async () => [], now: NOW });
+    const stale = (await TripModel.findById(trip._id))!;
+    const before = stale.toObject();
+    const removed = await editTripItinerary(trip.id, trip.user.toString(), {
+      expectedVersion: 8, operation: { type: "remove", dayIndex: 1, attractionId: "node/1" },
+    }, { provider: null });
+    const recalculated = await editTripItinerary(trip.id, trip.user.toString(), {
+      expectedVersion: removed.itineraryVersion, operation: { type: "reroute", dayIndex: 1 },
+    }, { provider: null });
+    const after = recalculated.trip.toObject();
+    expect(after.weather).toEqual(before.weather);
+    expect(after.weatherAvailability).toEqual(before.weatherAvailability);
+    expect(after.weatherFetchedAt).toEqual(before.weatherFetchedAt);
+    expect(after.analysis).toEqual(before.analysis);
+    expect(after.expenses).toEqual(before.expenses);
+    expect(after.budgetRevision).toBe(before.budgetRevision);
+    expect(after.budgetAllocations).toEqual(before.budgetAllocations);
+    expect(after.itinerary!.days[1]).toEqual(before.itinerary!.days[1]);
+    expect(after.itinerary!.days[0].stops.map(p => p.placeId)).toEqual(["node/2"]);
+    await expect(applyDayRegeneration(stale, preview.previewId, 1)).rejects.toThrow("itinerary changed");
+    expect((await TripModel.findById(trip._id))!.toObject().itinerary).toEqual(after.itinerary);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects weather from an obsolete snapshot when a manual reorder finishes during the request", async () => {
+    const { trip } = await setup();
+    let finish!: (response: Response) => void;
+    let notify!: () => void;
+    const started = new Promise<void>(resolve => { notify = resolve; });
+    const fetch = vi.fn(() => new Promise<Response>(resolve => { finish = resolve; notify(); }));
+    vi.stubGlobal("fetch", fetch);
+    const pending = refreshTripWeather(trip, { force: true });
+    const rejected = expect(pending).rejects.toMatchObject({ status: 409 });
+    await started;
+    vi.setSystemTime(new Date(NOW.getTime() + 1));
+    const edited = await editTripItinerary(trip.id, trip.user.toString(), {
+      expectedVersion: 8, operation: { type: "reorder", dayIndex: 1, attractionIds: ["node/2", "node/1"] },
+    }, { provider: null });
+    finish(forecast()); await rejected;
+    const stored = (await TripModel.findById(trip._id))!.toObject();
+    expect(stored.itinerary).toEqual(edited.trip.toObject().itinerary);
+    expect(stored.itineraryVersion).toBe(9);
+    expect(stored.weather).toEqual([]);
+    expect(stored.expenses).toEqual(trip.toObject().expenses);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("generates a real itinerary after Prague coordinate recovery and supports subsequent manual editing", async () => {
+    const { agent, trip } = await setup();
+    const places = stops.map((p, index) => ({ ...p, lat: 50.08 + index * .001, lng: 14.43, visitDurationMinutes: 30 }));
+    await TripModel.collection.updateOne({ _id: trip._id }, { $set: {
+      status: "draft", itinerary: null, "analysis.destination": "Prague", "analysis.country": "Czech Republic", "analysis.location": {},
+      attractions: places, attractionsFetchedAt: NOW, attractionsQuery: { lat: 50.08, lng: 14.43, interests: ["culture"] },
+    } });
+    const actual = await vi.importActual<typeof import("../services/tripPlanner.js")>("../services/tripPlanner.js");
+    vi.mocked(planTrip).mockImplementationOnce(actual.planTrip);
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.hostname === "geocoding-api.open-meteo.com") return Response.json({ results: [{ name: "Prague", country: "Czechia", country_code: "CZ", latitude: 50.08, longitude: 14.43 }] });
+      if (url.hostname === "api.open-meteo.com") return forecast();
+      throw new Error(`Unexpected provider request: ${url.hostname}`);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const generated = await agent.post(`/api/trips/${trip.id}/generate`).set("Origin", env.WEB_ORIGIN);
+    expect(generated.status).toBe(200);
+    expect(generated.body.status).toBe("ready");
+    const ready = (await TripModel.findById(trip._id))!;
+    expect(ready.analysis.location).toMatchObject({ lat: 50.08, lng: 14.43 });
+    expect(ready.itinerary!.days.every(d => d.timeZone === "Europe/Prague")).toBe(true);
+    const selected = ready.itinerary!.days.find(d => d.stops.length)!;
+    const removed = await editTripItinerary(trip.id, trip.user.toString(), {
+      expectedVersion: ready.itineraryVersion, operation: { type: "remove", dayIndex: selected.dayIndex, attractionId: selected.stops[0].placeId! },
+    }, { provider: null });
+    expect(removed.itineraryVersion).toBe(ready.itineraryVersion + 1);
+    expect(removed.trip.itinerary!.days.find(d => d.dayIndex === selected.dayIndex)!.stops).toHaveLength(selected.stops.length - 1);
+    expect(removed.trip.toObject().weather).toEqual(ready.toObject().weather);
+    expect(removed.trip.toObject().expenses).toEqual(ready.toObject().expenses);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it("recovers the Rome scenario and preserves itinerary, order, times, routes, budget, expenses and previews", async () => {
     const { agent, trip, path } = await setup();
     const before = trip.toObject();
@@ -190,6 +334,7 @@ describe("POST /api/trips/:id/weather/refresh", () => {
     const first = refreshTripWeather(trip, { force: true });
     const rejected = expect(first).rejects.toMatchObject({ status: 409 });
     await started;
+    vi.setSystemTime(new Date(NOW.getTime() + 1000));
     await TripModel.updateOne({ _id: trip._id }, { $set: { "analysis.notes": "New edit", "weatherAvailability.retryAfter": null, updatedAt: new Date(trip.updatedAt.getTime() + 1000) } });
     const newer = (await TripModel.findById(trip._id))!;
     await refreshTripWeather(newer, { force: true });

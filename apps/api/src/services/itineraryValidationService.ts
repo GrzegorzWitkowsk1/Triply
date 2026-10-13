@@ -64,6 +64,11 @@ export function validateItinerary(trip: TripRecord, options: ValidationOptions =
     let load = 0;
     for (const [index, activity] of day.activities.entries()) {
       const id = activity.placeId ?? `${day.dayIndex}:${index}`;
+      if (activity.schedulingStatus === "unresolved") {
+        add("SCHEDULE_UNRESOLVED", "error", "schedule", "This visit has no feasible scheduled time. Adjust or remove it and recalculate.", day, id);
+        if (activity.type !== "attraction" || activity.startTime || activity.endTime)
+          add("UNRESOLVED_ACTIVITY_INVALID", "error", "schedule", "An unresolved visit must be an attraction without scheduled times.", day, id);
+      }
       if (!Number.isFinite(activity.durationMinutes) || activity.durationMinutes < 0 || (activity.type !== "travel" && activity.durationMinutes === 0))
         add("ACTIVITY_DURATION_INVALID", "error", "schedule", "Activity duration must be valid and positive for visits and breaks.", day, id);
       const zone = zoneKnown ? day.timeZone : "UTC";

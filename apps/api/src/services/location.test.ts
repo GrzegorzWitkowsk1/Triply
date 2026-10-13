@@ -57,11 +57,14 @@ describe("destination resolution", () => {
     expect(tripLocationSchema.safeParse({ lat, lng: 0 }).success).toBe(false);
   });
 
-  it.each(["http", "network", "malformed"])("reports provider failures (%s)", async (failure) => {
-    vi.stubGlobal("fetch", vi.fn(async () => {
+  it.each(["http", "network", "malformed", "timeout"])("reports provider failures (%s) without unbounded retries", async (failure) => {
+    const fetch = vi.fn(async () => {
       if (failure === "network") throw new Error("internal secret");
+      if (failure === "timeout") throw new DOMException("Timed out", "TimeoutError");
       return failure === "http" ? new Response("error", { status: 503 }) : new Response("{");
-    }));
+    });
+    vi.stubGlobal("fetch", fetch);
     await expect(resolveDestination("Prague", "Czechia")).rejects.toMatchObject({ status: 503, message: "Destination lookup is temporarily unavailable. Please try again." });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

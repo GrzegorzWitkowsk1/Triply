@@ -88,6 +88,97 @@ async function setup() {
 }
 const stopIds = (day: ItineraryDay) => day.stops.map((stop) => stop.placeId);
 
+describe("Barcelona manual scheduling recovery", () => {
+  async function barcelona() {
+    const context = await setup();
+    const attractions = pool.map((p, index) => ({ ...p, lat: 41.38 + index * .001, lng: 2.17,
+      name: index === 3 ? "El Rincón Maya Restaurant" : index === 4 ? "SITAKE YA" : p.name,
+      ...([0, 1, 3].includes(index) ? { openingHours: { raw: index === 3 ? "Mo 09:00-10:00" : "Mo 13:30-19:00", source: "osm" as const } } : {}) }));
+    const selected = makeDay(1, ["node/1", "node/2", "node/4", "node/5"]);
+    selected.stops = selected.stops.map(s => ({ ...s, ...attractions.find(p => p.placeId === s.placeId)!, score: 80 }));
+    selected.activities.forEach(a => { a.title = attractions.find(p => p.placeId === a.placeId)!.name; });
+    await TripModel.updateOne({ _id: context.trip._id }, { $set: {
+      attractions, "analysis.location": { lat: 41.38, lng: 2.17 }, "analysis.destination": "Barcelona",
+      "itinerary.days.0": selected,
+      weather: [{ date: "2026-06-01", temperatureMin: 18, temperatureMax: 24, precipitationProbability: 0, weatherCode: 0 }],
+      expenses: [{ id: "saved-expense", title: "Lunch", category: "food_drinks", amountMinor: 1500, currency: "EUR", type: "actual", createdAt: "2026-06-01", updatedAt: "2026-06-01" }],
+    } });
+    return context;
+  }
+
+  it.each(["node/5", "node/1", "node/4"])("removes %s despite an existing conflict without altering unrelated data", async attractionId => {
+    const { trip, edit } = await barcelona();
+    const before = (await TripModel.findById(trip._id))!.toObject();
+    const result = await edit({ type: "remove", dayIndex: 1, attractionId });
+    expect(result.status).toBe(200);
+    const saved = (await TripModel.findById(trip._id))!.toObject();
+    expect(stopIds(saved.itinerary!.days[0])).toEqual(["node/1", "node/2", "node/4", "node/5"].filter(id => id !== attractionId));
+    expect(saved.itinerary!.days.slice(1)).toEqual(before.itinerary!.days.slice(1));
+    expect(saved.weather).toEqual(before.weather);
+    expect(saved.expenses).toEqual(before.expenses);
+    expect(saved.analysis).toEqual(before.analysis);
+    expect(saved.attractions).toEqual(before.attractions);
+    expect(saved.itineraryVersion).toBe(4);
+    if (attractionId !== "node/4") {
+      expect(saved.itinerary!.days[0].activities.find(a => a.placeId === "node/4" && a.type === "attraction")).toMatchObject({ schedulingStatus: "unresolved", startTime: "", endTime: "" });
+      expect(result.body.warnings.join(" ")).toContain("El Rincón Maya Restaurant");
+    } else expect(saved.itinerary!.days[0].activities.every(a => !a.schedulingStatus)).toBe(true);
+    expect((await edit({ type: "reroute", dayIndex: 1 })).status).toBe(409);
+  });
+
+  it("swaps the 13:30 visits, retains the restaurant conflict, and schedules unknown-hours SITAKE YA", async () => {
+    const { edit } = await barcelona();
+    const ids = ["node/2", "node/1", "node/4", "node/5"];
+    const result = await edit({ type: "reorder", dayIndex: 1, attractionIds: ids });
+    expect(result.status).toBe(200);
+    const day = result.body.trip.itinerary.days[0] as ItineraryDay;
+    expect(stopIds(day)).toEqual(ids);
+    expect(day.activities.filter(a => a.type === "attraction").map(a => a.placeId)).toEqual(ids);
+    expect(day.activities.find(a => a.placeId === "node/5" && a.type === "attraction")).toMatchObject({ openingHoursCheck: { status: "unknown" } });
+    expect(result.body.warnings.join(" ")).toContain("Schedule unresolved");
+    expect(result.body.trip.itinerary.unscheduled).toEqual([expect.objectContaining({ reason: "opening-hours-conflict", place: expect.objectContaining({ placeId: "node/4" }) })]);
+  });
+
+  it("recalculates a conflicted day, preserves every attraction, and permits subsequent removal", async () => {
+    const { edit } = await barcelona();
+    const result = await edit({ type: "reroute", dayIndex: 1 });
+    expect(result.status).toBe(200);
+    expect(stopIds(result.body.trip.itinerary.days[0])).toEqual(["node/1", "node/2", "node/4", "node/5"]);
+    const retry = await edit({ type: "reroute", dayIndex: 1 }, 4);
+    expect(retry.status).toBe(200);
+    expect(retry.body.itineraryVersion).toBe(4);
+    expect((await edit({ type: "remove", dayIndex: 1, attractionId: "node/4" }, 4)).status).toBe(200);
+  });
+
+  it("rejects a newly introduced opening-hours conflict atomically", async () => {
+    const { trip, edit } = await barcelona();
+    await TripModel.updateOne({ _id: trip._id }, { $set: { "attractions.1.openingHours.raw": "Mo 13:30-16:00" } });
+    const before = (await TripModel.findById(trip._id))!.toObject();
+    const result = await edit({ type: "reorder", dayIndex: 1, attractionIds: ["node/1", "node/5", "node/2", "node/4"] });
+    expect(result.status).toBe(422);
+    expect(result.body.conflicts).toContainEqual(expect.objectContaining({ place: expect.objectContaining({ placeId: "node/2" }), reason: "opening-hours-conflict" }));
+    const after = (await TripModel.findById(trip._id))!.toObject();
+    expect(after.itinerary).toEqual(before.itinerary);
+    expect(after.itineraryVersion).toBe(3);
+  });
+
+  it("preserves another day's unresolved diagnostics when removing an attraction", async () => {
+    const { trip, edit } = await barcelona();
+    await TripModel.updateOne({ _id: trip._id }, { $set: { "attractions.2.visitDurationMinutes": 1440 } });
+    const recovery = await edit({ type: "reroute", dayIndex: 2 });
+    expect(recovery.status).toBe(200);
+    const before = (await TripModel.findById(trip._id))!.toObject().itinerary!;
+    expect(before.unscheduled.filter(entry => entry.dayIndex === 2)).toHaveLength(1);
+    const result = await edit({ type: "remove", dayIndex: 1, attractionId: "node/5" }, 4);
+    expect(result.status).toBe(200);
+    const after = (await TripModel.findById(trip._id))!.toObject().itinerary!;
+    expect(after.days[1]).toEqual(before.days[1]);
+    expect(after.unscheduled.filter(entry => entry.dayIndex === 2)).toEqual(before.unscheduled.filter(entry => entry.dayIndex === 2));
+    expect(result.body.trip.quality.valid).toBe(false);
+    expect(result.body.trip.quality.issues).toContainEqual(expect.objectContaining({ code: "SCHEDULE_UNRESOLVED", severity: "error" }));
+  });
+});
+
 const assistantIntent = { intent: "edit_itinerary", question: "schedule", day: "day 1", targetDay: null,
   attraction: "node/1", replacement: null, before: null, operation: "remove", multipleActions: false,
   preferences: { lessWalking: false, moreFood: false, relaxedPace: false, preferIndoor: false, surpriseMe: false } };
@@ -448,11 +539,11 @@ describe("manual itinerary editing", () => {
 
   it("returns structured capacity conflicts and never saves a partial multi-day move", async () => {
     const { edit, trip, agent } = await setup();
-    await TripModel.updateOne({ _id: trip._id }, { $set: { "attractions.2.visitDurationMinutes": 1440 } });
+    await TripModel.updateOne({ _id: trip._id }, { $set: { "attractions.0.visitDurationMinutes": 570 } });
     const before = await agent.get(`/api/trips/${trip.id}`);
     const result = await edit({ type: "move", sourceDayIndex: 1, targetDayIndex: 2, attractionId: "node/1" });
     expect(result.status).toBe(422);
-    expect(result.body.conflicts.map((entry: { place: { placeId: string } }) => entry.place.placeId)).toContain("node/3");
+    expect(result.body.conflicts.map((entry: { place: { placeId: string } }) => entry.place.placeId)).toContain("node/1");
     expect(result.body.warnings.length).toBeGreaterThan(0);
     const after = await agent.get(`/api/trips/${trip.id}`);
     expect(after.body.itinerary).toEqual(before.body.itinerary);
