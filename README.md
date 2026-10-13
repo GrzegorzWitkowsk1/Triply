@@ -1,99 +1,290 @@
-# Triply
+﻿# 🧭 Triply
 
-Trip organizer monorepo: React + TypeScript frontend, Express + TypeScript backend, MongoDB.
+**From a travel idea to a plan for every day.**
 
-Brand color: `#f2664b`
+Triply turns a loose travel idea into an organized itinerary. Describe your trip in your own words, refine your preferences, and get a plan with attractions, routes, and a daily schedule. Then make it your own, track expenses, and prepare your packing list.
 
-## Structure
+> Describe your trip → refine your needs → generate a plan → make it yours.
 
+## Contents
+
+- [What you can do with Triply](#what-you-can-do-with-triply)
+- [How a trip plan is built](#how-a-trip-plan-is-built)
+- [Editing and the trip assistant](#editing-and-the-trip-assistant)
+- [Architecture](#architecture)
+- [Authentication and access](#authentication-and-access)
+- [Tech stack](#tech-stack)
+- [Running locally](#running-locally)
+- [Tests](#tests)
+- [Building for production](#building-for-production)
+- [Current project scope](#current-project-scope)
+
+## What you can do with Triply
+
+| Area | How it helps |
+| --- | --- |
+| Trip discovery | Extracts your destination and preferences from a description, then identifies missing information. |
+| Daily itinerary | Selects attractions and orders visits around sightseeing time, travel time, and breaks. |
+| Map | Shows planned places and route geometry when routing data is available. |
+| Editing | Lets you add, remove, replace, and move attractions, including through drag and drop. |
+| Trip assistant | Helps you change the plan through a conversation grounded in your trip. |
+| Weather | Shows daily forecasts and explains when forecast data is unavailable. |
+| Budget | Brings together budget summaries, category allocations, admission costs, and personal expenses. |
+| Packing | Provides an equipment checklist with packed-item tracking. |
+| My trips | Keeps drafts and itineraries associated with your account. |
+
+## How a trip plan is built
+
+### 1. From a description to preferences
+
+A trip starts with a natural-language request, such as “I'd like to spend three days in Prague, see historic sights, and explore at a relaxed pace.” AI turns the description into structured trip information. Triply saves a draft and asks for missing details before building an itinerary on incomplete assumptions.
+
+### 2. From preferences to places
+
+Once the requirements are complete, the backend resolves the destination and retrieves attractions. It filters and scores places, then selects candidates using your preferences and the available budget and weather information.
+
+The primary source of places is OpenStreetMap through Overpass. When that provider fails, Triply can fall back to Geoapify. A valid response containing no attractions is not treated as a provider failure. Retrieved data is stored to reduce repeated external requests.
+
+### 3. From places to a schedule
+
+The planner groups attractions into days, determines visit order, and builds a schedule. It accounts for travel pace, visit and walking time, breaks, available time windows, and opening hours in the local time zone.
+
+AI interprets descriptions and user intentions. Backend planning services handle route order, travel calculations, and scheduling.
+
+### 4. Validation and persistence
+
+Before saving, Triply attempts to repair planning issues and assesses itinerary quality. Places that could not fit into the schedule and limitations in source data are surfaced as information and warnings. If generation fails, the draft remains saved so you can retry.
+
+```mermaid
+flowchart TD
+    Idea[Trip description and preferences] --> Analysis[AI: structure trip information]
+    Analysis --> Draft[Save draft]
+    Draft --> Complete{Are requirements complete?}
+    Complete -->|No| Questions[Fill in and confirm details]
+    Questions --> Draft
+    Complete -->|Yes| Places[Retrieve and select attractions]
+    Places --> Days[Group days and calculate routes]
+    Days --> Schedule[Schedule visits, travel, and breaks]
+    Schedule --> Quality[Validate and repair the plan]
+    Quality --> Ready[Saved itinerary]
+    Places -->|Failure prevents planning| Retry[Keep draft available for retry]
 ```
+
+### Working with incomplete data
+
+Weather forecasts cover up to 16 calendar days, including today. Trips outside that window show that a forecast is unavailable; data can be filled in when the trip is loaded closer to departure. Stored forecasts have a 24-hour freshness period, and failed requests have retry restrictions.
+
+Default routing calculates walking routes. If the routing provider is unavailable, the plan can use clearly marked distance and time estimates without inventing route geometry on the map. Unknown admission prices and opening hours stay unknown. Quality warnings highlight information that needs checking.
+
+## Editing and the trip assistant
+
+You can refine an itinerary in three ways:
+
+- **Manual editing:** add or remove places, change their order, move attractions between days, or choose replacements.
+- **Day regeneration:** set new preferences, review an alternative day plan, and decide whether to apply it.
+- **Assistant conversation:** describe a change, receive a proposal in the context of your trip, and approve or reject it.
+
+Assistant changes and day regeneration use previews before applying updates. You can review the proposal before it changes the saved itinerary. Assistant conversations are stored with the trip.
+
+The backend protects editing consistency. Generation uses a lock to prevent competing attempts, while operations that use revisions detect conflicts when the saved plan has changed in the meantime.
+
+## Architecture
+
+The project has three main parts: the user interface, a backend containing trip logic, and shared data contracts. All three live in a single monorepo.
+
+```mermaid
+flowchart TD
+    User[User] --> Web[Frontend: views, map, and interactions]
+    Web -->|HTTP requests and session| API[API: access checks and validation]
+    API --> Domain[Services: planning, editing, budget, and weather]
+    API --> DB[(MongoDB)]
+    Domain --> DB
+    Domain --> AI[Gemini / OpenRouter: intent interpretation]
+    Domain --> Places[Overpass / Geoapify: attractions]
+    Domain --> Weather[Open-Meteo: location and weather]
+    Domain --> Routes[OSRM: routing]
+    Shared[Shared types and data schemas] -.-> Web
+    Shared -.-> API
+```
+
+**The frontend** guides users through planning and editing. It manages data-loading states, presents the itinerary and map, and refreshes views after changes.
+
+**The backend** checks trip access, validates requests, and applies domain rules. Provider integrations are separated from planning logic, keeping provider changes and failure handling out of the interface.
+
+**The shared package** contains types, validation schemas, and domain helpers. Both applications use the same planning and editing contracts.
+
+**MongoDB** stores accounts, sessions, trips, assistant conversations, and usage accounting for the fallback attraction provider. Trip data includes preferences, places, weather, daily schedules, equipment, and expenses.
+
+```text
 apps/
-  api/   Express + Mongoose backend (port 4000)
-  web/   Vite + React frontend (port 5173)
+  web/       React interface: pages, components, hooks, and API client
+  api/       Express backend: HTTP routes, models, services, and integrations
 packages/
-  shared/   Shared types, zod schemas and trip helpers
+  shared/    Shared TypeScript types, Zod schemas, and domain helpers
 ```
 
-## Prerequisites
+Turborepo coordinates tasks across packages, builds dependencies in order, and caches build outputs. During development, the applications resolve the shared package to its TypeScript sources. Production builds use the compiled package.
 
-- [Bun](https://bun.sh)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+## Authentication and access
 
-## Setup
+Users register with an email address and password. After registration or a successful login, the backend creates a session stored in MongoDB. The browser receives a session cookie and includes it in subsequent requests.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Web as Frontend
+    participant API as Backend
+    participant DB as MongoDB
+    User->>Web: Enter email and password
+    Web->>API: Login request
+    API->>DB: Look up account
+    DB-->>API: Account and password hash
+    API->>API: Verify password
+    API->>DB: Save a new session
+    API-->>Web: Public account data and session cookie
+    Web->>API: Request trips with cookie
+    API->>DB: Check session and retrieve owned trips
+    API-->>Web: User's trips
+```
+
+Passwords are stored as **Argon2id hashes**. Registration requires 12–128 characters, including an uppercase letter, a number, and a special character. Registration and login regenerate the session identifier; logout destroys the session and clears its cookie.
+
+The cookie is inaccessible to browser JavaScript through `HttpOnly`, uses `SameSite=Lax`, and is sent over HTTPS in production. Sessions have a rolling seven-day lifetime.
+
+Access is checked at two levels: the frontend directs unauthenticated visitors to login, while the backend independently validates the session and trip ownership. Requests that modify data must come from the allowed origin. Request limits constrain authentication attempts and intensive planning operations.
+
+## Tech stack
+
+| Area | Technologies | Role |
+| --- | --- | --- |
+| Language and contracts | TypeScript, Zod | Types and validation for data exchanged between applications. |
+| Monorepo | Bun, Turborepo | Dependencies, workspaces, and coordinated project tasks. |
+| Frontend | React 19, Vite, React Router | Views, development server, and navigation. |
+| Data and forms | TanStack React Query, React Hook Form | Data fetching, mutations, and form handling. |
+| Interface | Material UI, Emotion, CSS | Components and styling. |
+| Map and editing | Leaflet, dnd-kit | Place visualization and drag-and-drop editing. |
+| Backend and storage | Express 5, Mongoose, MongoDB | API, domain logic, and persistent data. |
+| Accounts and sessions | Argon2, express-session, connect-mongo | Password hashing and user sessions. |
+| API protection | Helmet, CORS, express-rate-limit | Security headers, origin restrictions, and request limits. |
+| Time and availability | opening_hours, tz-lookup, date-fns/tz | Opening hours and local time zones. |
+| AI | Gemini / OpenRouter | Description and intent parsing through plain fetch, without provider SDKs. |
+| Tests | Vitest, Testing Library, jsdom, Supertest, mongodb-memory-server | Domain, interface, and API/database integration tests. |
+
+## Running locally
+
+### Prerequisites and setup
+
+You need **Bun** (the repository specifies version 1.3.14) and **Docker with Docker Compose** for the local database. An existing MongoDB instance can also be used. AI features require a key for your chosen provider.
+
+Install dependencies from the repository root:
 
 ```bash
 bun install
+```
+
+For first-time setup, copy the example configuration into the API directory.
+
+PowerShell:
+
+```powershell
+Copy-Item .env.example apps/api/.env
+```
+
+macOS / Linux:
+
+```bash
 cp .env.example apps/api/.env
+```
+
+Follow the comments in the [example configuration](.env.example) to set your own session secret and AI provider key. OpenRouter also requires an explicit model choice. If an API configuration already exists, edit it instead of overwriting it. Integration keys stay on the backend.
+
+### Start the application
+
+```bash
 docker compose up -d
+bun run dev
 ```
 
-## AI
+| Service | Local address |
+| --- | --- |
+| Application | http://localhost:5173 |
+| API | http://localhost:4000 |
+| API and database health | http://localhost:4000/health |
+| MongoDB | Local port 27018 |
 
-Trip parsing (free-form request → structured trip preferences) runs through a provider-agnostic AI layer in `apps/api/src/ai/`. Configure it in `apps/api/.env`:
+Open the application, register an account, and describe your first trip. Vite forwards API requests to the backend, allowing both applications to work together without a separate browser-side API address. The app and account features can run without an AI key, but trip-description analysis will not work.
 
-```
-AI_PROVIDER=gemini        # gemini (default) or openrouter
-AI_TIMEOUT_MS=45000
-GEMINI_API_KEY=your-google-ai-studio-key
-OPENROUTER_API_KEY=your-openrouter-key
-```
+### Useful commands
 
-- `AI_PROVIDER` selects the provider; any other value fails at startup with a clear error.
-- `AI_MODEL` is the model for the selected provider. Gemini defaults to `gemini-flash-latest`; `openrouter` requires an explicit `AI_MODEL` (e.g. `google/gemma-4-26b-a4b-it:free`).
-- Only the selected provider's API key is required; missing credentials answer the analyze endpoint with a `500` and an explanatory message.
+| Command | Purpose |
+| --- | --- |
+| `bun run dev` | Start both applications through Turborepo. |
+| `bun run dev:api` | Start the backend with file watching. |
+| `bun run dev:web` | Start the frontend only. |
+| `bun run typecheck` | Check types across project packages. |
+| `bun run test` | Run API and frontend tests. |
+| `bun run build` | Build the shared package and both applications. |
+| `docker compose down` | Stop the database while preserving its data volume. |
 
-## Weather
+### Sample trips
 
-Per-day forecast (daily max temperature + WMO weather code) is fetched from the free Open-Meteo API (no key required) in `apps/api/src/services/weather.ts`, stored on the trip, and served with `GET /api/trips/:id`.
-
-- Fetched alongside geocoding when a draft is saved or requirements change; the trip detail endpoint backfills it on load.
-- Forecast coverage is limited to about 16 days ahead — trips starting further out get weather automatically once they enter range. Stored weather refreshes at most once per 24 hours.
-
-## Run
-
-Routing defaults to the FOSSGIS pedestrian OSRM endpoint at
-`https://routing.openstreetmap.de/routed-foot`. `ROUTING_MODE` and
-`ROUTING_ENABLED_MODES` default to `walking`; `ROUTING_OSRM_PROFILE` defaults to
-`driving`, the URL profile used with that endpoint's pedestrian graph. This URL
-profile does not turn the route into a car route. Custom OSRM deployments can
-override the endpoint, profile and enabled modes in `.env`.
-
-Requests to this public endpoint are spaced at least one second apart across
-provider instances to respect its [usage policy](https://routing.openstreetmap.de/about.html).
-Routes use OSRM and OpenStreetMap data. Connection failures still produce clearly
-labelled estimates without fabricated route geometry.
+After creating an account, you can add sample trips for that user:
 
 ```bash
-bun run dev      # both apps at once (turborepo)
-bun run dev:api  # backend only on http://localhost:4000
-bun run dev:web  # frontend only on http://localhost:5173
+bun run --cwd packages/shared build
+bun run --cwd apps/api seed your@email.com
 ```
 
-Development servers resolve `@triply/shared` directly from its TypeScript sources.
-The API enables the `development` export condition so contract changes are watched
-without rebuilding `shared/dist`. Production builds still consume the compiled package.
+The seed does not create accounts. It adds or updates sample trips, so running it again may overwrite changes to those examples. Without an email argument, it runs for all existing accounts.
 
-## Endpoints
+## Tests
 
-- `GET /health` — service health, includes MongoDB connection status
-- `POST /api/trips/analyze` — `{ prompt, badges }` → AI-parsed trip analysis, stored as a draft trip. Returns `{ draftId, analysis, missingFields, requirementsComplete }`
-- `PATCH /api/trips/:id/requirements` — merges answers into the draft, returns the same payload
+Tests cover planning rules and application behavior during editing, missing-data scenarios, and provider failures.
 
-Both trip endpoints require an authenticated session. The analyze endpoint is rate limited to 20 requests per 10 minutes.
+| Level | Coverage |
+| --- | --- |
+| Domain logic | Place selection and grouping, routing, schedules, opening hours, weather, itinerary quality, pricing, and budgets. |
+| Backend integration | Planning endpoints, editing and regeneration, weather retrieval, and selected database operations. |
+| Frontend | Components, hooks, generation states, itinerary editing, map, assistant, and budget. |
+| Providers | AI response interpretation and integration error handling, with mocked external calls. |
 
-The Vite dev server proxies `/health` and `/api` to the backend.
-
-## Authentication
-
-Authentication uses an HttpOnly `triply.sid` cookie backed by MongoDB. Set a unique `SESSION_SECRET` of at least 32 characters in `apps/api/.env`. The compiled API start command forces production mode; production deployments should set `WEB_ORIGIN`, configure `TRUST_PROXY` for the reverse proxy, and forward `/api` to the API with an SPA fallback for frontend routes.
-
-Public web routes are `/login` and `/register`; authenticated app routes are protected in the client and by the API session middleware.
-
-## Useful commands
+Run the main project checks:
 
 ```bash
-bun run typecheck   # typecheck both apps (turborepo)
-bun run test        # run tests (turborepo)
-bun run build       # build both apps (turborepo, cached)
-docker compose down  # stop database (data kept in volume)
+bun run typecheck
+bun run test
+bun run build
 ```
+
+Integration tests start their own MongoDB instance through mongodb-memory-server, so they do not require the Docker database. The first run may need to download MongoDB binaries. Frontend tests run in jsdom.
+
+To run tests for an individual application:
+
+```bash
+bun run --cwd packages/shared build
+bun run --cwd apps/api test
+bun run --cwd apps/web test
+```
+
+The repository does not currently define a full browser E2E test script. The shared package has no separate test script; its usage is checked through application tests and type checking.
+
+## Building for production
+
+```bash
+bun run build
+bun run --cwd apps/api start
+```
+
+The build prepares the shared package, compiled backend, and static frontend in each workspace's `dist` directory. The backend start script uses **Node.js** and enables production mode, so the deployment environment also needs Node.js.
+
+The frontend needs static hosting with SPA route fallback, and API requests must be forwarded to the backend. Production sessions require HTTPS, a stable secret, and configuration for the allowed frontend address and any reverse proxy. Vite's development proxy does not provide production routing.
+
+Docker Compose in this repository starts MongoDB only. Use `bun run --cwd apps/web preview` to preview the built frontend locally; preview does not include the development API proxy.
+
+## Current project scope
+
+The main planning flow, accounts, saved trips, itinerary editing, assistant, budget, and equipment use the backend and persistent storage.
+
+The inspiration, saved-ideas, and notification screens currently use demonstration data. Some profile settings, including the password-change form, do not yet save through the API. These views show the intended interface direction but are not complete account features.
+
+Development uses Bun and TypeScript, keeps frontend and backend contracts synchronized, and updates this README as features change. See [AGENTS.md](AGENTS.md) for the repository's contribution rules.
