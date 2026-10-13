@@ -33,6 +33,7 @@ import RegenerateDayDialog from "../components/trip/RegenerateDayDialog";
 import TripAssistant from "../components/trip/TripAssistant";
 import TripBudgetCard from "../components/trip/TripBudgetCard";
 import TripMap from "../components/trip/TripMap";
+import TripWeatherRetry from "../components/trip/TripWeatherRetry";
 import TripPreferencesCard from "../components/trip/TripPreferencesCard";
 import TripTimeline from "../components/trip/TripTimeline";
 import {
@@ -216,9 +217,14 @@ export default function TripPage() {
   const days = itinerary?.days.length ?? analysis.durationDays ?? 0;
   const dateLabel = formatRange(analysis.startDate, analysis.endDate);
   const day = itinerary?.days[activeDay];
-  const dayWeather = trip.data.weather[activeDay];
+  const dayWeather = trip.data.weather.find(forecast => forecast.date === day?.date);
   const weather = dayWeather ? toTripWeather(dayWeather) : null;
   const WeatherIcon = weather?.icon ?? null;
+  const dayWarnings = (day?.warnings ?? []).filter(warning => !trip.data.weatherAvailability ||
+    !/^Weather forecast unavailable for \d{4}-\d{2}-\d{2}\.$/.test(warning));
+  const qualityIssues = (trip.data.quality?.issues ?? []).filter(issue =>
+    (!issue.dayId || issue.dayId === String(day?.dayIndex)) &&
+    (!trip.data.weatherAvailability || !issue.code.startsWith("WEATHER_")));
 
   const center = analysis.location
     ? ([analysis.location.lat, analysis.location.lng] as [number, number])
@@ -382,11 +388,8 @@ export default function TripPage() {
               {days > 0 ? ` · ${days} days` : ""}
             </p>
             <div className="trip-hero-badges">
-              {status === "ready" && WeatherIcon && weather && (
-                <span className="trip-badge">
-                  <WeatherIcon /> {weather.temp}° {weather.label}
-                </span>
-              )}
+              {status === "ready" && id && <TripWeatherRetry tripId={id} availability={trip.data.weatherAvailability} date={day?.date}
+                forecast={WeatherIcon && weather ? <><WeatherIcon /> {weather.temp}° {weather.label}</> : undefined} />}
               {budgetLabel && (
                 <span className="trip-badge is-budget is-ok">
                   <AccountBalanceWalletOutlined /> {budgetLabel} budget
@@ -497,16 +500,16 @@ export default function TripPage() {
                     No activities were scheduled for this day.
                   </p>
                 )}
-                {day && day.warnings.length > 0 && (
+                {dayWarnings.length > 0 && (
                   <ul className="trip-eyebrow">
-                    {day.warnings.map((warning) => (
+                    {dayWarnings.map((warning) => (
                       <li key={warning}>{warning}</li>
                     ))}
                   </ul>
                 )}
-                {trip.data.quality && trip.data.quality.issues.filter(issue => !issue.dayId || issue.dayId === String(day?.dayIndex)).length > 0 && (
+                {trip.data.quality && qualityIssues.length > 0 && (
                   <Alert severity={trip.data.quality.valid ? "warning" : "error"}>
-                    {[...new Set(trip.data.quality.issues.filter(issue => !issue.dayId || issue.dayId === String(day?.dayIndex)).sort((a, b) => Number(b.severity === "error") - Number(a.severity === "error")).map(issue => issue.message))].slice(0, 4).join(" ")}
+                    {[...new Set(qualityIssues.sort((a, b) => Number(b.severity === "error") - Number(a.severity === "error")).map(issue => issue.message))].slice(0, 4).join(" ")}
                   </Alert>
                 )}
               </div>

@@ -58,6 +58,25 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("TripPage generation states", () => {
+  it("maps partial forecasts by date and replaces stale weather notices without changing saved planning warnings", () => {
+    const trip = mocks.trip.data!;
+    trip.status = "ready";
+    trip.weather = [{ date: "2026-10-13", weatherCode: 0, temperatureMax: 26 }];
+    trip.weatherAvailability = { status: "partial", reason: "missing_days", canRetry: true, checkedAt: null,
+      retryAfter: null, timeZone: "Europe/Paris", forecastStart: "2026-10-12", forecastEnd: "2026-10-27" };
+    trip.itinerary = { timeZone: "Europe/Paris", routingSource: "unavailable", generatedAt: null, unscheduled: [],
+      days: ["2026-10-12", "2026-10-13"].map((date, i) => ({ dayIndex: i + 1, date, timeZone: "Europe/Paris",
+        activities: [], stops: [], geometry: null, segments: [], totalVisitMinutes: 0, totalTravelMinutes: 0,
+        totalDistanceMeters: 0, partiallyEstimated: false,
+        warnings: i === 0 ? ["Weather forecast unavailable for 2026-10-12.", "Keep other planning warning"] : [] })) };
+    render(<Page />);
+    expect(screen.queryByText(/26° sunny/)).toBeNull();
+    expect(screen.queryByText("Weather forecast unavailable for 2026-10-12.")).toBeNull();
+    expect(screen.getByText("Keep other planning warning")).toBeTruthy();
+    expect(trip.itinerary.days[0].warnings).toContain("Weather forecast unavailable for 2026-10-12.");
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(screen.getByText(/26° sunny/)).toBeTruthy();
+  });
   it("shows actionable quality warnings through the existing alert", () => {
     mocks.trip.data!.status = "ready";
     mocks.trip.data!.itinerary = { timeZone: "Europe/Paris", routingSource: "unavailable", generatedAt: null, days: [], unscheduled: [] };

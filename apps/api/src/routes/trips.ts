@@ -20,6 +20,8 @@ import { cancelAssistantAction, confirmAssistantEdit, getAssistantConversation, 
 import { itineraryCandidatesRequestSchema, itineraryEditRequestSchema } from "@triply/shared";
 import { editTripItinerary, itineraryCandidates, ItineraryEditError } from "../services/tripItineraryEditor.js";
 import { TripModel } from "../models/Trip.js";
+import { recoverTripDestination, validateGenerationRequirements } from "../services/tripDestination.js";
+import { refreshTripWeather, toWeatherRefresh } from "../services/tripWeather.js";
 import { expensesRouter } from "./expenses.js";
 import type { PublicUser } from "../models/User.js";
 import {
@@ -38,7 +40,6 @@ import {
   GENERIC_GENERATION_ERROR,
   GenerationSupersededError,
   GenerationUnavailableError,
-  generationInputsReady,
   logGenerationFailure,
   markGenerationFailed,
   runTripGeneration,
@@ -287,6 +288,30 @@ tripsRouter.get(
   }),
 );
 
+tripsRouter.post(
+  "/:id/weather/refresh",
+  asyncHandler(async (req, res) => {
+    const id = tripIdParam(req);
+    if (!id) { res.status(404).json({ error: "Trip not found" }); return; }
+    const trip = await TripModel.findOne({ _id: new Types.ObjectId(id), user: new Types.ObjectId(currentUserId(res)) }).exec();
+    if (!trip) { res.status(404).json({ error: "Trip not found" }); return; }
+    const controller = new AbortController();
+    const cancel = () => { if (!res.writableEnded) controller.abort(); };
+    res.on("close", cancel);
+    console.info({ event: "weather-refresh", provider: "open-meteo", stage: "requested", tripId: id });
+    try {
+      const saved = await refreshTripWeather(trip, { force: true, signal: controller.signal });
+      const result = toWeatherRefresh(saved);
+      const failed = result.weatherAvailability.reason && ["timeout", "network", "http_error", "invalid_response"].includes(result.weatherAvailability.reason);
+      console.info({ event: "weather-refresh", provider: "open-meteo", stage: !failed && result.weather.length ? "succeeded" : "failed", code: result.weatherAvailability.status, reason: result.weatherAvailability.reason, tripId: id });
+      res.json(result);
+    } catch (error) {
+      console.info({ event: "weather-refresh", provider: "open-meteo", stage: "failed", code: controller.signal.aborted ? "cancelled" : "refresh_error", tripId: id });
+      if (!controller.signal.aborted) throw error;
+    } finally { res.off("close", cancel); }
+  }),
+);
+
 function tripIdParam(req: Request): string | null {
   const rawId = req.params.id;
   const id = (Array.isArray(rawId) ? rawId[0] : rawId) ?? "";
@@ -478,18 +503,15 @@ tripsRouter.post(
       return;
     }
 
-    if (!generationInputsReady(existing)) {
-      res
-        .status(400)
-        .json({ error: "Add a destination and trip length before generating an itinerary." });
-      return;
-    }
-
-    const claimed = await claimTripForGeneration(id, userId);
+    validateGenerationRequirements(existing);
+    const resolved = await recoverTripDestination(existing);
+    // Validate the fresh snapshot too if another process completed recovery.
+    validateGenerationRequirements(resolved);
+    const claimed = await claimTripForGeneration(id, userId, resolved.updatedAt);
 
     if (!claimed) {
       res.status(409).json({
-        error: "This itinerary is already being generated. Please wait for it to finish.",
+        error: "The trip changed or its itinerary is already being generated. Reload it and try again.",
       });
       return;
     }

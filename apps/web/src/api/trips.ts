@@ -7,9 +7,14 @@ import type {
   TripRequirementsAnswers,
   TripStatus,
   TripSummary,
+  TripWeatherRefresh,
   UpdateTripRequirements,
 } from "@triply/shared";
 import { request } from "./client";
+
+export function refreshTripWeather(id: string): Promise<TripWeatherRefresh> {
+  return request<TripWeatherRefresh>(`/api/trips/${id}/weather/refresh`, { method: "POST" });
+}
 import type { ItineraryEditRequest, ItineraryEditResponse, ItineraryCandidatesResponse } from "@triply/shared";
 
 export function editTripItinerary(tripId: string, input: ItineraryEditRequest) {

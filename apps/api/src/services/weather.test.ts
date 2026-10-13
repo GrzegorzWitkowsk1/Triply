@@ -1,187 +1,228 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { addDays, type TripDayWeather } from "@triply/shared";
-import { coversForecastRange, fetchDailyWeather } from "./weather.js";
+import { coversForecastRange, describeWeather, destinationToday, ensureWeatherData, fetchDailyWeather, fetchWeather } from "./weather.js";
+import { WEATHER_POLICY } from "./weatherPolicy.js";
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+const NOW = new Date("2026-10-12T12:00:00Z");
+const DAY = "2026-10-12";
+const analysis = { location: { lat: 41.9, lng: 12.5 }, startDate: DAY, endDate: DAY };
+const options = { now: NOW, backoffMs: 0 };
+const day = (date = DAY): TripDayWeather => ({ date, weatherCode: 0, temperatureMax: 22 });
+function response(dates = [DAY], codes: unknown[] = dates.map(() => 0), temperatures: unknown[] = dates.map(() => 22)) {
+  return new Response(JSON.stringify({ daily: { time: dates, weather_code: codes, temperature_2m_max: temperatures } }));
 }
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
+describe("Open-Meteo forecast reliability", () => {
+  it("schedules distant trips at destination noon when the 16-day horizon reaches their start", async () => {
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    const result = await ensureWeatherData({ ...analysis, startDate: "2026-11-20", endDate: "2026-11-20" }, [], null, null, options);
+    expect(result.availability.retryAfter).toBe("2026-11-05T11:00:00.000Z");
+    expect(fetch).not.toHaveBeenCalled();
+    const beforeNoon = await ensureWeatherData({ ...analysis, startDate: "2026-11-20", endDate: "2026-11-20" }, [], null, result.availability,
+      { ...options, force: true, now: new Date("2026-11-05T10:59:00Z") });
+    expect(beforeNoon.availability.retryAfter).toBe(result.availability.retryAfter);
+    expect(fetch).not.toHaveBeenCalled();
   });
-}
+  it("requests valid Rome weather once with explicit destination timezone and documented horizon", async () => {
+    const fetch = vi.fn(async (_url: string) => response()); vi.stubGlobal("fetch", fetch);
+    const result = await fetchWeather(analysis, options);
+    expect(result.days).toEqual([day()]);
+    expect(result.availability.status).toBe("available");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const url = new URL(String(fetch.mock.calls[0]![0]));
+    expect(url.searchParams.get("timezone")).toBe("Europe/Rome");
+    expect(url.searchParams.get("forecast_days")).toBe("16");
+    expect(url.searchParams.get("start_date")).toBe(DAY);
+    expect(url.searchParams.get("end_date")).toBe(DAY);
+  });
 
-function forecastResponse(
-  time: unknown[],
-  weatherCode: unknown[],
-  temperatureMax: unknown[],
-): Response {
-  return jsonResponse({
-    daily: {
-      time,
-      weather_code: weatherCode,
-      temperature_2m_max: temperatureMax,
+  it.each([500, 502, 503, 504])("retries HTTP %s and recovers", async status => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response("", { status })).mockResolvedValueOnce(response());
+    vi.stubGlobal("fetch", fetch);
+    expect((await fetchWeather(analysis, options)).availability.status).toBe("available");
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("honors 429 Retry-After before retrying", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(NOW);
+    const fetch = vi.fn().mockResolvedValueOnce(new Response("", { status: 429, headers: { "Retry-After": "1" } })).mockResolvedValueOnce(response());
+    vi.stubGlobal("fetch", fetch);
+    const pending = fetchWeather(analysis, options);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await pending).availability.status).toBe("available");
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not shorten Retry-After to fit the time budget", async () => {
+    const fetch = vi.fn(async () => new Response("", { status: 429, headers: { "Retry-After": "60" } }));
+    vi.stubGlobal("fetch", fetch);
+    const result = await fetchWeather(analysis, { ...options, totalBudgetMs: 100 });
+    expect(result.availability.status).toBe("rate_limited");
+    expect(result.availability.retryAfter).not.toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries timeouts and network failures", async () => {
+    const fetch = vi.fn().mockRejectedValueOnce(new DOMException("Timed out", "TimeoutError"))
+      .mockRejectedValueOnce(new TypeError("Connection reset")).mockResolvedValueOnce(response());
+    vi.stubGlobal("fetch", fetch);
+    expect((await fetchWeather(analysis, options)).availability.status).toBe("available");
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("bounds retries and retains timeout failure state", async () => {
+    const fetch = vi.fn(async () => { throw new DOMException("Timed out", "TimeoutError"); });
+    vi.stubGlobal("fetch", fetch);
+    const result = await fetchWeather(analysis, options);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(result.availability).toMatchObject({ status: "temporarily_unavailable", reason: "timeout" });
+  });
+
+  it("uses exponential backoff and bounded jitter", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(NOW);
+    const fetch = vi.fn(async () => new Response("", { status: 503 })); vi.stubGlobal("fetch", fetch);
+    const pending = fetchWeather(analysis, { ...options, backoffMs: 100, random: () => 0.5 });
+    await vi.advanceTimersByTimeAsync(99); expect(fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1); expect(fetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(199); expect(fetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1); await pending; expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([400, 401, 403])("does not retry permanent HTTP %s", async status => {
+    const fetch = vi.fn(async () => new Response("", { status })); vi.stubGlobal("fetch", fetch);
+    expect((await fetchWeather(analysis, options)).availability.canRetry).toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([{ lat: 91, lng: 0 }, { lat: 0, lng: 181 }, { lat: NaN, lng: 0 }, { lat: Infinity, lng: 0 }, null])(
+    "rejects invalid coordinates without a request (%j)", async location => {
+      const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+      expect((await fetchWeather({ ...analysis, location }, options)).availability.status).toBe("invalid_location");
+      expect(fetch).not.toHaveBeenCalled();
     },
-  });
-}
+  );
 
-function stubFetch(response: Response) {
-  const mock = vi.fn(async (_url: unknown, _init?: unknown): Promise<Response> => response);
-  vi.stubGlobal("fetch", mock);
-  return mock;
-}
-
-function stubFetchError(error: unknown) {
-  const mock = vi.fn(async (_url: unknown, _init?: unknown): Promise<Response> => {
-    throw error;
-  });
-  vi.stubGlobal("fetch", mock);
-  return mock;
-}
-
-function requestedParams(mock: ReturnType<typeof vi.fn>): URLSearchParams {
-  const [url] = mock.mock.calls[0] as [string];
-  return new URL(url).searchParams;
-}
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
-describe("fetchDailyWeather", () => {
-  it("requests the forecast and zips daily arrays", async () => {
-    const today = todayIso();
-    const fetchMock = stubFetch(
-      forecastResponse(
-        [today, addDays(today, 1)],
-        [3, 61],
-        [24.2, 18.7],
-      ),
-    );
-
-    const result = await fetchDailyWeather(48.85, 2.35, today, addDays(today, 1));
-
-    expect(result).toEqual([
-      { date: today, weatherCode: 3, temperatureMax: 24.2 },
-      { date: addDays(today, 1), weatherCode: 61, temperatureMax: 18.7 },
-    ]);
-
-    const params = requestedParams(fetchMock);
-    expect(params.get("latitude")).toBe("48.85");
-    expect(params.get("longitude")).toBe("2.35");
-    expect(params.get("daily")).toBe("weather_code,temperature_2m_max");
-    expect(params.get("timezone")).toBe("auto");
-    expect(params.get("start_date")).toBe(today);
-    expect(params.get("end_date")).toBe(addDays(today, 1));
+  it("accepts zero coordinates", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => response()));
+    expect((await fetchWeather({ ...analysis, location: { lat: 0, lng: 0 } }, options)).availability.status).toBe("available");
   });
 
-  it("clamps the end date to the forecast horizon", async () => {
-    const today = todayIso();
-    const fetchMock = stubFetch(forecastResponse([today], [0], [20]));
-
-    const result = await fetchDailyWeather(48.85, 2.35, today, addDays(today, 60));
-
-    expect(result).toEqual([{ date: today, weatherCode: 0, temperatureMax: 20 }]);
-    expect(requestedParams(fetchMock).get("end_date")).toBe(addDays(today, 15));
+  it("excludes unsupported future dates without requests or retries", async () => {
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    const future = addDays(DAY, WEATHER_POLICY.forecastDays);
+    const result = await fetchWeather({ ...analysis, startDate: future, endDate: addDays(future, 2) }, options);
+    expect(result.availability).toMatchObject({ status: "not_yet_available", canRetry: true });
+    expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("returns null without calling the network when the start date is beyond the horizon", async () => {
-    const today = todayIso();
-    const fetchMock = stubFetch(forecastResponse([], [], []));
-
-    const result = await fetchDailyWeather(
-      48.85,
-      2.35,
-      addDays(today, 16),
-      addDays(today, 20),
-    );
-
-    expect(result).toBeNull();
-    expect(fetchMock).not.toHaveBeenCalled();
+  it("classifies past dates separately and does not silently request history", async () => {
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    const past = addDays(DAY, -1);
+    expect((await fetchWeather({ ...analysis, startDate: past, endDate: past }, options)).availability.status).toBe("unsupported_past");
+    expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("rejects invalid coordinates and dates without calling the network", async () => {
-    const today = todayIso();
-    const fetchMock = stubFetch(forecastResponse([], [], []));
-
-    expect(await fetchDailyWeather(Number.NaN, 2.35, today, today)).toBeNull();
-    expect(await fetchDailyWeather(48.85, 2.35, "not-a-date", today)).toBeNull();
-    expect(await fetchDailyWeather(48.85, 2.35, addDays(today, 1), today)).toBeNull();
-    expect(fetchMock).not.toHaveBeenCalled();
+  it("clips partial trip ranges to supported calendar dates", async () => {
+    const end = addDays(DAY, WEATHER_POLICY.forecastDays - 1);
+    const dates = Array.from({ length: WEATHER_POLICY.forecastDays }, (_, i) => addDays(DAY, i));
+    const fetch = vi.fn(async (_url: string) => response(dates)); vi.stubGlobal("fetch", fetch);
+    const result = await fetchWeather({ ...analysis, startDate: addDays(DAY, -2), endDate: addDays(end, 2) }, options);
+    expect(result.availability).toMatchObject({ status: "partial", canRetry: false });
+    expect(result.days).toHaveLength(16);
+    const params = new URL(String(fetch.mock.calls[0]![0])).searchParams;
+    expect(params.get("start_date")).toBe(DAY); expect(params.get("end_date")).toBe(end);
   });
 
-  it("returns null on non-2xx responses", async () => {
-    stubFetch(jsonResponse({ reason: "out of range" }, 400));
-
-    expect(await fetchDailyWeather(48.85, 2.35, "2026-07-01", "2026-07-05")).toBeNull();
+  it("uses destination calendar dates across UTC midnight and DST", () => {
+    expect(destinationToday(35.68, 139.69, new Date("2026-10-12T23:30:00Z"))).toEqual({ today: "2026-10-13", timeZone: "Asia/Tokyo" });
+    expect(destinationToday(34.05, -118.24, new Date("2026-10-12T00:30:00Z"))).toEqual({ today: "2026-10-11", timeZone: "America/Los_Angeles" });
+    expect(destinationToday(41.9, 12.5, new Date("2026-10-25T23:30:00Z"))).toEqual({ today: "2026-10-26", timeZone: "Europe/Rome" });
   });
 
-  it("returns null when the request fails", async () => {
-    stubFetchError(new TypeError("fetch failed"));
-
-    const today = todayIso();
-    expect(await fetchDailyWeather(48.85, 2.35, today, today)).toBeNull();
+  it("retains usable days when individual provider days are null", async () => {
+    const next = addDays(DAY, 1);
+    vi.stubGlobal("fetch", vi.fn(async () => response([DAY, next], [0, null], [22, null])));
+    const result = await fetchWeather({ ...analysis, endDate: next }, options);
+    expect(result.days).toEqual([day()]);
+    expect(result.availability).toMatchObject({ status: "partial", reason: "missing_days", canRetry: true });
   });
 
-  it("returns null when daily arrays are missing or mismatched", async () => {
-    const today = todayIso();
-
-    stubFetch(jsonResponse({ daily: null }));
-    expect(await fetchDailyWeather(48.85, 2.35, today, today)).toBeNull();
-
-    stubFetch(forecastResponse([today], [0], [20, 21]));
-    expect(await fetchDailyWeather(48.85, 2.35, today, today)).toBeNull();
+  it.each([{}, { daily: null }, { daily: { time: [DAY], weather_code: [0], temperature_2m_max: [22, 23] } },
+    { daily: { time: [DAY], weather_code: ["sunny"], temperature_2m_max: [22] } }])("does not retry malformed provider responses (%j)", async payload => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify(payload))); vi.stubGlobal("fetch", fetch);
+    expect((await fetchWeather(analysis, options)).availability.reason).toBe("invalid_response");
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("returns null when entries are malformed", async () => {
-    const today = todayIso();
-
-    stubFetch(forecastResponse(["oops"], [0], [20]));
-    expect(await fetchDailyWeather(48.85, 2.35, today, today)).toBeNull();
-
-    stubFetch(forecastResponse([today], ["sunny"], [20]));
-    expect(await fetchDailyWeather(48.85, 2.35, today, today)).toBeNull();
-
-    stubFetch(forecastResponse([today], [0], [null]));
-    expect(await fetchDailyWeather(48.85, 2.35, today, today)).toBeNull();
-  });
-});
-
-describe("coversForecastRange", () => {
-  const start = todayIso();
-  const end = addDays(start, 2);
-
-  function day(date: string): TripDayWeather {
-    return { date, weatherCode: 0, temperatureMax: 20 };
-  }
-
-  it("rejects an empty forecast", () => {
-    expect(coversForecastRange([], start, end)).toBe(false);
+  it("cancels retries during backoff", async () => {
+    const controller = new AbortController();
+    const fetch = vi.fn(async () => { setTimeout(() => controller.abort(), 1); return new Response("", { status: 503 }); });
+    vi.stubGlobal("fetch", fetch);
+    await expect(fetchWeather(analysis, { ...options, signal: controller.signal, backoffMs: 100 })).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects a forecast that starts on the wrong day", () => {
-    expect(coversForecastRange([day(addDays(start, 1))], start, end)).toBe(false);
+  it("cancels an active request without retrying", async () => {
+    const controller = new AbortController();
+    const fetch = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init.signal!.addEventListener("abort", () => reject(init.signal!.reason), { once: true });
+      controller.abort();
+    })); vi.stubGlobal("fetch", fetch);
+    await expect(fetchWeather(analysis, { ...options, signal: controller.signal })).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("accepts a forecast covering the full range", () => {
-    const days = [day(start), day(addDays(start, 1)), day(end)];
-
-    expect(coversForecastRange(days, start, end)).toBe(true);
+  it("retains existing partial data on failure and applies a retry cooldown", async () => {
+    const fetch = vi.fn(async () => new Response("", { status: 503 })); vi.stubGlobal("fetch", fetch);
+    const input = { ...analysis, endDate: addDays(DAY, 1) };
+    const result = await ensureWeatherData(input, [day()], NOW, null, { ...options, force: true });
+    expect(result.days).toEqual([day()]);
+    expect(result.availability).toMatchObject({ status: "partial", reason: "http_error" });
+    expect(result.availability.retryAfter).toBe(new Date(NOW.getTime() + 600_000).toISOString());
+    await ensureWeatherData(input, result.days, result.fetchedAt, result.availability, { ...options, force: true });
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
-  it("accepts a partial forecast that reaches the current horizon", () => {
-    const horizon = addDays(todayIso(), 15);
-    const days = [day(start), day(horizon)];
-
-    expect(coversForecastRange(days, start, horizon)).toBe(true);
+  it("uses complete fresh cached data without another lookup", async () => {
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    expect((await ensureWeatherData(analysis, [day()], NOW, null, options)).availability.status).toBe("available");
+    expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("rejects a partial forecast that stops before the horizon", () => {
-    const horizon = addDays(todayIso(), 15);
-    const days = [day(start), day(addDays(start, 1))];
+  it("preserves a complete saved forecast and the reason a manual refresh failed", async () => {
+    const fetch = vi.fn(async () => new Response("", { status: 503 })); vi.stubGlobal("fetch", fetch);
+    const result = await ensureWeatherData(analysis, [day()], NOW, null, { ...options, force: true });
+    expect(result.days).toEqual([day()]);
+    expect(result.availability).toMatchObject({ status: "available", reason: "http_error", canRetry: true });
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
 
-    expect(coversForecastRange(days, start, addDays(start, 30))).toBe(false);
+  it("does not repeatedly request a saved permanent provider failure", async () => {
+    const fetch = vi.fn(async () => new Response("", { status: 403 })); vi.stubGlobal("fetch", fetch);
+    const failed = await ensureWeatherData(analysis, [], null, null, options);
+    await ensureWeatherData(analysis, [], null, failed.availability, { ...options, now: new Date(NOW.getTime() + 60_000) });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("recognizes newly supported days as the horizon advances", () => {
+    const input = { ...analysis, endDate: addDays(DAY, 16) };
+    const days = Array.from({ length: 16 }, (_, i) => day(addDays(DAY, i)));
+    const previous = describeWeather(input, days, null, NOW);
+    expect(previous.canRetry).toBe(false);
+    expect(describeWeather(input, days, previous, new Date(NOW.getTime() + 86_400_000)).canRetry).toBe(true);
+  });
+
+  it("maintains the daily-array compatibility API", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => response()));
+    expect(await fetchDailyWeather(41.9, 12.5, DAY, DAY, options)).toEqual([day()]);
+  });
+
+  it("requires every date for forecast coverage", () => {
+    const end = addDays(DAY, 2);
+    expect(coversForecastRange([day(), day(end)], DAY, end)).toBe(false);
+    expect(coversForecastRange([day(), day(addDays(DAY, 1)), day(end)], DAY, end)).toBe(true);
   });
 });

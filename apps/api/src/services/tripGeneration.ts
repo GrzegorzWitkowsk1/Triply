@@ -1,5 +1,6 @@
 import {
   addDays,
+  tripLocationSchema,
   type Coordinates,
   type DailySchedule,
   type ItineraryDay,
@@ -36,7 +37,7 @@ export function generationInputsReady(trip: TripDocument): boolean {
   const analysis = trip.analysis;
 
   return Boolean(
-    analysis.location &&
+    tripLocationSchema.safeParse(analysis.location).success &&
       typeof analysis.durationDays === "number" &&
       analysis.durationDays > 0,
   );
@@ -50,6 +51,7 @@ export function generationInputsReady(trip: TripDocument): boolean {
 export async function claimTripForGeneration(
   tripId: string,
   userId: string,
+  expectedUpdatedAt?: Date,
 ): Promise<TripDocument | null> {
   const staleBefore = new Date(Date.now() - STALE_GENERATION_MS);
 
@@ -57,6 +59,7 @@ export async function claimTripForGeneration(
     {
       _id: new Types.ObjectId(tripId),
       user: new Types.ObjectId(userId),
+      ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
       $or: [
         { status: { $in: ["draft", "failed"] } },
         { status: "generating", "generation.startedAt": null },
@@ -198,8 +201,8 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
   }
 
   let stageStarted = performance.now();
-  const weather = await ensureWeather(analysis, trip.weather, trip.weatherFetchedAt);
-  console.info({ event: "trip-generation", stage: "weather", provider: "open-meteo", durationMs: Math.round(performance.now() - stageStarted), status: weather.days.length ? "available" : "unavailable" });
+  const weather = await ensureWeather(analysis, trip.weather, trip.weatherFetchedAt, trip.weatherAvailability);
+  console.info({ event: "trip-generation", stage: "weather", provider: "open-meteo", durationMs: Math.round(performance.now() - stageStarted), status: weather.availability?.status ?? (weather.days.length ? "available" : "temporarily_unavailable") });
   stageStarted = performance.now();
   const attractions = await ensureAttractions(
     analysis,
@@ -244,7 +247,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
     );
   }
 
-  const candidate = { ...trip.toObject(), attractions: attractions.attractions, weather: weather.days, itinerary: toItineraryRecord(result, now) };
+  const candidate = { ...trip.toObject(), attractions: attractions.attractions, weather: weather.days, weatherAvailability: weather.availability ?? null, itinerary: toItineraryRecord(result, now) };
   const repaired = repairItinerary(candidate);
   const quality = assessTripQuality(repaired.trip);
   console.info({ event: "trip-generation", stage: "validation", durationMs: Math.round(performance.now() - started), routingSource: result.routing.source, issueCount: quality.issues.length, repairAttempts: repaired.attempts, valid: quality.valid, dimensions: quality.dimensions });
@@ -255,6 +258,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
       $set: {
         weather: weather.days,
         weatherFetchedAt: weather.fetchedAt,
+        weatherAvailability: weather.availability ?? null,
         attractions: attractions.attractions,
         attractionsFetchedAt: attractions.fetchedAt,
         attractionsQuery: attractions.query,

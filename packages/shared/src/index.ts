@@ -1,5 +1,6 @@
 export * from "./currency.js";
 export * from "./quality.js";
+export * from "./weather.js";
 export * from "./budget.js";
 export * from "./assistant.js";
 export * from "./itineraryEditing.js";

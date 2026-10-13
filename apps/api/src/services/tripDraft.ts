@@ -6,6 +6,7 @@ import {
   missingFields,
   LIMITS,
   tripAnalysisSchema,
+  tripLocationSchema,
   ASKABLE_FIELDS,
   type AskableField,
   type TripAnalysis,
@@ -17,12 +18,14 @@ import {
   type TripDetail,
   type TripItinerary,
   type TripSummary,
+  type WeatherAvailability,
 } from "@triply/shared";
 import { Types } from "mongoose";
 import { fetchAttractions } from "./attractions.js";
-import { geocodeLocation } from "./location.js";
+import { DestinationResolutionError, resolveDestination } from "./location.js";
 import { clusterPois, normalizeDays } from "./poiClustering.js";
-import { coversForecastRange, fetchDailyWeather } from "./weather.js";
+import { describeWeather, ensureWeatherData } from "./weather.js";
+import { refreshTripWeather } from "./tripWeather.js";
 import {
   TripModel,
   type AttractionsQueryRecord,
@@ -31,7 +34,6 @@ import {
   type TripItineraryRecord,
 } from "../models/Trip.js";
 
-const WEATHER_TTL_MS = 24 * 60 * 60 * 1000;
 const ATTRACTIONS_TTL_MS = 24 * 60 * 60 * 1000;
 
 function normalizeText(value: string): string | null {
@@ -86,7 +88,7 @@ function toPlainAnalysis(stored: TripDocument["analysis"]): TripAnalysis {
     pace: stored.pace,
     maxWalkingDistanceKm: stored.maxWalkingDistanceKm,
     notes: stored.notes,
-    location: stored.location
+    location: tripLocationSchema.safeParse(stored.location).success && stored.location
       ? {
           lat: stored.location.lat,
           lng: stored.location.lng,
@@ -155,7 +157,8 @@ export function mergeRequirements(
 
   next.notes = applyText(next.notes, answers.notes);
 
-  if (answers.location !== undefined) {
+  if (answers.location !== undefined && (answers.location !== null ||
+      next.destination !== stored.destination || next.country !== stored.country)) {
     next.location = answers.location === null ? null : answers.location;
   }
 
@@ -207,83 +210,44 @@ export interface UpsertTripDraftInput {
 }
 
 async function ensureLocation(analysis: TripAnalysis): Promise<TripAnalysis> {
-  if (analysis.location) {
+  if (tripLocationSchema.safeParse(analysis.location).success) {
     return analysis;
   }
-
-  const query = [analysis.destination, analysis.country]
-    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
-    .join(", ");
-
-  if (!query) {
-    return analysis;
+  if (!analysis.destination?.trim() || !analysis.country?.trim()) {
+    return { ...analysis, location: null };
   }
-
-  const geo = await geocodeLocation(query);
-
-  return geo ? { ...analysis, location: geo } : analysis;
+  try {
+    return { ...analysis, location: await resolveDestination(analysis.destination, analysis.country) };
+  } catch (error) {
+    if (!(error instanceof DestinationResolutionError)) throw error;
+    // Drafts remain editable during lookup outages; generation retries with an actionable error.
+    return { ...analysis, location: null };
+  }
 }
 
 export interface WeatherState {
   days: TripDayWeather[];
   fetchedAt: Date | null;
+  availability?: WeatherAvailability;
 }
 
 export async function ensureWeather(
   analysis: TripAnalysis,
   current: TripDayWeather[],
   fetchedAt: Date | null,
+  previous?: WeatherAvailability | null,
 ): Promise<WeatherState> {
-  const { location, startDate, endDate } = analysis;
-
-  if (!location || !startDate || !endDate) {
-    return current.length === 0 ? { days: current, fetchedAt } : { days: [], fetchedAt: null };
-  }
-
-  const isFresh = fetchedAt !== null && Date.now() - fetchedAt.getTime() < WEATHER_TTL_MS;
-
-  if (isFresh && coversForecastRange(current, startDate, endDate)) {
-    return { days: current, fetchedAt };
-  }
-
-  const fresh = await fetchDailyWeather(location.lat, location.lng, startDate, endDate);
-
-  if (fresh) {
-    return { days: fresh, fetchedAt: new Date() };
-  }
-
-  if (coversForecastRange(current, startDate, endDate)) {
-    return { days: current, fetchedAt };
-  }
-
-  return { days: [], fetchedAt: null };
-}
-
-function sameWeather(a: TripDayWeather[], b: TripDayWeather[]): boolean {
-  return (
-    a.length === b.length &&
-    a.every(
-      (day, index) =>
-        day.date === b[index].date &&
-        day.weatherCode === b[index].weatherCode &&
-        day.temperatureMax === b[index].temperatureMax,
-    )
-  );
+  return ensureWeatherData(analysis, current, fetchedAt, previous);
 }
 
 export async function backfillTripWeather(trip: TripDocument): Promise<void> {
-  const weather = await ensureWeather(trip.analysis, trip.weather, trip.weatherFetchedAt);
-
-  if (
-    sameWeather(weather.days, trip.weather) &&
-    weather.fetchedAt === trip.weatherFetchedAt
-  ) {
-    return;
-  }
-
-  trip.set("weather", weather.days);
-  trip.set("weatherFetchedAt", weather.fetchedAt);
-  await trip.save();
+  if (!tripLocationSchema.safeParse(trip.analysis.location).success) return;
+  const saved = await refreshTripWeather(trip);
+  // Keep the route's local snapshot current without saving the whole document.
+  trip.set("weather", saved.weather);
+  trip.set("weatherFetchedAt", saved.weatherFetchedAt);
+  trip.set("weatherAvailability", saved.weatherAvailability);
+  trip.set("updatedAt", saved.updatedAt);
 }
 
 export interface AttractionsState {
@@ -404,6 +368,7 @@ export async function ensureAttractions(
 }
 
 export async function backfillTripAttractions(trip: TripDocument): Promise<void> {
+  if (!tripLocationSchema.safeParse(trip.analysis.location).success) return;
   // Generated itineraries retain their authoritative candidate pool. Additional
   // discoveries are explicitly merged by editing/regeneration, never replaced
   // by a page refresh (which could race an edit or discard its saved options).
@@ -437,18 +402,28 @@ export async function backfillTripAttractions(trip: TripDocument): Promise<void>
 }
 
 export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<TripDocument> {
-  const analysis = await ensureLocation(input.analysis);
-  const gaps = missingFields(analysis);
-
   const existing = await TripModel.findOne({
     user: new Types.ObjectId(input.userId),
     status: "draft",
   }).exec();
 
+  const incoming = tripAnalysisSchema.parse(input.analysis);
+  if (!incoming.location && existing && incoming.destination === existing.analysis.destination &&
+      incoming.country === existing.analysis.country && tripLocationSchema.safeParse(existing.analysis.location).success) {
+    incoming.location = toPlainAnalysis(existing.analysis).location;
+  }
+  const analysis = await ensureLocation(incoming);
+  const gaps = missingFields(analysis);
+  const locationChanged = analysis.location?.lat !== existing?.analysis.location?.lat ||
+    analysis.location?.lng !== existing?.analysis.location?.lng;
+  const weatherInputsChanged = locationChanged || analysis.startDate !== existing?.analysis.startDate ||
+    analysis.endDate !== existing?.analysis.endDate;
+
   const weather = await ensureWeather(
     analysis,
-    existing?.weather ?? [],
-    existing?.weatherFetchedAt ?? null,
+    locationChanged ? [] : existing?.weather ?? [],
+    locationChanged ? null : existing?.weatherFetchedAt ?? null,
+    weatherInputsChanged ? null : existing?.weatherAvailability,
   );
 
   const attractions = await ensureAttractions(
@@ -460,7 +435,8 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
   );
 
   const draft = await TripModel.findOneAndUpdate(
-    { user: new Types.ObjectId(input.userId), status: "draft" },
+    { user: new Types.ObjectId(input.userId), status: "draft",
+      ...(existing ? { _id: existing._id, updatedAt: existing.updatedAt } : {}) },
     {
       $set: {
         prompt: input.prompt,
@@ -470,17 +446,18 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
         missingFields: gaps,
         weather: weather.days,
         weatherFetchedAt: weather.fetchedAt,
+        weatherAvailability: weather.availability ?? null,
         attractions: attractions.attractions,
         attractionsFetchedAt: attractions.fetchedAt,
         attractionsQuery: attractions.query,
         clustering: buildClustering(analysis, attractions.attractions),
       },
     },
-    { new: true, upsert: true, setDefaultsOnInsert: true },
+    { new: true, upsert: !existing, setDefaultsOnInsert: true, runValidators: true },
   ).exec();
 
   if (!draft) {
-    throw new Error("Trip draft could not be saved");
+    throw Object.assign(new Error("The trip changed while saving. Reload it and try again."), { status: 409, expose: true });
   }
 
   return draft;
@@ -500,8 +477,11 @@ export async function saveTripRequirements(
   const analysis = await ensureLocation(merged);
   const locationChanged = analysis.location?.lat !== draft.analysis.location?.lat ||
     analysis.location?.lng !== draft.analysis.location?.lng;
+  const weatherInputsChanged = locationChanged || analysis.startDate !== draft.analysis.startDate ||
+    analysis.endDate !== draft.analysis.endDate;
   const weather = await ensureWeather(
     analysis, locationChanged ? [] : draft.weather, locationChanged ? null : draft.weatherFetchedAt,
+    weatherInputsChanged ? null : draft.weatherAvailability,
   );
   const attractions = await ensureAttractions(
     analysis,
@@ -522,7 +502,7 @@ export async function saveTripRequirements(
       updatedAt: (draft as TripDocument & { updatedAt: Date }).updatedAt,
     },
     { $set: {
-      analysis, weather: weather.days, weatherFetchedAt: weather.fetchedAt,
+      analysis, weather: weather.days, weatherFetchedAt: weather.fetchedAt, weatherAvailability: weather.availability ?? null,
       attractions: attractions.attractions, attractionsFetchedAt: attractions.fetchedAt,
       attractionsQuery: attractions.query, clustering: buildClustering(analysis, attractions.attractions),
       confirmedFields: confirmed, missingFields: gaps, status: "draft", "generation.error": null,
@@ -561,6 +541,8 @@ export async function confirmTripRequirements(trip: TripDocument): Promise<TripD
 
   trip.confirmedFields = ASKABLE_FIELDS.filter((field) => !missing.includes(field));
   trip.missingFields = [];
+  // Legacy malformed locations must not prevent confirmation of otherwise complete requirements.
+  trip.set("analysis.location", analysis.location ?? null);
 
   return trip.save();
 }
@@ -604,7 +586,7 @@ export function toTripSummary(trip: TripDocument): TripSummary {
       currency: analysis.budget.currency ?? null,
       type: analysis.budget.type ?? null,
     },
-    location: analysis.location ?? null,
+    location: tripLocationSchema.safeParse(analysis.location).success ? analysis.location ?? null : null,
     fixtureKey: trip.fixtureKey ?? null,
     createdAt: (trip as any).createdAt ? (trip as any).createdAt.toISOString() : null,
     updatedAt: (trip as any).updatedAt ? (trip as any).updatedAt.toISOString() : null,
@@ -678,6 +660,7 @@ export function toTripDetail(trip: TripDocument): TripDetail {
     prompt: trip.prompt,
     badges: trip.badges,
     equipment: toTripEquipment(trip),
+    weatherAvailability: describeWeather(trip.analysis, trip.weather, trip.weatherAvailability),
     weather: trip.weather.map((day) => ({
       date: day.date,
       weatherCode: day.weatherCode,

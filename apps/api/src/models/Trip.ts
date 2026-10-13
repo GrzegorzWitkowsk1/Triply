@@ -13,11 +13,12 @@ import type {
   TripAnalysis,
   TripAttraction,
   TripDayWeather,
+  WeatherAvailability,
   TripItinerary,
   TripStatus,
   TripUnscheduledPlace,
 } from "@triply/shared";
-import { EXPENSE_CATEGORIES, PACE_VALUES, POI_ENVIRONMENT_VALUES, TRIP_STATUS_VALUES } from "@triply/shared";
+import { EXPENSE_CATEGORIES, PACE_VALUES, POI_ENVIRONMENT_VALUES, TRIP_STATUS_VALUES, WEATHER_STATUS_VALUES, WEATHER_REASON_VALUES } from "@triply/shared";
 
 export interface EquipmentRecord {
   name: string;
@@ -66,6 +67,8 @@ export interface TripRegenerationRecord {
 }
 
 export interface TripRecord {
+  createdAt: Date;
+  updatedAt: Date;
   expenses: import("@triply/shared").TripExpense[];
   budgetAllocations: import("@triply/shared").BudgetAllocations;
   budgetAllocationCurrency: string | null;
@@ -80,6 +83,7 @@ export interface TripRecord {
   equipment: Types.DocumentArray<EquipmentRecord>;
   weather: TripDayWeather[];
   weatherFetchedAt: Date | null;
+  weatherAvailability?: WeatherAvailability | null;
   attractions: TripAttraction[];
   attractionsFetchedAt: Date | null;
   attractionsQuery: AttractionsQueryRecord | null;
@@ -96,8 +100,8 @@ export type TripDocument = HydratedDocument<TripRecord>;
 
 const locationSchema = new Schema<TripAnalysis["location"]>(
   {
-    lat: { type: Number },
-    lng: { type: Number },
+    lat: { type: Number, required: true, min: -90, max: 90, validate: Number.isFinite },
+    lng: { type: Number, required: true, min: -180, max: 180, validate: Number.isFinite },
     city: { type: String, default: null, trim: true },
     country: { type: String, default: null, trim: true },
   },
@@ -434,6 +438,13 @@ const tripSchema = new Schema<TripRecord>(
     equipment: { type: [equipmentItemSchema], default: [] },
     weather: { type: [dayWeatherSchema], default: [] },
     weatherFetchedAt: { type: Date, default: null },
+    weatherAvailability: { type: new Schema<WeatherAvailability>({
+      status: { type: String, enum: WEATHER_STATUS_VALUES, required: true },
+      reason: { type: String, enum: [...WEATHER_REASON_VALUES, null], default: null },
+      canRetry: { type: Boolean, required: true },
+      checkedAt: { type: String, default: null }, retryAfter: { type: String, default: null },
+      timeZone: { type: String, default: null }, forecastStart: { type: String, default: null }, forecastEnd: { type: String, default: null },
+    }, { _id: false }), default: null },
     attractions: { type: [attractionSchema], default: [] },
     attractionsFetchedAt: { type: Date, default: null },
     attractionsQuery: { type: attractionsQuerySchema, default: null },

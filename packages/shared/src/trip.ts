@@ -55,8 +55,8 @@ export const LIMITS = {
 } as const;
 
 export const tripLocationSchema = z.object({
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180),
+  lat: z.number().finite().min(-90).max(90),
+  lng: z.number().finite().min(-180).max(180),
   city: z.string().trim().min(1).max(120).nullable().optional(),
   country: z.string().trim().min(1).max(120).nullable().optional(),
 });
@@ -300,6 +300,7 @@ export interface TripSummary {
 }
 
 export interface TripDetail extends TripAnalysisResult {
+  weatherAvailability?: import("./weather.js").WeatherAvailability;
   quality?: import("./quality.js").TripQualityReport | null;
   budgetData?: import("./budget.js").TripBudgetData;
   admissionSummary?: AdmissionSummary;

@@ -5,11 +5,24 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import request from "supertest";
 import { env } from "../config/env.js";
 import { TripModel } from "../models/Trip.js";
-import { ensureAttractions, saveTripRequirements } from "../services/tripDraft.js";
+import { ensureAttractions, saveTripRequirements, upsertTripDraft } from "../services/tripDraft.js";
+import { recoverTripDestination } from "../services/tripDestination.js";
+import type { TripAnalysis } from "@triply/shared";
+import type { MemoryStore } from "express-rate-limit";
 import { planTrip } from "../services/tripPlanner.js";
 import {
   claimTripForGeneration, GenerationSupersededError, markGenerationFailed, runTripGeneration,
 } from "../services/tripGeneration.js";
+
+const limiterStores = vi.hoisted(() => [] as MemoryStore[]);
+vi.mock("express-rate-limit", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("express-rate-limit")>();
+  return { ...actual, rateLimit: (options: Parameters<typeof actual.rateLimit>[0]) => {
+    const store = new actual.MemoryStore();
+    limiterStores.push(store);
+    return actual.rateLimit({ ...options, store });
+  } };
+});
 
 vi.mock("../services/tripPlanner.js", () => ({
   planTrip: vi.fn(async () => ({
@@ -125,6 +138,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterEach(async () => {
+  for (const store of limiterStores) store.resetAll();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   const collections = mongoose.connection.collections;
@@ -354,5 +368,219 @@ describe("editing trip requirements", () => {
     const stored = await TripModel.findById(trip._id);
     expect(stored?.status).toBe("generating");
     expect(stored?.analysis.travelers).toBe(2);
+  });
+});
+
+describe("destination persistence and recovery", () => {
+  const geographicResult = { name: "Prague", country: "Czechia", country_code: "CZ", latitude: 50.08, longitude: 14.43 };
+  function mockLookup(results = [geographicResult]) {
+    const fetch = vi.fn(async (url: string | URL | Request) => new Response(JSON.stringify(
+      String(url).includes("geocoding") ? { results } : { elements: [] },
+    )));
+    vi.stubGlobal("fetch", fetch);
+    return fetch;
+  }
+  async function brokenTrip(userId: string) {
+    const trip = await seedTrip(userId, { analysis: { ...COMPLETE_ANALYSIS, destination: "Prague", country: "Czech Republic", location: null } });
+    // Reproduce legacy MongoDB data without passing through the repaired write validators.
+    await TripModel.collection.updateOne({ _id: trip._id }, { $set: { "analysis.location": {} } });
+    return (await TripModel.findById(trip._id))!;
+  }
+
+  it("creates, persists and retrieves supplied destination coordinates without geocoding", async () => {
+    const { agent, userId } = await registerAgent();
+    const fetch = mockLookup();
+    const location = { lat: 0, lng: 0, city: "Paris", country: "France" };
+    const draft = await upsertTripDraft({ userId, prompt: "Paris", badges: [],
+      analysis: { ...COMPLETE_ANALYSIS, startDate: null, endDate: null, location } as TripAnalysis });
+    expect((await TripModel.findById(draft._id))?.toObject().analysis.location).toEqual(location);
+    const loaded = await agent.get(`/api/trips/${draft.id}`);
+    expect(loaded.status).toBe(200);
+    expect(loaded.body.analysis.location).toEqual(location);
+    expect(fetch.mock.calls.filter(([url]) => String(url).includes("geocoding"))).toHaveLength(0);
+  });
+
+  it("persists geocoding during text-only draft creation", async () => {
+    const fetch = mockLookup();
+    const draft = await upsertTripDraft({ userId: new mongoose.Types.ObjectId().toString(), prompt: "Prague", badges: [],
+      analysis: { ...COMPLETE_ANALYSIS, destination: "Prague", country: "Czech Republic", location: null, startDate: null, endDate: null } as TripAnalysis });
+    expect((await TripModel.findById(draft._id))?.analysis.location).toMatchObject({ lat: 50.08, lng: 14.43 });
+    expect(new URL(String(fetch.mock.calls[0]![0])).searchParams.get("name")).toBe("Prague");
+  });
+
+  it("preserves saved coordinates during repeat analysis of the same destination", async () => {
+    const trip = await seedTrip(new mongoose.Types.ObjectId().toString(), { analysis: { ...COMPLETE_ANALYSIS, startDate: null, endDate: null } });
+    const fetch = mockLookup();
+    const saved = await upsertTripDraft({ userId: trip.user.toString(), prompt: "Paris again", badges: [],
+      analysis: { ...COMPLETE_ANALYSIS, startDate: null, endDate: null, location: null } as TripAnalysis });
+    expect(saved.id).toBe(trip.id);
+    expect(saved.analysis.location).toMatchObject(COMPLETE_ANALYSIS.location);
+    expect(fetch.mock.calls.filter(([url]) => String(url).includes("geocoding"))).toHaveLength(0);
+  });
+
+  it("accepts selected coordinates through the requirements API and restores them on retrieval", async () => {
+    const { agent, userId } = await registerAgent();
+    const trip = await seedTrip(userId, { analysis: { ...COMPLETE_ANALYSIS, startDate: null, endDate: null, location: null } });
+    const fetch = mockLookup();
+    const location = { lat: 0, lng: 0, city: "Paris", country: "France" };
+    const saved = await agent.patch(`/api/trips/${trip.id}/requirements`).set("Origin", ORIGIN)
+      .send({ answers: { location }, confirmedFields: [] });
+    expect(saved.status).toBe(200);
+    expect(saved.body.analysis.location).toEqual(location);
+    expect((await TripModel.findById(trip._id))?.toObject().analysis.location).toEqual(location);
+    expect((await agent.get(`/api/trips/${trip.id}`)).body.analysis.location).toEqual(location);
+    expect(fetch.mock.calls.filter(([url]) => String(url).includes("geocoding"))).toHaveLength(0);
+  });
+
+  it("recovers the legacy Prague scenario, persists location and generates successfully", async () => {
+    const { agent, userId } = await registerAgent();
+    const trip = await brokenTrip(userId);
+    const fetch = mockLookup();
+    const response = await agent.post(`/api/trips/${trip.id}/generate`).set("Origin", ORIGIN);
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe("ready");
+    expect(response.body.analysis.location).toEqual({ lat: 50.08, lng: 14.43, city: "Prague", country: "Czechia" });
+    expect((await TripModel.findById(trip._id))?.analysis.location).toMatchObject({ lat: 50.08, lng: 14.43 });
+    const repeated = await agent.post(`/api/trips/${trip.id}/generate`).set("Origin", ORIGIN);
+    expect(repeated.status).toBe(200);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads an empty legacy location as null without sending invalid coordinates downstream", async () => {
+    const { agent, userId } = await registerAgent();
+    const trip = await brokenTrip(userId);
+    const fetch = mockLookup();
+    const loaded = await agent.get(`/api/trips/${trip.id}`);
+    expect(loaded.status).toBe(200);
+    expect(loaded.body.analysis.location).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("confirms complete legacy requirements before generation recovers their location", async () => {
+    const { agent, userId } = await registerAgent();
+    const trip = await brokenTrip(userId);
+    const fetch = mockLookup();
+    const response = await agent.post(`/api/trips/${trip.id}/confirm`).set("Origin", ORIGIN);
+    expect(response.status).toBe(200);
+    expect(response.body.analysis.location).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+    expect((await agent.post(`/api/trips/${trip.id}/generate`).set("Origin", ORIGIN)).status).toBe(200);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses newer valid coordinates for the same destination without overwriting them", async () => {
+    const trip = await brokenTrip(new mongoose.Types.ObjectId().toString());
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      await TripModel.updateOne({ _id: trip._id }, { $set: { "analysis.location": { lat: 51, lng: 15 } } });
+      return new Response(JSON.stringify({ results: [geographicResult] }));
+    }));
+    expect((await recoverTripDestination(trip)).analysis.location).toMatchObject({ lat: 51, lng: 15 });
+    expect((await TripModel.findById(trip._id))?.analysis.location).toMatchObject({ lat: 51, lng: 15 });
+  });
+
+  it("preserves valid zero coordinates during generation", async () => {
+    const { agent, userId } = await registerAgent();
+    const trip = await seedTrip(userId, { analysis: { ...COMPLETE_ANALYSIS, location: { lat: 0, lng: 0 } } });
+    const fetch = mockLookup();
+    const response = await agent.post(`/api/trips/${trip.id}/generate`).set("Origin", ORIGIN);
+    expect(response.status).toBe(200);
+    expect(response.body.analysis.location).toMatchObject({ lat: 0, lng: 0 });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { changes: { durationDays: null }, message: "trip dates or duration" },
+    { changes: { destination: null }, message: "select a destination" },
+    { changes: { country: null }, message: "destination country" },
+  ])("validates prerequisites independently ($message)", async ({ changes, message }) => {
+    const { agent, userId } = await registerAgent();
+    const trip = await seedTrip(userId, { analysis: { ...COMPLETE_ANALYSIS, ...changes, location: null } });
+    const fetch = mockLookup();
+    const response = await agent.post(`/api/trips/${trip.id}/generate`).set("Origin", ORIGIN);
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain(message);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { results: [], message: "couldn't determine" },
+    { results: [geographicResult, { ...geographicResult, longitude: 15 }], message: "more than one city" },
+    { results: [{ ...geographicResult, latitude: 91 }], message: "invalid coordinates" },
+  ])("returns controlled resolution errors ($message)", async ({ results, message }) => {
+    const { agent, userId } = await registerAgent();
+    const trip = await brokenTrip(userId);
+    mockLookup(results);
+    const response = await agent.post(`/api/trips/${trip.id}/generate`).set("Origin", ORIGIN);
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain(message);
+    expect((await TripModel.findById(trip._id))?.status).toBe("draft");
+  });
+
+  it("reports provider outages and allows retry without losing trip data", async () => {
+    const { agent, userId } = await registerAgent();
+    const trip = await brokenTrip(userId);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const response = await agent.post(`/api/trips/${trip.id}/generate`).set("Origin", ORIGIN);
+    expect(response.status).toBe(503);
+    expect(response.body.error).toBe("Destination lookup is temporarily unavailable. Please try again.");
+    expect((await TripModel.findById(trip._id))?.analysis.budget.amount).toBe(500);
+    mockLookup();
+    expect((await agent.post(`/api/trips/${trip.id}/generate`).set("Origin", ORIGIN)).status).toBe(200);
+  });
+
+  it("shares concurrent recovery and preserves unrelated data and itinerary versions", async () => {
+    const trip = await brokenTrip(new mongoose.Types.ObjectId().toString());
+    await TripModel.updateOne({ _id: trip._id }, { $set: { itineraryVersion: 7, budgetRevision: 3, badges: ["food"], "analysis.notes": "Keep me" } });
+    const before = (await TripModel.findById(trip._id))!;
+    const fetch = mockLookup();
+    const [first, second] = await Promise.all([recoverTripDestination(before), recoverTripDestination(before)]);
+    expect(first.analysis.location).toMatchObject({ lat: 50.08, lng: 14.43 });
+    expect(second.id).toBe(first.id);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const after = (await TripModel.findById(trip._id))!;
+    expect(after.itineraryVersion).toBe(7);
+    expect(after.budgetRevision).toBe(3);
+    expect(after.badges).toEqual(["food"]);
+    expect(after.analysis.notes).toBe("Keep me");
+    expect(after.toObject().analysis.budget).toEqual(before.toObject().analysis.budget);
+    await recoverTripDestination(after);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects stale results after the destination changes during lookup", async () => {
+    const trip = await brokenTrip(new mongoose.Types.ObjectId().toString());
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      await TripModel.updateOne({ _id: trip._id }, { $set: { "analysis.destination": "Rome", "analysis.country": "Italy", "analysis.location": { lat: 41.9, lng: 12.5 } } });
+      return new Response(JSON.stringify({ results: [geographicResult] }));
+    }));
+    await expect(recoverTripDestination(trip)).rejects.toMatchObject({ status: 409 });
+    const stored = (await TripModel.findById(trip._id))!;
+    expect(stored.analysis.destination).toBe("Rome");
+    expect(stored.analysis.location).toMatchObject({ lat: 41.9, lng: 12.5 });
+  });
+
+  it("prevents claim of an obsolete snapshot after a concurrent edit", async () => {
+    const trip = await seedTrip(new mongoose.Types.ObjectId().toString());
+    await TripModel.updateOne({ _id: trip._id }, { $set: { "analysis.destination": "Rome", updatedAt: new Date(trip.updatedAt.getTime() + 1000) } });
+    expect(await claimTripForGeneration(trip.id, trip.user.toString(), trip.updatedAt)).toBeNull();
+  });
+
+  it("preserves coordinates when an unchanged destination update supplies null location", async () => {
+    const trip = await seedTrip(new mongoose.Types.ObjectId().toString(), { analysis: { ...COMPLETE_ANALYSIS, startDate: null, endDate: null } });
+    const fetch = mockLookup();
+    const saved = await saveTripRequirements(trip, { destination: "Paris", country: "France", location: null, travelers: 3 }, []);
+    expect(saved.analysis.location).toMatchObject(COMPLETE_ANALYSIS.location);
+    expect(saved.analysis.travelers).toBe(3);
+    expect(fetch.mock.calls.filter(([url]) => String(url).includes("geocoding"))).toHaveLength(0);
+  });
+
+  it("rejects invalid coordinates at API and MongoDB validation boundaries", async () => {
+    const { agent, userId } = await registerAgent();
+    const trip = await seedTrip(userId);
+    const response = await agent.patch(`/api/trips/${trip.id}/requirements`).set("Origin", ORIGIN)
+      .send({ answers: { location: { lat: 91, lng: 0 } }, confirmedFields: [] });
+    expect(response.status).toBe(400);
+    await expect(seedTrip(userId, { analysis: { ...COMPLETE_ANALYSIS, location: { lat: 0, lng: 181 } } })).rejects.toThrow();
+    expect((await TripModel.findById(trip._id))?.analysis.location).toMatchObject(COMPLETE_ANALYSIS.location);
   });
 });

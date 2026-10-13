@@ -6,6 +6,7 @@ import { isValidTimeZone } from "./timeZone.js";
 import { mergeSchedulingConfig } from "./schedulingConfig.js";
 import { summarizeBudget } from "./budgetSummary.js";
 import { distanceMeters, isValidCoordinate } from "./geo.js";
+import { weatherIssues } from "./weatherDiagnostics.js";
 
 export interface ValidationOptions {
   dayIndex?: number;
@@ -36,6 +37,7 @@ export function validateItinerary(trip: TripRecord, options: ValidationOptions =
     issues.push({ code, severity, dimension, message, ...(day ? { dayId: String(day.dayIndex) } : {}), ...(activityId ? { activityId } : {}), ...(details ? { details } : {}) });
   const allDays = trip.itinerary?.days ?? [];
   const days = allDays.filter(d => options.dayIndex === undefined || d.dayIndex === options.dayIndex);
+  const weatherDiagnostics = weatherIssues(trip);
   const pool = new Map(trip.attractions.filter(p => p.placeId).map(p => [p.placeId!, p]));
   const seen = new Set<string>();
   let previousDay = -1;
@@ -97,7 +99,7 @@ export function validateItinerary(trip: TripRecord, options: ValidationOptions =
       add("WALKING_PREFERENCE_EXCEEDED", "warning", "routing", "This day's route exceeds your preferred walking distance.", day);
     if (day.totalTravelMinutes !== null && day.totalVisitMinutes > 0 && day.totalTravelMinutes > day.totalVisitMinutes)
       add("TRAVEL_LOAD_HIGH", "warning", "routing", "This day spends more time traveling than visiting attractions.", day);
-    if (trip.weather.length === 0) add("WEATHER_UNAVAILABLE", "info", "dataCompleteness", "Weather is unavailable for planning. Check forecasts closer to departure.", day);
+    issues.push(...weatherDiagnostics.filter(issue => issue.dayId === String(day.dayIndex)));
     const visits = day.activities.filter(a => a.type === "attraction");
     for (let i = 1; i < visits.length; i++) {
       const from = day.stops.findIndex(p => p.placeId ? p.placeId === visits[i - 1].placeId : p.name === visits[i - 1].title);
