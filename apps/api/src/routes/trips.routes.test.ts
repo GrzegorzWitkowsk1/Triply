@@ -1,5 +1,6 @@
+vi.mock("../middleware/rateLimit.js", () => ({ createLimiters: () => ({ auth: async () => {}, planning: async () => {} }) }));
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { Express } from "express";
+import type { FastifyInstance } from "fastify";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import request from "supertest";
@@ -8,21 +9,11 @@ import { TripModel } from "../models/Trip.js";
 import { ensureAttractions, saveTripRequirements, upsertTripDraft } from "../services/tripDraft.js";
 import { recoverTripDestination } from "../services/tripDestination.js";
 import type { TripAnalysis } from "@triply/shared";
-import type { MemoryStore } from "express-rate-limit";
 import { planTrip } from "../services/tripPlanner.js";
 import {
   claimTripForGeneration, GenerationSupersededError, markGenerationFailed, runTripGeneration,
 } from "../services/tripGeneration.js";
 
-const limiterStores = vi.hoisted(() => [] as MemoryStore[]);
-vi.mock("express-rate-limit", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("express-rate-limit")>();
-  return { ...actual, rateLimit: (options: Parameters<typeof actual.rateLimit>[0]) => {
-    const store = new actual.MemoryStore();
-    limiterStores.push(store);
-    return actual.rateLimit({ ...options, store });
-  } };
-});
 
 vi.mock("../services/tripPlanner.js", () => ({
   planTrip: vi.fn(async () => ({
@@ -104,10 +95,10 @@ const COMPLETE_ANALYSIS = {
 };
 
 let mongod: MongoMemoryServer;
-let app: Express;
+let app: FastifyInstance;
 
 async function registerAgent() {
-  const agent = request.agent(app);
+  const agent = request.agent(app.server);
 
   const response = await agent
     .post("/api/auth/register")
@@ -134,11 +125,10 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
   const { createApp } = await import("../app.js");
-  app = createApp();
+  app = await createApp();
 }, 120_000);
 
 afterEach(async () => {
-  for (const store of limiterStores) store.resetAll();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   const collections = mongoose.connection.collections;
@@ -149,13 +139,13 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  await mongoose.disconnect();
+  await app?.close(); await mongoose.disconnect();
   await mongod.stop();
 });
 
 describe("POST /api/trips/:id/confirm", () => {
   it("rejects unauthenticated requests", async () => {
-    const response = await request(app)
+    const response = await request(app.server)
       .post(`/api/trips/${new mongoose.Types.ObjectId()}/confirm`)
       .set("Origin", ORIGIN);
 

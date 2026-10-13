@@ -1,5 +1,6 @@
+vi.mock("../middleware/rateLimit.js", () => ({ createLimiters: () => ({ auth: async () => {}, planning: async () => {} }) }));
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Express } from "express";
+import type { FastifyInstance } from "fastify";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import request from "supertest";
@@ -33,10 +34,6 @@ vi.mock("../services/weather.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../services/weather.js")>(), fetchDailyWeather: vi.fn(async () => null),
 }));
 // Rate limiting is covered by auth tests; this suite exercises authenticated editing.
-vi.mock("express-rate-limit", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("express-rate-limit")>();
-  return { ...actual, rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next() };
-});
 
 const pool: TripAttraction[] = Array.from({ length: 5 }, (_, index) => ({
   placeId: `node/${index + 1}`, name: index < 2 ? "Same display name" : `Place ${index + 1}`,
@@ -57,18 +54,18 @@ function makeDay(dayIndex: number, ids: string[]): ItineraryDay {
   };
 }
 let mongod: MongoMemoryServer;
-let app: Express;
+let app: FastifyInstance;
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
-  app = (await import("../app.js")).createApp();
+  app = await (await import("../app.js")).createApp();
 }, 120_000);
 beforeEach(() => { vi.clearAllMocks(); vi.mocked(fetchAttractions).mockResolvedValue(null); });
 afterEach(async () => { for (const collection of Object.values(mongoose.connection.collections)) await collection.deleteMany({}); });
-afterAll(async () => { await mongoose.disconnect(); await mongod?.stop(); });
+afterAll(async () => { await app?.close(); await mongoose.disconnect(); await mongod?.stop(); });
 
 async function setup() {
-  const agent = request.agent(app);
+  const agent = request.agent(app.server);
   const registration = await agent.post("/api/auth/register").set("Origin", env.WEB_ORIGIN)
     .send({ email: "editor@example.com", password: "Password123!Aa" });
   expect(registration.status).toBe(201);
@@ -209,7 +206,7 @@ describe("Step 10 persistent budget integration", () => {
   });
   it("requires authentication and enforces ownership on reads and writes", async () => {
     const { trip, agent } = await setup();
-    expect((await request(app).get(`/api/trips/${trip.id}/budget`)).status).toBe(401);
+    expect((await request(app.server).get(`/api/trips/${trip.id}/budget`)).status).toBe(401);
     const other = await TripModel.create({ ...trip.toObject(), _id: new mongoose.Types.ObjectId(), user: new mongoose.Types.ObjectId() });
     expect((await agent.get(`/api/trips/${other.id}/expenses`)).status).toBe(404);
     expect((await agent.post(`/api/trips/${other.id}/expenses`).set("Origin", env.WEB_ORIGIN).send({ expense: input(), requestId: randomUUID(), expectedRevision: 0 })).status).toBe(404);
@@ -327,10 +324,10 @@ describe("assistant HTTP integration and confirmation", () => {
   it("isolates conversations across users and trips and handles deleted trips", async () => {
     const { agent, trip } = await setup();
     const history = await agent.get(`/api/trips/${trip.id}/assistant/conversations`);
-    const other = request.agent(app);
+    const other = request.agent(app.server);
     await other.post("/api/auth/register").set("Origin", env.WEB_ORIGIN).send({ email: "other-assistant@example.com", password: "Password123!Aa" });
     const url = `/api/trips/${trip.id}/assistant/conversations/${history.body.conversationId}`;
-    expect((await request(app).get(url)).status).toBe(401);
+    expect((await request(app.server).get(url)).status).toBe(401);
     expect((await other.get(url)).status).toBe(404);
     const copy = trip.toObject();
     const second = await TripModel.create({ ...copy, _id: new mongoose.Types.ObjectId() });
@@ -514,9 +511,9 @@ describe("manual itinerary editing", () => {
   it("authenticates and enforces ownership in both the route and reusable service", async () => {
     const { trip, userId } = await setup();
     const payload = { expectedVersion: 3, operation: { type: "remove" as const, dayIndex: 1, attractionId: "node/1" } };
-    const anonymous = await request(app).post(`/api/trips/${trip.id}/itinerary/edit`).set("Origin", env.WEB_ORIGIN).send(payload);
+    const anonymous = await request(app.server).post(`/api/trips/${trip.id}/itinerary/edit`).set("Origin", env.WEB_ORIGIN).send(payload);
     expect(anonymous.status).toBe(401);
-    const other = request.agent(app);
+    const other = request.agent(app.server);
     await other.post("/api/auth/register").set("Origin", env.WEB_ORIGIN).send({ email: "other@example.com", password: "Password123!Aa" });
     expect((await other.post(`/api/trips/${trip.id}/itinerary/edit`).set("Origin", env.WEB_ORIGIN).send(payload)).status).toBe(404);
     expect((await other.post(`/api/trips/${trip.id}/itinerary/candidates`).set("Origin", env.WEB_ORIGIN).send({})).status).toBe(404);

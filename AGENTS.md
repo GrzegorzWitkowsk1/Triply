@@ -15,7 +15,7 @@ apps/web:
 - TypeScript
 
 apps/api:
-- Express
+- Fastify
 - MongoDB
 - Mongoose
 - AI provider layer (Gemini/OpenRouter for trip parsing, no SDK — plain `fetch`)

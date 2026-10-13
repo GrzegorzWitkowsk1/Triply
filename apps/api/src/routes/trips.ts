@@ -1,5 +1,5 @@
-import { ipKeyGenerator, rateLimit } from "express-rate-limit";
-import { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
+import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
+import type { HttpRoute, HttpRequest } from "../http/types.js";
 import { Types } from "mongoose";
 import {
   analyzeTripRequestSchema,
@@ -22,8 +22,8 @@ import { editTripItinerary, itineraryCandidates, ItineraryEditError } from "../s
 import { TripModel } from "../models/Trip.js";
 import { recoverTripDestination, validateGenerationRequirements } from "../services/tripDestination.js";
 import { refreshTripWeather, toWeatherRefresh } from "../services/tripWeather.js";
-import { expensesRouter } from "./expenses.js";
-import type { PublicUser } from "../models/User.js";
+import { registerExpenseRoutes } from "./expenses.js";
+import { currentUserId } from "../middleware/auth.js";
 import {
   backfillTripAttractions,
   backfillTripWeather,
@@ -61,622 +61,553 @@ import {
   TripDayNotFoundError,
 } from "../services/tripRegeneration.js";
 
-type AsyncHandler = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => Promise<unknown>;
+export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAsyncHookHandler): void {
+  registerExpenseRoutes(app);
 
-function asyncHandler(handler: AsyncHandler): RequestHandler {
-  return (req, res, next) => {
-    void handler(req, res, next).catch(next);
-  };
-}
-
-function currentUserId(res: Response): string {
-  return (res.locals.user as PublicUser).id;
-}
-
-const aiLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  limit: 20,
-  standardHeaders: "draft-8",
-  legacyHeaders: false,
-  keyGenerator: (req, res) => {
-    const user = res.locals.user as PublicUser | undefined;
-
-    return user ? `user:${user.id}` : `ip:${ipKeyGenerator(req.ip ?? "unknown")}`;
-  },
-  handler: (_req, res) => {
-    res.status(429).json({
-      error: "Too many planning requests. Wait a few minutes and try again.",
-    });
-  },
-});
-
-export const tripsRouter = Router();
-tripsRouter.use("/:id", expensesRouter);
-
-tripsRouter.get(["/:id/assistant/conversations", "/:id/assistant/conversations/:conversationId"], asyncHandler(async (req, res) => {
-  try {
-    res.json(await getAssistantConversation(tripIdParam(req) ?? "", currentUserId(res), typeof req.params.conversationId === "string" ? req.params.conversationId : undefined));
-  } catch (error) {
-    if (!(error instanceof ItineraryEditError)) throw error;
-    res.status(error.status).json({ error: error.message });
-  }
-}));
-tripsRouter.post("/:id/assistant/messages", aiLimiter, asyncHandler(async (req, res) => {
-  const parsed = assistantMessageRequestSchema.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: "Enter a message of 1–2000 characters and valid conversation/day identifiers." }); return; }
-  try { res.json(await sendAssistantMessage(tripIdParam(req) ?? "", currentUserId(res), parsed.data)); }
-  catch (error) {
-    if (!(error instanceof ItineraryEditError)) throw error;
-    res.status(error.status).json({ error: error.message });
-  }
-}));
-tripsRouter.post("/:id/assistant/actions/:previewId/apply", asyncHandler(async (req, res) => {
-  const previewId = req.params.previewId;
-  if (typeof previewId !== "string" || !/^[a-f\d-]{36}$/i.test(previewId)) { res.status(400).json({ error: "Invalid preview" }); return; }
-  try { const result = await confirmAssistantEdit(tripIdParam(req) ?? "", currentUserId(res), previewId); res.json({ ...result, trip: toTripDetail(result.trip) }); }
-  catch (error) {
-    if (!(error instanceof ItineraryEditError)) throw error;
-    res.status(error.status).json({ error: error.message });
-  }
-}));
-tripsRouter.delete("/:id/assistant/actions/:previewId", asyncHandler(async (req, res) => {
-  const previewId = req.params.previewId;
-  if (typeof previewId !== "string" || !/^[a-f\d-]{36}$/i.test(previewId)) { res.status(400).json({ error: "Invalid preview" }); return; }
-  try { await cancelAssistantAction(tripIdParam(req) ?? "", currentUserId(res), previewId); res.status(204).end(); }
-  catch (error) {
-    if (!(error instanceof ItineraryEditError)) throw error;
-    res.status(error.status).json({ error: error.message });
-  }
-}));
-
-tripsRouter.post("/:id/itinerary/edit", asyncHandler(async (req, res) => {
-  const parsed = itineraryEditRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid edit operation" });
-    return;
-  }
-  try {
-    const result = await editTripItinerary(tripIdParam(req) ?? "", currentUserId(res), parsed.data);
-    res.json({ ...result, trip: toTripDetail(result.trip) });
-  } catch (error) {
-    if (!(error instanceof ItineraryEditError)) throw error;
-    res.status(error.status).json({ error: error.message, warnings: error.warnings, conflicts: error.conflicts, issues: error.issues });
-  }
-}));
-
-tripsRouter.post("/:id/itinerary/candidates", aiLimiter, asyncHandler(async (req, res) => {
-  const parsed = itineraryCandidatesRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid attraction search" });
-    return;
-  }
-  try {
-    res.json(await itineraryCandidates(tripIdParam(req) ?? "", currentUserId(res), parsed.data.search, parsed.data.discover));
-  } catch (error) {
-    if (!(error instanceof ItineraryEditError)) throw error;
-    res.status(error.status).json({ error: error.message });
-  }
-}));
-
-tripsRouter.post(
-  "/analyze",
-  aiLimiter,
-  asyncHandler(async (req, res) => {
-    const parsed = analyzeTripRequestSchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "Describe your trip or pick at least one interest to get started.",
-      });
-      return;
-    }
-
-    const request: AnalyzeTripRequest = parsed.data;
-    const analysis = await aiService.parseTrip({ prompt: request.prompt, badges: request.badges });
-
-    const draft = await upsertTripDraft({
-      userId: currentUserId(res),
-      prompt: request.prompt,
-      badges: request.badges,
-      analysis,
-    });
-
-    res.json(toTripAnalysisResult(draft));
-  }),
-);
-
-tripsRouter.patch(
-  "/:id/requirements",
-  asyncHandler(async (req, res) => {
-    const rawId = req.params.id;
-    const id = (Array.isArray(rawId) ? rawId[0] : rawId) ?? "";
-
-    if (!Types.ObjectId.isValid(id)) {
-      res.status(404).json({ error: "Trip draft not found" });
-      return;
-    }
-
-    const parsed = updateTripRequirementsSchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      res.status(400).json({ error: "Some of the answers are not valid." });
-      return;
-    }
-
-    const draft = await TripModel.findOne({
-      _id: new Types.ObjectId(id),
-      user: new Types.ObjectId(currentUserId(res)),
-    }).exec();
-
-    if (!draft) {
-      res.status(404).json({ error: "Trip draft not found" });
-      return;
-    }
-
-    if (draft.status !== "draft" && draft.status !== "failed" && !(draft.status === "ready" && parsed.data.regenerate)) {
-      res.status(409).json({ error: "Requirements can only be edited before itinerary generation." });
-      return;
-    }
-
-    const request: UpdateTripRequirements = parsed.data;
-    const saved = await saveTripRequirements(
-      draft,
-      request.answers,
-      request.confirmedFields,
-      request.regenerate === true,
-    );
-
-    res.json(toTripAnalysisResult(saved));
-  }),
-);
-
-tripsRouter.get(
-  "/",
-  asyncHandler(async (req, res) => {
-    const parsed = tripListQuerySchema.safeParse(req.query);
-
-    if (!parsed.success) {
-      res.status(400).json({ error: "That trip filter is not valid." });
-      return;
-    }
-
-    const filter: { user: Types.ObjectId; status?: TripStatus } = {
-      user: new Types.ObjectId(currentUserId(res)),
-    };
-
-    if (parsed.data.status) {
-      filter.status = parsed.data.status;
-    }
-
-    const trips = await TripModel.find(filter).sort({ createdAt: -1 }).exec();
-
-    res.json(trips.map((trip) => toTripSummary(trip)));
-  }),
-);
-
-tripsRouter.get(
-  "/:id",
-  asyncHandler(async (req, res) => {
-    const rawId = req.params.id;
-    const id = (Array.isArray(rawId) ? rawId[0] : rawId) ?? "";
-
-    if (!Types.ObjectId.isValid(id)) {
-      res.status(404).json({ error: "Trip not found" });
-      return;
-    }
-
-    const trip = await TripModel.findOne({
-      _id: new Types.ObjectId(id),
-      user: new Types.ObjectId(currentUserId(res)),
-    }).exec();
-
-    if (!trip) {
-      res.status(404).json({ error: "Trip not found" });
-      return;
-    }
-
-    if (trip.status === "draft" || trip.status === "ready") {
-      await backfillTripWeather(trip);
-      await backfillTripAttractions(trip);
-    }
-
-    res.json(toTripDetail(trip));
-  }),
-);
-
-tripsRouter.post(
-  "/:id/weather/refresh",
-  asyncHandler(async (req, res) => {
-    const id = tripIdParam(req);
-    if (!id) { res.status(404).json({ error: "Trip not found" }); return; }
-    const trip = await TripModel.findOne({ _id: new Types.ObjectId(id), user: new Types.ObjectId(currentUserId(res)) }).exec();
-    if (!trip) { res.status(404).json({ error: "Trip not found" }); return; }
-    const controller = new AbortController();
-    const cancel = () => { if (!res.writableEnded) controller.abort(); };
-    res.on("close", cancel);
-    console.info({ event: "weather-refresh", provider: "open-meteo", stage: "requested", tripId: id });
+  for (const path of ["/trips/:id/assistant/conversations", "/trips/:id/assistant/conversations/:conversationId"]) app.get<HttpRoute>(path, async (req, res) => {
     try {
-      const saved = await refreshTripWeather(trip, { force: true, signal: controller.signal });
-      const result = toWeatherRefresh(saved);
-      const failed = result.weatherAvailability.reason && ["timeout", "network", "http_error", "invalid_response"].includes(result.weatherAvailability.reason);
-      console.info({ event: "weather-refresh", provider: "open-meteo", stage: !failed && result.weather.length ? "succeeded" : "failed", code: result.weatherAvailability.status, reason: result.weatherAvailability.reason, tripId: id });
-      res.json(result);
+      return res.send(await getAssistantConversation(tripIdParam(req) ?? "", currentUserId(req), typeof req.params.conversationId === "string" ? req.params.conversationId : undefined));
     } catch (error) {
-      console.info({ event: "weather-refresh", provider: "open-meteo", stage: "failed", code: controller.signal.aborted ? "cancelled" : "refresh_error", tripId: id });
-      if (!controller.signal.aborted) throw error;
-    } finally { res.off("close", cancel); }
-  }),
-);
-
-function tripIdParam(req: Request): string | null {
-  const rawId = req.params.id;
-  const id = (Array.isArray(rawId) ? rawId[0] : rawId) ?? "";
-
-  return Types.ObjectId.isValid(id) ? id : null;
-}
-
-function dayIndexParam(req: Request): number | null {
-  const raw = req.params.dayId;
-  const value = ((Array.isArray(raw) ? raw[0] : raw) ?? "").trim();
-
-  if (!/^\d+$/.test(value)) {
-    return null;
-  }
-
-  const dayIndex = Number.parseInt(value, 10);
-
-  return dayIndex >= 1 ? dayIndex : null;
-}
-
-function mergePreferences(
-  selected: RegenerationPreferences,
-  interpreted: RegenerationPreferences,
-): RegenerationPreferences {
-  return {
-    lessWalking: selected.lessWalking || interpreted.lessWalking,
-    moreFood: selected.moreFood || interpreted.moreFood,
-    relaxedPace: selected.relaxedPace || interpreted.relaxedPace,
-    preferIndoor: selected.preferIndoor || interpreted.preferIndoor,
-    surpriseMe: selected.surpriseMe || interpreted.surpriseMe,
-  };
-}
-
-tripsRouter.get(
-  "/:id/equipment",
-  asyncHandler(async (req, res) => {
-    const id = tripIdParam(req);
-
-    if (!id) {
-      res.status(404).json({ error: TRIP_NOT_FOUND });
-      return;
+      if (!(error instanceof ItineraryEditError)) throw error;
+      return res.code(error.status).send({ error: error.message });
     }
-
-    const equipment = await getEquipment(id, currentUserId(res));
-
-    res.json({ equipment });
-  }),
-);
-
-tripsRouter.post(
-  "/:id/equipment",
-  asyncHandler(async (req, res) => {
-    const id = tripIdParam(req);
-
-    if (!id) {
-      res.status(404).json({ error: TRIP_NOT_FOUND });
-      return;
+  });
+  app.post<HttpRoute>("/trips/:id/assistant/messages", { preHandler: aiLimiter },
+    async (req, res) => {
+    const parsed = assistantMessageRequestSchema.safeParse(req.body);
+    if (!parsed.success) { return res.code(400).send({ error: "Enter a message of 1–2000 characters and valid conversation/day identifiers." }); }
+    try { return res.send(await sendAssistantMessage(tripIdParam(req) ?? "", currentUserId(req), parsed.data)); }
+    catch (error) {
+      if (!(error instanceof ItineraryEditError)) throw error;
+      return res.code(error.status).send({ error: error.message });
     }
+  });
+  app.post<HttpRoute>("/trips/:id/assistant/actions/:previewId/apply", async (req, res) => {
+    const previewId = req.params.previewId;
+    if (typeof previewId !== "string" || !/^[a-f\d-]{36}$/i.test(previewId)) { return res.code(400).send({ error: "Invalid preview" }); }
+    try { const result = await confirmAssistantEdit(tripIdParam(req) ?? "", currentUserId(req), previewId); return res.send({ ...result, trip: toTripDetail(result.trip) }); }
+    catch (error) {
+      if (!(error instanceof ItineraryEditError)) throw error;
+      return res.code(error.status).send({ error: error.message });
+    }
+  });
+  app.delete<HttpRoute>("/trips/:id/assistant/actions/:previewId", async (req, res) => {
+    const previewId = req.params.previewId;
+    if (typeof previewId !== "string" || !/^[a-f\d-]{36}$/i.test(previewId)) { return res.code(400).send({ error: "Invalid preview" }); }
+    try { await cancelAssistantAction(tripIdParam(req) ?? "", currentUserId(req), previewId); return res.code(204).send(); }
+    catch (error) {
+      if (!(error instanceof ItineraryEditError)) throw error;
+      return res.code(error.status).send({ error: error.message });
+    }
+  });
 
-    const parsed = createTripEquipmentItemSchema.safeParse(req.body);
-
+  app.post<HttpRoute>("/trips/:id/itinerary/edit", async (req, res) => {
+    const parsed = itineraryEditRequestSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: "Enter an item name and a count between 1 and 999." });
-      return;
+      return res.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid edit operation" });
     }
-
-    const item = await addEquipmentItem(id, currentUserId(res), parsed.data);
-
-    res.status(201).json(item);
-  }),
-);
-
-tripsRouter.patch(
-  "/:id/equipment/:itemId",
-  asyncHandler(async (req, res) => {
-    const id = tripIdParam(req);
-
-    if (!id) {
-      res.status(404).json({ error: TRIP_NOT_FOUND });
-      return;
-    }
-
-    const rawItemId = req.params.itemId;
-    const itemId = (Array.isArray(rawItemId) ? rawItemId[0] : rawItemId) ?? "";
-
-    if (!Types.ObjectId.isValid(itemId)) {
-      res.status(404).json({ error: ITEM_NOT_FOUND });
-      return;
-    }
-
-    const parsed = updateTripEquipmentItemSchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      res.status(400).json({ error: "Enter a valid item name and count." });
-      return;
-    }
-
-    const item = await updateEquipmentItem(id, currentUserId(res), itemId, parsed.data);
-
-    res.json(item);
-  }),
-);
-
-tripsRouter.delete(
-  "/:id/equipment/:itemId",
-  asyncHandler(async (req, res) => {
-    const id = tripIdParam(req);
-
-    if (!id) {
-      res.status(404).json({ error: TRIP_NOT_FOUND });
-      return;
-    }
-
-    const rawItemId = req.params.itemId;
-    const itemId = (Array.isArray(rawItemId) ? rawItemId[0] : rawItemId) ?? "";
-
-    if (!Types.ObjectId.isValid(itemId)) {
-      res.status(404).json({ error: ITEM_NOT_FOUND });
-      return;
-    }
-
-    await deleteEquipmentItem(id, currentUserId(res), itemId);
-
-    res.status(204).send();
-  }),
-);
-
-tripsRouter.post(
-  "/:id/confirm",
-  asyncHandler(async (req, res) => {
-    const id = tripIdParam(req);
-
-    if (!id) {
-      res.status(404).json({ error: "Trip not found" });
-      return;
-    }
-
-    const trip = await TripModel.findOne({
-      _id: new Types.ObjectId(id),
-      user: new Types.ObjectId(currentUserId(res)),
-    }).exec();
-
-    if (!trip) {
-      res.status(404).json({ error: "Trip not found" });
-      return;
-    }
-
     try {
-      const saved = await confirmTripRequirements(trip);
-      res.json(toTripDetail(saved));
+      const result = await editTripItinerary(tripIdParam(req) ?? "", currentUserId(req), parsed.data);
+      return res.send({ ...result, trip: toTripDetail(result.trip) });
     } catch (error) {
-      if (error instanceof TripRequirementsIncompleteError) {
-        res.status(400).json({
-          error: "A few trip details are still missing.",
-          missingFields: error.missing,
+      if (!(error instanceof ItineraryEditError)) throw error;
+      return res.code(error.status).send({ error: error.message, warnings: error.warnings, conflicts: error.conflicts, issues: error.issues });
+    }
+  });
+
+  app.post<HttpRoute>("/trips/:id/itinerary/candidates", { preHandler: aiLimiter },
+    async (req, res) => {
+    const parsed = itineraryCandidatesRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.code(400).send({ error: "Invalid attraction search" });
+    }
+    try {
+      return res.send(await itineraryCandidates(tripIdParam(req) ?? "", currentUserId(req), parsed.data.search, parsed.data.discover));
+    } catch (error) {
+      if (!(error instanceof ItineraryEditError)) throw error;
+      return res.code(error.status).send({ error: error.message });
+    }
+  });
+
+  app.post<HttpRoute>(
+    "/trips/analyze",
+    { preHandler: aiLimiter },
+    async (req, res) => {
+      const parsed = analyzeTripRequestSchema.safeParse(req.body);
+
+      if (!parsed.success) {
+        return res.code(400).send({
+          error: "Describe your trip or pick at least one interest to get started.",
         });
-        return;
       }
 
-      throw error;
-    }
-  }),
-);
+      const request: AnalyzeTripRequest = parsed.data;
+      const analysis = await aiService.parseTrip({ prompt: request.prompt, badges: request.badges });
 
-tripsRouter.post(
-  "/:id/generate",
-  asyncHandler(async (req, res) => {
-    const id = tripIdParam(req);
-
-    if (!id) {
-      res.status(404).json({ error: "Trip not found" });
-      return;
-    }
-
-    const userId = currentUserId(res);
-
-    const existing = await TripModel.findOne({
-      _id: new Types.ObjectId(id),
-      user: new Types.ObjectId(userId),
-    }).exec();
-
-    if (!existing) {
-      res.status(404).json({ error: "Trip not found" });
-      return;
-    }
-
-    if (existing.status === "ready" && existing.itinerary) {
-      res.json(toTripDetail(existing));
-      return;
-    }
-
-    validateGenerationRequirements(existing);
-    const resolved = await recoverTripDestination(existing);
-    // Validate the fresh snapshot too if another process completed recovery.
-    validateGenerationRequirements(resolved);
-    const claimed = await claimTripForGeneration(id, userId, resolved.updatedAt);
-
-    if (!claimed) {
-      res.status(409).json({
-        error: "The trip changed or its itinerary is already being generated. Reload it and try again.",
+      const draft = await upsertTripDraft({
+        userId: currentUserId(req),
+        prompt: request.prompt,
+        badges: request.badges,
+        analysis,
       });
-      return;
-    }
 
-    try {
-      const generated = await runTripGeneration(claimed);
-      res.json(toTripDetail(generated));
-    } catch (error) {
-      if (error instanceof GenerationSupersededError) {
-        res.status(409).json({ error: "This itinerary is being generated by another request." });
-        return;
+      return res.send(toTripAnalysisResult(draft));
+    },
+  );
+
+  app.patch<HttpRoute>(
+    "/trips/:id/requirements",
+    async (req, res) => {
+      const rawId = req.params.id;
+      const id = (Array.isArray(rawId) ? rawId[0] : rawId) ?? "";
+
+      if (!Types.ObjectId.isValid(id)) {
+        return res.code(404).send({ error: "Trip draft not found" });
       }
-      logGenerationFailure(error);
-      const message = error instanceof GenerationUnavailableError ? error.message : GENERIC_GENERATION_ERROR;
-      const marked = await markGenerationFailed(id, userId, message, claimed.generation.startedAt);
-      res.status(marked ? 502 : 409).json({
-        error: marked ? message : "This itinerary is being generated by another request.",
-      });
-    }
-  }),
-);
 
-tripsRouter.post(
-  "/:id/days/:dayId/regenerate",
-  aiLimiter,
-  asyncHandler(async (req, res) => {
-    const id = tripIdParam(req);
+      const parsed = updateTripRequirementsSchema.safeParse(req.body);
 
-    if (!id) {
-      res.status(404).json({ error: "Trip not found" });
-      return;
-    }
+      if (!parsed.success) {
+        return res.code(400).send({ error: "Some of the answers are not valid." });
+      }
 
-    const dayIndex = dayIndexParam(req);
+      const draft = await TripModel.findOne({
+        _id: new Types.ObjectId(id),
+        user: new Types.ObjectId(currentUserId(req)),
+      }).exec();
 
-    if (dayIndex === null) {
-      res.status(404).json({ error: "Day not found" });
-      return;
-    }
+      if (!draft) {
+        return res.code(404).send({ error: "Trip draft not found" });
+      }
 
-    const parsed = regenerateDayRequestSchema.safeParse(req.body);
+      if (draft.status !== "draft" && draft.status !== "failed" && !(draft.status === "ready" && parsed.data.regenerate)) {
+        return res.code(409).send({ error: "Requirements can only be edited before itinerary generation." });
+      }
 
-    if (!parsed.success) {
-      res.status(400).json({
-        error:
-          parsed.error.issues[0]?.message ??
-          "Choose at least one preference or describe what you'd like to change.",
-      });
-      return;
-    }
+      const request: UpdateTripRequirements = parsed.data;
+      const saved = await saveTripRequirements(
+        draft,
+        request.answers,
+        request.confirmedFields,
+        request.regenerate === true,
+      );
 
-    const trip = await TripModel.findOne({
-      _id: new Types.ObjectId(id),
-      user: new Types.ObjectId(currentUserId(res)),
-    }).exec();
+      return res.send(toTripAnalysisResult(saved));
+    },
+  );
 
-    if (!trip) {
-      res.status(404).json({ error: "Trip not found" });
-      return;
-    }
+  app.get<HttpRoute>(
+    "/trips",
+    async (req, res) => {
+      const parsed = tripListQuerySchema.safeParse(req.query);
 
-    if (!trip.itinerary) {
-      res.status(400).json({ error: "Generate the itinerary before regenerating a day." });
-      return;
-    }
+      if (!parsed.success) {
+        return res.code(400).send({ error: "That trip filter is not valid." });
+      }
 
-    const customInstructions = parsed.data.customInstructions?.trim() ?? "";
-    let preferences = parsed.data.preferences;
-    let customInstructionWarning: string | null = null;
+      const filter: { user: Types.ObjectId; status?: TripStatus } = {
+        user: new Types.ObjectId(currentUserId(req)),
+      };
 
-    if (customInstructions.length > 0) {
+      if (parsed.data.status) {
+        filter.status = parsed.data.status;
+      }
+
+      const trips = await TripModel.find(filter).sort({ createdAt: -1 }).exec();
+
+      return res.send(trips.map((trip) => toTripSummary(trip)));
+    },
+  );
+
+  app.get<HttpRoute>(
+    "/trips/:id",
+    async (req, res) => {
+      const rawId = req.params.id;
+      const id = (Array.isArray(rawId) ? rawId[0] : rawId) ?? "";
+
+      if (!Types.ObjectId.isValid(id)) {
+        return res.code(404).send({ error: "Trip not found" });
+      }
+
+      const trip = await TripModel.findOne({
+        _id: new Types.ObjectId(id),
+        user: new Types.ObjectId(currentUserId(req)),
+      }).exec();
+
+      if (!trip) {
+        return res.code(404).send({ error: "Trip not found" });
+      }
+
+      if (trip.status === "draft" || trip.status === "ready") {
+        await backfillTripWeather(trip);
+        await backfillTripAttractions(trip);
+      }
+
+      return res.send(toTripDetail(trip));
+    },
+  );
+
+  app.post<HttpRoute>(
+    "/trips/:id/weather/refresh",
+    async (req, res) => {
+      const id = tripIdParam(req);
+      if (!id) { return res.code(404).send({ error: "Trip not found" }); }
+      const trip = await TripModel.findOne({ _id: new Types.ObjectId(id), user: new Types.ObjectId(currentUserId(req)) }).exec();
+      if (!trip) { return res.code(404).send({ error: "Trip not found" }); }
+      const controller = new AbortController();
+      const cancel = () => { if (!res.raw.writableEnded) controller.abort(); };
+      res.raw.on("close", cancel);
+      console.info({ event: "weather-refresh", provider: "open-meteo", stage: "requested", tripId: id });
       try {
-        const interpreted = await aiService.parseRegeneration({
-          customInstructions,
-          selectedPreferences: parsed.data.preferences,
+        const saved = await refreshTripWeather(trip, { force: true, signal: controller.signal });
+        const result = toWeatherRefresh(saved);
+        const failed = result.weatherAvailability.reason && ["timeout", "network", "http_error", "invalid_response"].includes(result.weatherAvailability.reason);
+        console.info({ event: "weather-refresh", provider: "open-meteo", stage: !failed && result.weather.length ? "succeeded" : "failed", code: result.weatherAvailability.status, reason: result.weatherAvailability.reason, tripId: id });
+        return res.send(result);
+      } catch (error) {
+        console.info({ event: "weather-refresh", provider: "open-meteo", stage: "failed", code: controller.signal.aborted ? "cancelled" : "refresh_error", tripId: id });
+        if (!controller.signal.aborted) throw error;
+      } finally { res.raw.off("close", cancel); }
+    },
+  );
+
+  function tripIdParam(req: HttpRequest): string | null {
+    const rawId = req.params.id;
+    const id = (Array.isArray(rawId) ? rawId[0] : rawId) ?? "";
+
+    return Types.ObjectId.isValid(id) ? id : null;
+  }
+
+  function dayIndexParam(req: HttpRequest): number | null {
+    const raw = req.params.dayId;
+    const value = ((Array.isArray(raw) ? raw[0] : raw) ?? "").trim();
+
+    if (!/^\d+$/.test(value)) {
+      return null;
+    }
+
+    const dayIndex = Number.parseInt(value, 10);
+
+    return dayIndex >= 1 ? dayIndex : null;
+  }
+
+  function mergePreferences(
+    selected: RegenerationPreferences,
+    interpreted: RegenerationPreferences,
+  ): RegenerationPreferences {
+    return {
+      lessWalking: selected.lessWalking || interpreted.lessWalking,
+      moreFood: selected.moreFood || interpreted.moreFood,
+      relaxedPace: selected.relaxedPace || interpreted.relaxedPace,
+      preferIndoor: selected.preferIndoor || interpreted.preferIndoor,
+      surpriseMe: selected.surpriseMe || interpreted.surpriseMe,
+    };
+  }
+
+  app.get<HttpRoute>(
+    "/trips/:id/equipment",
+    async (req, res) => {
+      const id = tripIdParam(req);
+
+      if (!id) {
+        return res.code(404).send({ error: TRIP_NOT_FOUND });
+      }
+
+      const equipment = await getEquipment(id, currentUserId(req));
+
+      return res.send({ equipment });
+    },
+  );
+
+  app.post<HttpRoute>(
+    "/trips/:id/equipment",
+    async (req, res) => {
+      const id = tripIdParam(req);
+
+      if (!id) {
+        return res.code(404).send({ error: TRIP_NOT_FOUND });
+      }
+
+      const parsed = createTripEquipmentItemSchema.safeParse(req.body);
+
+      if (!parsed.success) {
+        return res.code(400).send({ error: "Enter an item name and a count between 1 and 999." });
+      }
+
+      const item = await addEquipmentItem(id, currentUserId(req), parsed.data);
+
+      return res.code(201).send(item);
+    },
+  );
+
+  app.patch<HttpRoute>(
+    "/trips/:id/equipment/:itemId",
+    async (req, res) => {
+      const id = tripIdParam(req);
+
+      if (!id) {
+        return res.code(404).send({ error: TRIP_NOT_FOUND });
+      }
+
+      const rawItemId = req.params.itemId;
+      const itemId = (Array.isArray(rawItemId) ? rawItemId[0] : rawItemId) ?? "";
+
+      if (!Types.ObjectId.isValid(itemId)) {
+        return res.code(404).send({ error: ITEM_NOT_FOUND });
+      }
+
+      const parsed = updateTripEquipmentItemSchema.safeParse(req.body);
+
+      if (!parsed.success) {
+        return res.code(400).send({ error: "Enter a valid item name and count." });
+      }
+
+      const item = await updateEquipmentItem(id, currentUserId(req), itemId, parsed.data);
+
+      return res.send(item);
+    },
+  );
+
+  app.delete<HttpRoute>(
+    "/trips/:id/equipment/:itemId",
+    async (req, res) => {
+      const id = tripIdParam(req);
+
+      if (!id) {
+        return res.code(404).send({ error: TRIP_NOT_FOUND });
+      }
+
+      const rawItemId = req.params.itemId;
+      const itemId = (Array.isArray(rawItemId) ? rawItemId[0] : rawItemId) ?? "";
+
+      if (!Types.ObjectId.isValid(itemId)) {
+        return res.code(404).send({ error: ITEM_NOT_FOUND });
+      }
+
+      await deleteEquipmentItem(id, currentUserId(req), itemId);
+
+      return res.code(204).send();
+    },
+  );
+
+  app.post<HttpRoute>(
+    "/trips/:id/confirm",
+    async (req, res) => {
+      const id = tripIdParam(req);
+
+      if (!id) {
+        return res.code(404).send({ error: "Trip not found" });
+      }
+
+      const trip = await TripModel.findOne({
+        _id: new Types.ObjectId(id),
+        user: new Types.ObjectId(currentUserId(req)),
+      }).exec();
+
+      if (!trip) {
+        return res.code(404).send({ error: "Trip not found" });
+      }
+
+      try {
+        const saved = await confirmTripRequirements(trip);
+        return res.send(toTripDetail(saved));
+      } catch (error) {
+        if (error instanceof TripRequirementsIncompleteError) {
+          return res.code(400).send({
+            error: "A few trip details are still missing.",
+            missingFields: error.missing,
+          });
+        }
+
+        throw error;
+      }
+    },
+  );
+
+  app.post<HttpRoute>(
+    "/trips/:id/generate",
+    async (req, res) => {
+      const id = tripIdParam(req);
+
+      if (!id) {
+        return res.code(404).send({ error: "Trip not found" });
+      }
+
+      const userId = currentUserId(req);
+
+      const existing = await TripModel.findOne({
+        _id: new Types.ObjectId(id),
+        user: new Types.ObjectId(userId),
+      }).exec();
+
+      if (!existing) {
+        return res.code(404).send({ error: "Trip not found" });
+      }
+
+      if (existing.status === "ready" && existing.itinerary) {
+        return res.send(toTripDetail(existing));
+        return;
+      }
+
+      validateGenerationRequirements(existing);
+      const resolved = await recoverTripDestination(existing);
+      // Validate the fresh snapshot too if another process completed recovery.
+      validateGenerationRequirements(resolved);
+      const claimed = await claimTripForGeneration(id, userId, resolved.updatedAt);
+
+      if (!claimed) {
+        return res.code(409).send({
+          error: "The trip changed or its itinerary is already being generated. Reload it and try again.",
         });
-        preferences = mergePreferences(parsed.data.preferences, interpreted);
-      } catch {
-        customInstructionWarning =
-          "We couldn't interpret your custom instructions, so we used your selected preferences.";
-      }
-    }
-
-    try {
-      const preview = await createDayRegenerationPreview({
-        trip,
-        dayIndex,
-        preferences,
-        customInstructions,
-        variation: parsed.data.variation ?? 0,
-        customInstructionWarning,
-      });
-
-      res.json(preview);
-    } catch (error) {
-      if (error instanceof TripDayNotFoundError) {
-        res.status(404).json({ error: error.message });
-        return;
       }
 
-      if (error instanceof NoSuitableAlternativesError) {
-        res.status(422).json({ error: error.message, warnings: error.warnings });
-        return;
+      try {
+        const generated = await runTripGeneration(claimed);
+        return res.send(toTripDetail(generated));
+      } catch (error) {
+        if (error instanceof GenerationSupersededError) {
+          return res.code(409).send({ error: "This itinerary is being generated by another request." });
+        }
+        logGenerationFailure(error);
+        const message = error instanceof GenerationUnavailableError ? error.message : GENERIC_GENERATION_ERROR;
+        const marked = await markGenerationFailed(id, userId, message, claimed.generation.startedAt);
+        return res.code(marked ? 502 : 409).send({
+          error: marked ? message : "This itinerary is being generated by another request.",
+        });
+      }
+    },
+  );
+
+  app.post<HttpRoute>(
+    "/trips/:id/days/:dayId/regenerate",
+    { preHandler: aiLimiter },
+    async (req, res) => {
+      const id = tripIdParam(req);
+
+      if (!id) {
+        return res.code(404).send({ error: "Trip not found" });
       }
 
-      if (error instanceof RegenerationConflictError) {
-        res.status(409).json({ error: error.message });
-        return;
+      const dayIndex = dayIndexParam(req);
+
+      if (dayIndex === null) {
+        return res.code(404).send({ error: "Day not found" });
       }
 
-      throw error;
-    }
-  }),
-);
+      const parsed = regenerateDayRequestSchema.safeParse(req.body);
 
-tripsRouter.post(
-  "/:id/days/:dayId/apply",
-  asyncHandler(async (req, res) => {
-    const id = tripIdParam(req);
-
-    if (!id) {
-      res.status(404).json({ error: "Trip not found" });
-      return;
-    }
-
-    const dayIndex = dayIndexParam(req);
-
-    if (dayIndex === null) {
-      res.status(404).json({ error: "Day not found" });
-      return;
-    }
-
-    const parsed = applyRegenerationRequestSchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      res.status(400).json({ error: "A valid preview is required to apply changes." });
-      return;
-    }
-
-    const trip = await TripModel.findOne({
-      _id: new Types.ObjectId(id),
-      user: new Types.ObjectId(currentUserId(res)),
-    }).exec();
-
-    if (!trip) {
-      res.status(404).json({ error: "Trip not found" });
-      return;
-    }
-
-    try {
-      const updated = await applyDayRegeneration(trip, parsed.data.previewId, dayIndex);
-      await recordAssistantRegeneration(id, currentUserId(res)).catch(() => { console.warn("[assistant] Applied regeneration; conversation confirmation could not be saved."); });
-      res.json(toTripDetail(updated));
-    } catch (error) {
-      if (error instanceof RegenerationNotFoundError) {
-        res.status(410).json({ error: error.message });
-        return;
+      if (!parsed.success) {
+        return res.code(400).send({
+          error:
+            parsed.error.issues[0]?.message ??
+            "Choose at least one preference or describe what you'd like to change.",
+        });
       }
 
-      if (error instanceof RegenerationConflictError) {
-        res.status(409).json({ error: error.message });
-        return;
+      const trip = await TripModel.findOne({
+        _id: new Types.ObjectId(id),
+        user: new Types.ObjectId(currentUserId(req)),
+      }).exec();
+
+      if (!trip) {
+        return res.code(404).send({ error: "Trip not found" });
       }
 
-      throw error;
-    }
-  }),
-);
+      if (!trip.itinerary) {
+        return res.code(400).send({ error: "Generate the itinerary before regenerating a day." });
+      }
+
+      const customInstructions = parsed.data.customInstructions?.trim() ?? "";
+      let preferences = parsed.data.preferences;
+      let customInstructionWarning: string | null = null;
+
+      if (customInstructions.length > 0) {
+        try {
+          const interpreted = await aiService.parseRegeneration({
+            customInstructions,
+            selectedPreferences: parsed.data.preferences,
+          });
+          preferences = mergePreferences(parsed.data.preferences, interpreted);
+        } catch {
+          customInstructionWarning =
+            "We couldn't interpret your custom instructions, so we used your selected preferences.";
+        }
+      }
+
+      try {
+        const preview = await createDayRegenerationPreview({
+          trip,
+          dayIndex,
+          preferences,
+          customInstructions,
+          variation: parsed.data.variation ?? 0,
+          customInstructionWarning,
+        });
+
+        return res.send(preview);
+      } catch (error) {
+        if (error instanceof TripDayNotFoundError) {
+          return res.code(404).send({ error: error.message });
+        }
+
+        if (error instanceof NoSuitableAlternativesError) {
+          return res.code(422).send({ error: error.message, warnings: error.warnings });
+        }
+
+        if (error instanceof RegenerationConflictError) {
+          return res.code(409).send({ error: error.message });
+        }
+
+        throw error;
+      }
+    },
+  );
+
+  app.post<HttpRoute>(
+    "/trips/:id/days/:dayId/apply",
+    async (req, res) => {
+      const id = tripIdParam(req);
+
+      if (!id) {
+        return res.code(404).send({ error: "Trip not found" });
+      }
+
+      const dayIndex = dayIndexParam(req);
+
+      if (dayIndex === null) {
+        return res.code(404).send({ error: "Day not found" });
+      }
+
+      const parsed = applyRegenerationRequestSchema.safeParse(req.body);
+
+      if (!parsed.success) {
+        return res.code(400).send({ error: "A valid preview is required to apply changes." });
+      }
+
+      const trip = await TripModel.findOne({
+        _id: new Types.ObjectId(id),
+        user: new Types.ObjectId(currentUserId(req)),
+      }).exec();
+
+      if (!trip) {
+        return res.code(404).send({ error: "Trip not found" });
+      }
+
+      try {
+        const updated = await applyDayRegeneration(trip, parsed.data.previewId, dayIndex);
+        await recordAssistantRegeneration(id, currentUserId(req)).catch(() => { console.warn("[assistant] Applied regeneration; conversation confirmation could not be saved."); });
+        return res.send(toTripDetail(updated));
+      } catch (error) {
+        if (error instanceof RegenerationNotFoundError) {
+          return res.code(410).send({ error: error.message });
+        }
+
+        if (error instanceof RegenerationConflictError) {
+          return res.code(409).send({ error: error.message });
+        }
+
+        throw error;
+      }
+    },
+  );
+}

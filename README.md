@@ -118,7 +118,7 @@ flowchart TD
 ```text
 apps/
   web/       React interface: pages, components, hooks, and API client
-  api/       Express backend: HTTP routes, models, services, and integrations
+  api/       Fastify backend: HTTP routes, models, services, and integrations
 packages/
   shared/    Shared TypeScript types, Zod schemas, and domain helpers
 ```
@@ -163,9 +163,9 @@ Access is checked at two levels: the frontend directs unauthenticated visitors t
 | Data and forms | TanStack React Query, React Hook Form | Data fetching, mutations, and form handling. |
 | Interface | Material UI, Emotion, CSS | Components and styling. |
 | Map and editing | Leaflet, dnd-kit | Place visualization and drag-and-drop editing. |
-| Backend and storage | Express 5, Mongoose, MongoDB | API, domain logic, and persistent data. |
-| Accounts and sessions | Argon2, express-session, connect-mongo | Password hashing and user sessions. |
-| API protection | Helmet, CORS, express-rate-limit | Security headers, origin restrictions, and request limits. |
+| Backend and storage | Fastify 5, Mongoose, MongoDB | API, domain logic, and persistent data. |
+| Accounts and sessions | Argon2, signed cookies, MongoDB session store | Password hashing and persistent user sessions. |
+| API protection | Official Fastify Helmet, CORS, and rate-limit plugins | Security headers, origin restrictions, and request limits. |
 | Time and availability | opening_hours, tz-lookup, date-fns/tz | Opening hours and local time zones. |
 | AI | Gemini / OpenRouter | Description and intent parsing through plain fetch, without provider SDKs. |
 | Tests | Vitest, Testing Library, jsdom, Supertest, mongodb-memory-server | Domain, interface, and API/database integration tests. |
@@ -244,7 +244,7 @@ Tests cover planning rules and application behavior during editing, missing-data
 | Level | Coverage |
 | --- | --- |
 | Domain logic | Place selection and grouping, routing, schedules, opening hours, weather, itinerary quality, pricing, and budgets. |
-| Backend integration | Planning endpoints, editing and regeneration, weather retrieval, and selected database operations. |
+| Backend integration | Planning, editing, regeneration, weather, database operations, authentication, cookies, CORS, parsing, and HTTP error contracts. |
 | Frontend | Components, hooks, generation states, itinerary editing, map, assistant, and budget. |
 | Providers | AI response interpretation and integration error handling, with mocked external calls. |
 
@@ -257,6 +257,8 @@ bun run build
 ```
 
 Integration tests start their own MongoDB instance through mongodb-memory-server, so they do not require the Docker database. The first run may need to download MongoDB binaries. Frontend tests run in jsdom.
+
+The API factory creates a ready Fastify application without opening a port. Existing integration tests use Supertest against its HTTP server; focused compatibility tests also use Fastify's `inject()`. Startup connects MongoDB before accepting requests, and shutdown drains HTTP requests before disconnecting the database.
 
 To run tests for an individual application:
 
@@ -275,7 +277,7 @@ bun run build
 bun run --cwd apps/api start
 ```
 
-The build prepares the shared package, compiled backend, and static frontend in each workspace's `dist` directory. The backend start script uses **Node.js** and enables production mode, so the deployment environment also needs Node.js.
+The build prepares the shared package, compiled backend, and static frontend in each workspace's `dist` directory. The backend start script uses **Node.js 20 or newer** and enables production mode, so the deployment environment also needs a supported Node.js runtime.
 
 The frontend needs static hosting with SPA route fallback, and API requests must be forwarded to the backend. Production sessions require HTTPS, a stable secret, and configuration for the allowed frontend address and any reverse proxy. Vite's development proxy does not provide production routing.
 
@@ -288,3 +290,5 @@ The main planning flow, accounts, saved trips, itinerary editing, assistant, bud
 The inspiration, saved-ideas, and notification screens currently use demonstration data. Some profile settings, including the password-change form, do not yet save through the API. These views show the intended interface direction but are not complete account features.
 
 Development uses Bun and TypeScript, keeps frontend and backend contracts synchronized, and updates this README as features change. See [AGENTS.md](AGENTS.md) for the repository's contribution rules.
+
+The [Fastify migration report](docs/step-11.3-fastify.md) records the route inventory, compatibility decisions, session persistence, and verification results.

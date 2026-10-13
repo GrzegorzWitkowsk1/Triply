@@ -1,6 +1,6 @@
-import { rateLimit } from "express-rate-limit";
 import argon2 from "argon2";
-import { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
+import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
+import type { HttpRoute } from "../http/types.js";
 import { z } from "zod";
 import {
   destroySession,
@@ -33,28 +33,6 @@ const dummyPasswordHashPromise = argon2.hash("triply-invalid-password", {
   type: argon2.argon2id,
 });
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 10,
-  standardHeaders: "draft-8",
-  legacyHeaders: false,
-  handler: (_req, res) => {
-    res.status(429).json({ error: "Too many authentication attempts. Try again later." });
-  },
-});
-
-type AsyncHandler = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => Promise<unknown>;
-
-function asyncHandler(handler: AsyncHandler): RequestHandler {
-  return (req, res, next) => {
-    void handler(req, res, next).catch(next);
-  };
-}
-
 function isDuplicateKeyError(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -80,97 +58,94 @@ function parseCredentials(
   };
 }
 
-export const authRouter = Router();
+export function registerAuthRoutes(app: FastifyInstance, authLimiter: preHandlerAsyncHookHandler): void {
 
-authRouter.post(
-  "/register",
-  authLimiter,
-  asyncHandler(async (req, res) => {
-    const credentials = parseCredentials(registerSchema, req.body);
+  app.post<HttpRoute>(
+    "/api/auth/register",
+    { preHandler: authLimiter },
+    async (req, res) => {
+      const credentials = parseCredentials(registerSchema, req.body);
 
-    if (!credentials) {
-      res.status(400).json({
-        error: "Use a valid email and a password with at least 12 characters, including an uppercase letter, a number, and a special character.",
-      });
-      return;
-    }
-
-    if (await UserModel.exists({ email: credentials.email })) {
-      res.status(409).json({ error: "An account with this email already exists." });
-      return;
-    }
-
-    const passwordHash = await argon2.hash(credentials.password, {
-      type: argon2.argon2id,
-    });
-
-    let user;
-    try {
-      user = await UserModel.create({
-        email: credentials.email,
-        passwordHash,
-      });
-    } catch (error) {
-      if (isDuplicateKeyError(error)) {
-        res.status(409).json({ error: "An account with this email already exists." });
-        return;
+      if (!credentials) {
+        return res.code(400).send({
+          error: "Use a valid email and a password with at least 12 characters, including an uppercase letter, a number, and a special character.",
+        });
       }
-      throw error;
-    }
 
-    await regenerateSession(req);
-    setSessionUserId(req, user._id.toString());
-    await saveSession(req);
+      if (await UserModel.exists({ email: credentials.email })) {
+        return res.code(409).send({ error: "An account with this email already exists." });
+      }
 
-    res.status(201).json({ user: toPublicUser(user) });
-  }),
-);
+      const passwordHash = await argon2.hash(credentials.password, {
+        type: argon2.argon2id,
+      });
 
-authRouter.post(
-  "/login",
-  authLimiter,
-  asyncHandler(async (req, res) => {
-    const credentials = parseCredentials(loginSchema, req.body);
+      let user;
+      try {
+        user = await UserModel.create({
+          email: credentials.email,
+          passwordHash,
+        });
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return res.code(409).send({ error: "An account with this email already exists." });
+        }
+        throw error;
+      }
 
-    if (!credentials) {
-      res.status(400).json({ error: "Enter a valid email and password." });
-      return;
-    }
+      await regenerateSession(req);
+      setSessionUserId(req, user._id.toString());
+      await saveSession(req);
 
-    const user = await UserModel.findOne({ email: credentials.email })
-      .select("+passwordHash")
-      .exec();
-    const passwordHash = user?.passwordHash ?? (await dummyPasswordHashPromise);
-    const passwordMatches = await argon2.verify(passwordHash, credentials.password);
+      return res.code(201).send({ user: toPublicUser(user) });
+    },
+  );
 
-    if (!user || !passwordMatches) {
-      res.status(401).json({ error: "Invalid email or password." });
-      return;
-    }
+  app.post<HttpRoute>(
+    "/api/auth/login",
+    { preHandler: authLimiter },
+    async (req, res) => {
+      const credentials = parseCredentials(loginSchema, req.body);
 
-    await regenerateSession(req);
-    setSessionUserId(req, user._id.toString());
-    await saveSession(req);
+      if (!credentials) {
+        return res.code(400).send({ error: "Enter a valid email and password." });
+      }
 
-    res.json({ user: toPublicUser(user) });
-  }),
-);
+      const user = await UserModel.findOne({ email: credentials.email })
+        .select("+passwordHash")
+        .exec();
+      const passwordHash = user?.passwordHash ?? (await dummyPasswordHashPromise);
+      const passwordMatches = await argon2.verify(passwordHash, credentials.password);
 
-authRouter.post(
-  "/logout",
-  asyncHandler(async (req, res) => {
-    await destroySession(req);
-    res.clearCookie(SESSION_COOKIE_NAME, {
-      httpOnly: sessionCookieOptions.httpOnly,
-      secure: sessionCookieOptions.secure === true,
-      sameSite: "lax",
-      path: sessionCookieOptions.path,
-    });
-    res.status(204).send();
-  }),
-);
+      if (!user || !passwordMatches) {
+        return res.code(401).send({ error: "Invalid email or password." });
+      }
 
-authRouter.get("/session", requireAuth, (_req, res) => {
-  res.setHeader("Cache-Control", "no-store");
-  res.json({ user: res.locals.user });
-});
+      await regenerateSession(req);
+      setSessionUserId(req, user._id.toString());
+      await saveSession(req);
+
+      return res.send({ user: toPublicUser(user) });
+    },
+  );
+
+  app.post<HttpRoute>(
+    "/api/auth/logout",
+    async (req, res) => {
+      await destroySession(req);
+      res.setCookie(SESSION_COOKIE_NAME, "", {
+        httpOnly: sessionCookieOptions.httpOnly,
+        secure: sessionCookieOptions.secure === true,
+        sameSite: "lax",
+        path: sessionCookieOptions.path,
+        expires: new Date(0),
+      });
+      return res.code(204).send();
+    },
+  );
+
+  app.get<HttpRoute>("/api/auth/session", { preHandler: requireAuth }, (req, res) => {
+    res.header("Cache-Control", "no-store");
+    return res.send({ user: req.user });
+  });
+}

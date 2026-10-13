@@ -1,6 +1,6 @@
+vi.mock("../middleware/rateLimit.js", () => ({ createLimiters: () => ({ auth: async () => {}, planning: async () => {} }) }));
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Express } from "express";
-import type { MemoryStore } from "express-rate-limit";
+import type { FastifyInstance } from "fastify";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import request from "supertest";
@@ -17,15 +17,8 @@ import { toTripDetail } from "../services/tripDraft.js";
 vi.mock("../ai/index.js", () => ({ aiService: { parseTrip: vi.fn(), parseRegeneration: vi.fn() } }));
 vi.mock("../services/tripPlanner.js", () => ({ planTrip: vi.fn() }));
 vi.mock("../routing/index.js", () => ({ createRoutingProvider: () => null }));
-const stores = vi.hoisted(() => [] as MemoryStore[]);
-vi.mock("express-rate-limit", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("express-rate-limit")>();
-  return { ...actual, rateLimit: (options: Parameters<typeof actual.rateLimit>[0]) => {
-    const store = new actual.MemoryStore(); stores.push(store); return actual.rateLimit({ ...options, store });
-  } };
-});
 
-let app: Express;
+let app: FastifyInstance;
 let mongod: MongoMemoryServer;
 const NOW = new Date("2026-10-12T12:00:00Z");
 const DAY = "2026-10-12";
@@ -43,18 +36,17 @@ const itineraryDay = (date: string, dayIndex: number) => ({ dayIndex, date, time
   geometry: { type: "LineString", coordinates: [[12.49, 41.89], [12.485, 41.892]] },
   segments: [], totalVisitMinutes: 120, totalTravelMinutes: 0, totalDistanceMeters: 0, partiallyEstimated: false, warnings: [] });
 
-beforeAll(async () => { mongod = await MongoMemoryServer.create(); await mongoose.connect(mongod.getUri()); app = (await import("../app.js")).createApp(); }, 120_000);
+beforeAll(async () => { mongod = await MongoMemoryServer.create(); await mongoose.connect(mongod.getUri()); app = await (await import("../app.js")).createApp(); }, 120_000);
 beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW); });
 afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks();
-  for (const store of stores) store.resetAll();
   for (const collection of Object.values(mongoose.connection.collections)) await collection.deleteMany({});
 });
-afterAll(async () => { await mongoose.disconnect(); await mongod?.stop(); });
+afterAll(async () => { await app?.close(); await mongoose.disconnect(); await mongod?.stop(); });
 
 async function setup() {
-  const agent = request.agent(app);
+  const agent = request.agent(app.server);
   const user = await agent.post("/api/auth/register").set("Origin", env.WEB_ORIGIN)
     .send({ email: "weather@example.com", password: "Password123!Aa" });
   expect(user.status).toBe(201);
@@ -268,7 +260,7 @@ describe("POST /api/trips/:id/weather/refresh", () => {
   it("rejects unauthenticated and foreign-trip requests", async () => {
     const { agent, trip } = await setup();
     const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
-    expect((await request(app).post(`/api/trips/${trip.id}/weather/refresh`).set("Origin", env.WEB_ORIGIN)).status).toBe(401);
+    expect((await request(app.server).post(`/api/trips/${trip.id}/weather/refresh`).set("Origin", env.WEB_ORIGIN)).status).toBe(401);
     const foreign = await TripModel.create({ user: new mongoose.Types.ObjectId(), analysis: trip.toObject().analysis });
     expect((await agent.post(`/api/trips/${foreign.id}/weather/refresh`).set("Origin", env.WEB_ORIGIN)).status).toBe(404);
     expect(fetch).not.toHaveBeenCalled();

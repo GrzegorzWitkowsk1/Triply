@@ -1,32 +1,25 @@
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { Types } from "mongoose";
-import type { NextFunction, Request, Response } from "express";
-import { UserModel, toPublicUser } from "../models/User.js";
+import { UserModel, toPublicUser, type PublicUser } from "../models/User.js";
 import { destroySession, getSessionUserId } from "../config/session.js";
 
-export async function requireAuth(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
-  const userId = getSessionUserId(req);
+declare module "fastify" { interface FastifyRequest { user: PublicUser | null; } }
 
+export async function requireAuth(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const userId = getSessionUserId(request);
   if (!userId || !Types.ObjectId.isValid(userId)) {
-    res.status(401).json({ error: "Authentication required" });
+    await reply.code(401).send({ error: "Authentication required" });
     return;
   }
-
-  try {
-    const user = await UserModel.findById(userId).select("_id email").exec();
-
-    if (!user) {
-      await destroySession(req);
-      res.status(401).json({ error: "Authentication required" });
-      return;
-    }
-
-    res.locals.user = toPublicUser(user);
-    next();
-  } catch (error) {
-    next(error);
+  const user = await UserModel.findById(userId).select("_id email").exec();
+  if (!user) {
+    await destroySession(request);
+    await reply.code(401).send({ error: "Authentication required" });
+    return;
   }
+  request.user = toPublicUser(user);
+}
+export function currentUserId(request: FastifyRequest): string {
+  if (!request.user) throw new Error("Authenticated user is missing");
+  return request.user.id;
 }

@@ -1,53 +1,24 @@
-import type { ErrorRequestHandler } from "express";
+import type { FastifyReply, FastifyRequest } from "fastify";
 
 function getHttpStatus(error: unknown): number | undefined {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "status" in error &&
-    typeof (error as { status?: unknown }).status === "number"
-  ) {
-    return (error as { status: number }).status;
+  if (typeof error === "object" && error !== null) {
+    if ("status" in error && typeof error.status === "number") return error.status;
+    if ("statusCode" in error && typeof error.statusCode === "number") return error.statusCode;
   }
-
   return undefined;
 }
-
-function isExposed(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "expose" in error &&
-    (error as { expose?: unknown }).expose === true
-  );
-}
-
-export const errorHandler: ErrorRequestHandler = (error, _req, res, next) => {
-  if (res.headersSent) {
-    next(error);
-    return;
-  }
-
+export function errorHandler(error: unknown, _request: FastifyRequest, reply: FastifyReply): void {
+  if (reply.sent) return;
   const status = getHttpStatus(error);
-
-  if (isExposed(error) && typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    res.status(status ?? 500).json({
-      error: typeof message === "string" ? message : "Request could not be processed",
-    });
+  if (typeof error === "object" && error !== null && "expose" in error && error.expose === true && "message" in error) {
+    reply.code(status ?? 500).send({ error: typeof error.message === "string" ? error.message : "Request could not be processed" });
     return;
   }
-
   if (status && status >= 400 && status < 500) {
-    res.status(status).json({
-      error: status === 400 ? "Invalid request body" : "Request could not be processed",
-    });
+    reply.code(status).send({ error: status === 400 ? "Invalid request body" : "Request could not be processed" });
     return;
   }
-
-  console.error(
-    "[api] request failed:",
-    error instanceof Error ? error.message : "Unknown error",
-  );
-  res.status(500).json({ error: "Internal server error" });
-};
+  // Do not log raw driver/provider messages that might contain credentials.
+  console.error("[api] request failed:", error instanceof Error ? error.name : "Unknown error");
+  reply.code(500).send({ error: "Internal server error" });
+}

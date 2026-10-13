@@ -1,50 +1,69 @@
-import cors from "cors";
-import express, { type RequestHandler } from "express";
-import helmet from "helmet";
+import Fastify from "fastify";
+import cors from "@fastify/cors";
+import cookie from "@fastify/cookie";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
+import { parse } from "node:querystring";
 import { env } from "./config/env.js";
-import { createSessionMiddleware } from "./config/session.js";
+import { registerSessions } from "./config/session.js";
 import { errorHandler } from "./middleware/error.js";
 import { requireAuth } from "./middleware/auth.js";
-import { healthRouter } from "./routes/health.js";
-import { authRouter } from "./routes/auth.js";
-import { tripsRouter } from "./routes/trips.js";
-import { locationRouter } from "./routes/location.js";
+import { notFoundHandler } from "./middleware/notFound.js";
+import { createLimiters } from "./middleware/rateLimit.js";
+import { registerBodyParsing, JSON_BODY_LIMIT } from "./http/body.js";
+import { registerResponseCompatibility } from "./http/response.js";
+import { FixedWindowStore } from "./middleware/rateLimitStore.js";
+import { rewriteUrl, validatePathParameters } from "./http/url.js";
+import { registerHealthRoutes } from "./routes/health.js";
+import { registerAuthRoutes } from "./routes/auth.js";
+import { registerTripRoutes } from "./routes/trips.js";
+import { registerLocationRoutes } from "./routes/location.js";
 
 const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
 
-const requireTrustedOrigin: RequestHandler = (req, res, next) => {
-  if (safeMethods.has(req.method)) {
-    next();
-    return;
-  }
-
-  const origin = req.get("origin");
-
-  if (origin !== env.WEB_ORIGIN) {
-    res.status(403).json({ error: "Request origin is not allowed" });
-    return;
-  }
-
-  next();
-};
-
-export function createApp() {
-  const app = express();
-
-  app.disable("x-powered-by");
-  app.set("trust proxy", env.TRUST_PROXY);
-  app.use(helmet());
-  app.use(cors({ origin: env.WEB_ORIGIN, credentials: true }));
-  app.use(requireTrustedOrigin);
-  app.use(express.json({ limit: "100kb" }));
-  app.use(createSessionMiddleware());
-
-  app.use(healthRouter);
-  app.use("/api/auth", authRouter);
-  app.use("/api", requireAuth);
-  app.use("/api/trips", tripsRouter);
-  app.use("/api/location", locationRouter);
-  app.use(errorHandler);
-
+export async function createApp() {
+  const proxyHops = env.TRUST_PROXY;
+  const app = Fastify({
+    rewriteUrl,
+    logger: false, trustProxy: typeof proxyHops === "number" ? (_address, hop) => hop < proxyHops : proxyHops, bodyLimit: JSON_BODY_LIMIT,
+    routerOptions: { caseSensitive: false, ignoreTrailingSlash: true, maxParamLength: Number.MAX_SAFE_INTEGER,
+      querystringParser: value => parse(value) },
+  });
+  app.setErrorHandler((error, request, reply) => {
+    if (error instanceof Error && "code" in error && error.code === "FST_ERR_CTP_BODY_TOO_LARGE") {
+      reply.code(413).send({ error: "request entity too large" });
+      return;
+    }
+    errorHandler(error, request, reply);
+  });
+  app.setNotFoundHandler(notFoundHandler);
+  app.decorateRequest("user", null);
+  await app.register(helmet);
+  // Express varies on Origin even for fixed origins and early preflight replies.
+  app.addHook("onRequest", async (_request, reply) => { reply.header("Vary", "Origin"); });
+  await app.register(cors, {
+    origin: env.WEB_ORIGIN, credentials: true, methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+    strictPreflight: false,
+  });
+  app.addHook("onRequest", async (request, reply) => {
+    if (!safeMethods.has(request.method) && request.headers.origin !== env.WEB_ORIGIN) {
+      await reply.code(403).send({ error: "Request origin is not allowed" });
+    }
+  });
+  registerBodyParsing(app);
+  registerResponseCompatibility(app);
+  await app.register(cookie);
+  await registerSessions(app);
+  await app.register(rateLimit, { global: false, store: FixedWindowStore });
+  const limits = createLimiters(app);
+  registerHealthRoutes(app);
+  registerAuthRoutes(app, limits.auth);
+  await app.register(async protectedApi => {
+    protectedApi.addHook("preHandler", requireAuth);
+    protectedApi.addHook("preHandler", validatePathParameters);
+    registerTripRoutes(protectedApi, limits.planning);
+    registerLocationRoutes(protectedApi);
+  }, { prefix: "/api" });
+  await app.ready();
   return app;
 }
