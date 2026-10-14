@@ -8,8 +8,10 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/start.js",
     "seed": "bun src/seed/index.ts",
-    "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "test": "vitest run src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:e2e": "tsc -p e2e/tsconfig.json --noEmit",
+    "e2e:server": "tsc -p e2e/tsconfig.server.json && node e2e-dist/e2e/server.js"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",

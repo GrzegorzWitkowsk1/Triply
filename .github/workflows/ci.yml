@@ -69,3 +69,52 @@ jobs:
         run: |
           git diff --check HEAD
           git diff --exit-code HEAD -- bun.lock package.json apps/api/package.json apps/web/package.json packages/shared/package.json
+
+  e2e:
+    name: Playwright Chromium smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Set up Node for the Fastify test server
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Chromium and system dependencies
+        run: bunx playwright install --with-deps chromium
+
+      - name: Build shared contracts and check E2E types
+        run: |
+          bun run --cwd packages/shared build
+          bun run typecheck:e2e
+
+      # Playwright starts and probes both servers. The API executable owns a
+      # disposable MongoDB process and stops it with Fastify on termination.
+      - name: Run isolated browser smoke tests
+        run: bun run test:e2e
+
+      - name: Upload failure reports, screenshots and traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-failure-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore

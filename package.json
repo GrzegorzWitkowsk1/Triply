@@ -13,9 +13,14 @@
     "dev:web": "bun run --cwd apps/web dev",
     "build": "turbo run build",
     "test": "turbo run test",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "test:e2e": "bun run --cwd packages/shared build && playwright test",
+    "test:e2e:headed": "bun run test:e2e --headed",
+    "test:e2e:report": "playwright show-report",
+    "typecheck:e2e": "bun run --cwd apps/api typecheck:e2e"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "turbo": "^2.11.6"
   }
 }

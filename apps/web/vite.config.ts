@@ -5,8 +5,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/health": "http://localhost:4000",
-      "/api": "http://localhost:4000",
+      "/health": process.env.TRIPLY_E2E_API_ORIGIN ?? "http://localhost:4000",
+      "/api": process.env.TRIPLY_E2E_API_ORIGIN ?? "http://localhost:4000",
     },
   },
   test: {

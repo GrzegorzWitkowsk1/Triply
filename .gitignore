@@ -7,3 +7,6 @@ dist/
 *.local
 .DS_Store
 *.log
+playwright-report/
+test-results/
+apps/api/e2e-dist/

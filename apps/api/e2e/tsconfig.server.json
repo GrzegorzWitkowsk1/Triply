@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "outDir": "../e2e-dist",
+    "noEmit": false,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["./server.ts"]
+}
