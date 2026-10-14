@@ -23,7 +23,6 @@ import { useConfirmTrip } from "../hooks/useTripGeneration";
 import { useTripPlanning } from "../hooks/useTripPlanning";
 import { useAuth } from "../auth/AuthProvider";
 import { DEFAULT_PROFILE_PREFERENCES, PACE_VALUES, PROFILE_WALKING_LIMITS } from "@triply/shared";
-import PreferenceFields from "../components/trip/PreferenceFields";
 
 interface VoiceHint {
   text: string;
@@ -426,12 +425,6 @@ export default function HomePage() {
               </button>
             );
           })}
-        </div>
-
-        <div className="settings-card">
-          <PreferenceFields showInterests={false} disabled={isPlanning} tags={[]} onToggleTag={() => {}}
-            pace={PACE_VALUES.indexOf(preferences.pace)} onPaceChange={index => { preferencesEdited.current = true; setPreferences(current => ({ ...current, pace: PACE_VALUES[index] })); }}
-            walking={PROFILE_WALKING_LIMITS.indexOf(preferences.maxWalkingDistanceKm)} onWalkingChange={index => { preferencesEdited.current = true; setPreferences(current => ({ ...current, maxWalkingDistanceKm: PROFILE_WALKING_LIMITS[index] })); }} />
         </div>
         <section className="home-section">
           <p className="home-eyebrow">Pick up where you left off</p>
