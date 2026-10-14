@@ -68,6 +68,10 @@ keeping optional remote images/map tiles offline without changing CORS behavior.
 Dates start at 1 June 2030 (future cookies remain valid in Chromium's OS-based
 cookie jar). The browser and backend clocks advance together past
 the real weather cooldown, without changing policy or waiting ten minutes.
+The API runs in UTC while the browser and Barcelona fixtures use Europe/Madrid,
+so local runs also exercise the server/destination time-zone difference in CI.
+The backend clock preserves native Date prototype methods as own properties:
+`@date-fns/tz` discovers these methods when building its zone-aware accessors.
 MongoDB's TTL monitor is disabled because its OS clock is independent; the real
 session store still checks expiry on every request. Setup advances past the
 process-local attraction cache lifetime. Provider/weather timers and

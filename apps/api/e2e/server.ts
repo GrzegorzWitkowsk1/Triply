@@ -31,6 +31,11 @@ class TestDate extends RealDate {
   }
   static override now(): number { return RealDate.parse(NOW) + performance.now() - epoch + offset; }
 }
+// @date-fns/tz enumerates Date.prototype's own methods when it initializes.
+// Keep the native surface on our subclass so its zone-aware accessors are built.
+const dateMethods = Object.getOwnPropertyDescriptors(RealDate.prototype);
+Reflect.deleteProperty(dateMethods, "constructor");
+Object.defineProperties(TestDate.prototype, dateMethods);
 // Mongoose recognizes the constructor by its standard name when building schemas.
 Object.defineProperty(TestDate, "name", { value: "Date" });
 globalThis.Date = TestDate as DateConstructor;

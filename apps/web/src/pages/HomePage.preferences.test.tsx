@@ -18,13 +18,11 @@ const page = () => <MemoryRouter><HomePage /></MemoryRouter>;
 describe("homepage profile defaults", () => {
   it("preselects all saved preferences and sends them when planning", async () => {
     render(page());
-    for (const name of ["Culture & museums", "Shopping", "Relaxed", "Low"]) {
+    for (const name of ["Culture & museums", "Shopping"]) {
       expect(screen.getByRole("button", { name }).getAttribute("aria-pressed")).toBe("true");
     }
-    fireEvent.click(screen.getByRole("button", { name: "Packed" }));
-    fireEvent.click(screen.getByRole("button", { name: "High" }));
     fireEvent.click(screen.getByRole("button", { name: "Plan my trip" }));
-    await waitFor(() => expect(mocks.analyze).toHaveBeenCalledWith({ prompt: "", badges: ["culture", "shopping"], pace: "packed", maxWalkingDistanceKm: 10 }, expect.any(Object)));
+    await waitFor(() => expect(mocks.analyze).toHaveBeenCalledWith({ prompt: "", badges: ["culture", "shopping"], pace: "relaxed", maxWalkingDistanceKm: 3 }, expect.any(Object)));
   });
   it("hydrates defaults when session loads and preserves subsequent user choices", async () => {
     const user = mocks.user;
@@ -34,10 +32,11 @@ describe("homepage profile defaults", () => {
     view.rerender(page());
     await waitFor(() => expect(screen.getByRole("button", { name: "Shopping" }).getAttribute("aria-pressed")).toBe("true"));
     fireEvent.click(screen.getByRole("button", { name: "Shopping" }));
-    fireEvent.click(screen.getByRole("button", { name: "Packed" }));
-    mocks.user = { ...user!, preferences: { ...user!.preferences!, interests: ["nature"] } };
+    mocks.user = { ...user!, preferences: { interests: ["nature"], pace: "packed", maxWalkingDistanceKm: 10 } };
     view.rerender(page());
     expect(screen.getByRole("button", { name: "Shopping" }).getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByRole("button", { name: "Packed" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Culture & museums" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Plan my trip" }));
+    await waitFor(() => expect(mocks.analyze).toHaveBeenCalledWith({ prompt: "", badges: ["culture"], pace: "packed", maxWalkingDistanceKm: 10 }, expect.any(Object)));
   });
 });

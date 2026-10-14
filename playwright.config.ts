@@ -34,7 +34,7 @@ export default defineConfig({
       url: "http://127.0.0.1:4001/health",
       timeout: 120_000,
       reuseExistingServer: false,
-      env: { NODE_ENV: "test", TRIPLY_E2E: "1", TRIPLY_E2E_TOKEN: process.env.TRIPLY_E2E_TOKEN },
+      env: { NODE_ENV: "test", TZ: "UTC", TRIPLY_E2E: "1", TRIPLY_E2E_TOKEN: process.env.TRIPLY_E2E_TOKEN },
     },
     {
       command: "bun run --cwd apps/web dev --host 127.0.0.1 --port 5174 --strictPort",
