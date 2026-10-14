@@ -7,13 +7,14 @@ import App from "./App";
 import { theme } from "./theme";
 import { queryClient } from "./query/queryClient";
 import "./styles.css";
+import { ToastProvider } from "./components/ToastProvider";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>
         <AuthProvider>
-          <App />
+          <ToastProvider><App /></ToastProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

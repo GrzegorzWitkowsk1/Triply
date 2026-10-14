@@ -1,13 +1,14 @@
 import { useMutation } from "@tanstack/react-query";
 import type {
   AskableField,
+  AnalyzeTripRequest,
   TripRequirementsAnswers,
 } from "@triply/shared";
 import { analyzeTrip, updateTripRequirements } from "../api/trips";
 
 export function useAnalyzeTrip() {
   return useMutation({
-    mutationFn: (input: { prompt: string; badges: string[] }) => analyzeTrip(input),
+    mutationFn: (input: AnalyzeTripRequest) => analyzeTrip(input),
   });
 }
 

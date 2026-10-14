@@ -1,4 +1,5 @@
 import argon2 from "argon2";
+import { passwordValueSchema } from "@triply/shared";
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import type { HttpRoute } from "../http/types.js";
 import { z } from "zod";
@@ -16,13 +17,7 @@ import { UserModel, toPublicUser } from "../models/User.js";
 const emailSchema = z.string().trim().email().max(254);
 const registerSchema = z.object({
   email: emailSchema,
-  password: z
-    .string()
-    .min(12)
-    .max(128)
-    .regex(/[A-Z]/, "Password must contain an uppercase letter")
-    .regex(/[0-9]/, "Password must contain a number")
-    .regex(/[^A-Za-z0-9]/, "Password must contain a special character"),
+  password: passwordValueSchema,
 });
 const loginSchema = z.object({
   email: emailSchema,

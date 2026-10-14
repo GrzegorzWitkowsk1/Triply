@@ -1,8 +1,4 @@
-import {
-  PACE_OPTIONS,
-  PREF_OPTIONS,
-  WALKING_OPTIONS,
-} from "../../config/trip";
+import PreferenceFields from "./PreferenceFields";
 
 interface TripPreferencesCardProps {
   dirty: boolean;
@@ -32,56 +28,7 @@ export default function TripPreferencesCard({
       <div className="trip-card-head">
         <h3>Preferences</h3>
       </div>
-      <div className="pref-tags">
-        {PREF_OPTIONS.map((option) => {
-          const Icon = option.icon;
-          const selected = tags.includes(option.id);
-          return (
-            <button
-              key={option.id}
-              type="button"
-              disabled={disabled}
-              className={`pref-tag${selected ? " is-active" : ""}`}
-              onClick={() => onToggleTag(option.id)}
-            >
-              <Icon />
-              {option.label}
-            </button>
-          );
-        })}
-      </div>
-      <div className="pref-slider">
-        <span className="pref-slider-title">Travel pace</span>
-        <div className="pref-slider-options">
-          {PACE_OPTIONS.map((option, i) => (
-            <button
-              key={option}
-              type="button"
-              disabled={disabled}
-              className={`pref-slider-option${pace === i ? " is-active" : ""}`}
-              onClick={() => onPaceChange(i)}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="pref-slider">
-        <span className="pref-slider-title">Walking tolerance</span>
-        <div className="pref-slider-options">
-          {WALKING_OPTIONS.map((option, i) => (
-            <button
-              key={option}
-              type="button"
-              disabled={disabled}
-              className={`pref-slider-option${walking === i ? " is-active" : ""}`}
-              onClick={() => onWalkingChange(i)}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PreferenceFields disabled={disabled} tags={tags} onToggleTag={onToggleTag} pace={pace} onPaceChange={onPaceChange} walking={walking} onWalkingChange={onWalkingChange} />
       {error && <p role="alert">{error}</p>}
       {dirty && <div className="pref-actions">
         <button type="button" className="pref-cancel" disabled={disabled} onClick={onCancel}>Cancel</button>

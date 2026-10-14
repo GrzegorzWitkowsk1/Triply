@@ -16,6 +16,7 @@ import { FixedWindowStore } from "./middleware/rateLimitStore.js";
 import { rewriteUrl, validatePathParameters } from "./http/url.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerProfileRoutes } from "./routes/profile.js";
 import { registerTripRoutes } from "./routes/trips.js";
 import { registerLocationRoutes } from "./routes/location.js";
 
@@ -58,6 +59,7 @@ export async function createApp() {
   const limits = createLimiters(app);
   registerHealthRoutes(app);
   registerAuthRoutes(app, limits.auth);
+  await registerProfileRoutes(app, limits.auth);
   await app.register(async protectedApi => {
     protectedApi.addHook("preHandler", requireAuth);
     protectedApi.addHook("preHandler", validatePathParameters);

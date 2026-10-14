@@ -1,6 +1,7 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import type { HttpRoute, HttpRequest } from "../http/types.js";
 import { Types } from "mongoose";
+import { applyProfilePreferences, DEFAULT_PROFILE_PREFERENCES } from "@triply/shared";
 import {
   analyzeTripRequestSchema,
   applyRegenerationRequestSchema,
@@ -142,12 +143,18 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       }
 
       const request: AnalyzeTripRequest = parsed.data;
-      const analysis = await aiService.parseTrip({ prompt: request.prompt, badges: request.badges });
+      const preferences = req.user?.preferences ?? DEFAULT_PROFILE_PREFERENCES;
+      const badges = Object.prototype.hasOwnProperty.call(req.body, "badges") ? request.badges : preferences.interests;
+      const parsedAnalysis = await aiService.parseTrip({ prompt: request.prompt, badges });
+      const analysis = applyProfilePreferences(parsedAnalysis, {
+        ...preferences, pace: request.pace ?? preferences.pace,
+        maxWalkingDistanceKm: request.maxWalkingDistanceKm ?? preferences.maxWalkingDistanceKm,
+      }, badges);
 
       const draft = await upsertTripDraft({
         userId: currentUserId(req),
         prompt: request.prompt,
-        badges: request.badges,
+        badges,
         analysis,
       });
 

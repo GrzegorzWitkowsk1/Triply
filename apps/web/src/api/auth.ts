@@ -1,9 +1,7 @@
 import { parseResponse, request } from "./client";
+import type { ProfileUser } from "@triply/shared";
 
-export interface AuthUser {
-  id: string;
-  email: string;
-}
+export type AuthUser = ProfileUser;
 
 export interface AuthCredentials {
   email: string;

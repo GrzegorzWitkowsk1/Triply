@@ -26,6 +26,7 @@ interface AuthContextValue {
   register: (credentials: AuthCredentials) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refetchSession: () => Promise<unknown>;
+  updateUser: (user: AuthUser) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -77,8 +78,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
       register: registerMutation.mutateAsync,
       logout: logoutMutation.mutateAsync,
       refetchSession: sessionQuery.refetch,
+      updateUser: (user) => queryClient.setQueryData(SESSION_QUERY_KEY, user),
     }),
     [
+      queryClient,
       loginMutation.isPending,
       loginMutation.mutateAsync,
       logoutMutation.isPending,

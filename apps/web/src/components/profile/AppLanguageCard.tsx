@@ -3,14 +3,20 @@ import { useState } from "react";
 import { LANGUAGES, type LanguageCode } from "../../config/profile";
 
 export default function AppLanguageCard() {
-  const [language, setLanguage] = useState<LanguageCode>("pl");
+  const [language, setLanguage] = useState<LanguageCode>(() => {
+    try { return localStorage.getItem("triply.language") === "en" ? "en" : "pl"; } catch { return "pl"; }
+  });
 
   return (
     <form className="settings-card">
       <Select
         id="language"
         value={language}
-        onChange={(e) => setLanguage(e.target.value as LanguageCode)}
+        onChange={(e) => {
+          const value = e.target.value as LanguageCode;
+          setLanguage(value);
+          try { localStorage.setItem("triply.language", value); } catch { /* Keep the selection usable when browser storage is unavailable. */ }
+        }}
         fullWidth
         renderValue={(value) => {
           const lang = LANGUAGES.find((l) => l.code === value);

@@ -5,6 +5,8 @@ import {
   PaletteOutlined,
   RestaurantOutlined,
   WavesOutlined,
+  NightlifeOutlined,
+  ShoppingBagOutlined,
 } from "@mui/icons-material";
 
 export interface HomeBadge {
@@ -20,6 +22,8 @@ export const HOME_BADGES: HomeBadge[] = [
   { id: "beach", label: "Beach getaway", icon: WavesOutlined, color: "#3aa6d1" },
   { id: "nature", label: "Nature escape", icon: LandscapeOutlined, color: "#43b047" },
   { id: "culture", label: "Culture & museums", icon: PaletteOutlined, color: "#a05bd5" },
+  { id: "shopping", label: "Shopping", icon: ShoppingBagOutlined, color: "#e0a22e" },
+  { id: "nightlife", label: "Nightlife", icon: NightlifeOutlined, color: "#a05bd5" },
 ];
 
 export type PlanStageStatus = "queue" | "active" | "done";

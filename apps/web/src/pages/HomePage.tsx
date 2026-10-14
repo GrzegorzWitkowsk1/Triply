@@ -21,6 +21,9 @@ import {
 } from "../hooks/useTripAnalysis";
 import { useConfirmTrip } from "../hooks/useTripGeneration";
 import { useTripPlanning } from "../hooks/useTripPlanning";
+import { useAuth } from "../auth/AuthProvider";
+import { DEFAULT_PROFILE_PREFERENCES, PACE_VALUES, PROFILE_WALKING_LIMITS } from "@triply/shared";
+import PreferenceFields from "../components/trip/PreferenceFields";
 
 interface VoiceHint {
   text: string;
@@ -47,9 +50,17 @@ function getRecognition(): SpeechRecognition | null {
 }
 
 export default function HomePage() {
+  const { user } = useAuth();
   const location = useLocation();
   const [prompt, setPrompt] = useState("");
-  const [selectedBadges, setSelectedBadges] = useState<string[]>([]);
+  const [selectedBadges, setSelectedBadges] = useState<string[]>(user?.preferences?.interests ?? []);
+  const badgesEdited = useRef(false);
+  const preferencesEdited = useRef(false);
+  const [preferences, setPreferences] = useState(user?.preferences ?? DEFAULT_PROFILE_PREFERENCES);
+  useEffect(() => {
+    if (!badgesEdited.current) setSelectedBadges(user?.preferences?.interests ?? []);
+    if (!preferencesEdited.current) setPreferences(user?.preferences ?? DEFAULT_PROFILE_PREFERENCES);
+  }, [user?.preferences]);
   const [files, setFiles] = useState<File[]>([]);
   const [listening, setListening] = useState(false);
   const [voiceHint, setVoiceHint] = useState<VoiceHint | null>(null);
@@ -201,6 +212,7 @@ export default function HomePage() {
   };
 
   const toggleBadge = (id: string) => {
+    badgesEdited.current = true;
     setSelectedBadges((prev) =>
       prev.includes(id) ? prev.filter((badgeId) => badgeId !== id) : [...prev, id],
     );
@@ -222,7 +234,7 @@ export default function HomePage() {
     planning.start();
 
     analyze.mutate(
-      { prompt: prompt.trim(), badges: selectedBadges },
+      { prompt: prompt.trim(), badges: selectedBadges, pace: preferences.pace, maxWalkingDistanceKm: preferences.maxWalkingDistanceKm },
       {
         onSuccess: (result) => {
           setDraft(result);
@@ -416,6 +428,11 @@ export default function HomePage() {
           })}
         </div>
 
+        <div className="settings-card">
+          <PreferenceFields showInterests={false} disabled={isPlanning} tags={[]} onToggleTag={() => {}}
+            pace={PACE_VALUES.indexOf(preferences.pace)} onPaceChange={index => { preferencesEdited.current = true; setPreferences(current => ({ ...current, pace: PACE_VALUES[index] })); }}
+            walking={PROFILE_WALKING_LIMITS.indexOf(preferences.maxWalkingDistanceKm)} onWalkingChange={index => { preferencesEdited.current = true; setPreferences(current => ({ ...current, maxWalkingDistanceKm: PROFILE_WALKING_LIMITS[index] })); }} />
+        </div>
         <section className="home-section">
           <p className="home-eyebrow">Pick up where you left off</p>
           <div className="trips-head">

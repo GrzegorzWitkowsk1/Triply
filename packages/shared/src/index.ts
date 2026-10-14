@@ -11,3 +11,4 @@ export * from "./scheduling.js";
 export * from "./openingHours.js";
 export * from "./admission.js";
 export * from "./trip.js";
+export * from "./profile.js";

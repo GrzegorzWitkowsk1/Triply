@@ -1,55 +1,65 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { PersonOutlineOutlined, UploadOutlined } from "@mui/icons-material";
 import { TextField } from "@mui/material";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useAuth } from "../../auth/AuthProvider";
 import {
   ACCEPTED_IMAGE_TYPES,
   MAX_IMAGE_SIZE,
-  PROFILE_FORM_DEFAULTS,
 } from "../../config/profile";
 import { profileSchema, type ProfileFormValues } from "../../schemas/profile";
+import { saveProfileNames, uploadAvatar } from "../../api/profile";
+import { useToast } from "../ToastProvider";
 
 export default function ProfileSettingsCard() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const {
     register,
     handleSubmit,
-    formState: { errors, isValid },
+    reset,
+    formState: { errors, isValid, dirtyFields },
   } = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     mode: "onChange",
     defaultValues: {
-      name: PROFILE_FORM_DEFAULTS.name,
-      surname: PROFILE_FORM_DEFAULTS.surname,
-      email: user?.email ?? "",
+      name: user?.name ?? "",
+      surname: user?.surname ?? "",
     },
   });
+  useEffect(() => { reset({ name: user?.name ?? "", surname: user?.surname ?? "" }); }, [user?.id, user?.name, user?.surname, reset]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [avatar, setAvatar] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
 
-  const onFilePicked = (list: FileList | null) => {
+  const onFilePicked = async (list: FileList | null) => {
     setImageError(null);
     const file = list?.[0];
     if (!file) return;
 
-    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
-      setImageError("Only JPG and PNG images are allowed.");
+    if (!(ACCEPTED_IMAGE_TYPES as readonly string[]).includes(file.type)) {
+      setImageError("Only JPG, JPEG, PNG and SVG images are allowed.");
       return;
     }
     if (file.size > MAX_IMAGE_SIZE) {
-      setImageError("Image is too large. Maximum size is 5 MB.");
+      setImageError("Image is too large. Maximum size is 2 MB.");
       return;
     }
 
-    setAvatar(URL.createObjectURL(file));
+    setUploading(true);
+    try { updateUser(await uploadAvatar(file)); toast("Avatar updated."); }
+    catch (error) { const message = error instanceof Error ? error.message : "Avatar upload failed."; setImageError(message); toast(message, "error"); }
+    finally { setUploading(false); }
   };
 
-  const onSubmit = (values: ProfileFormValues) => {
-    void values;
+  const onSubmit = async (values: ProfileFormValues) => {
+    setSaving(true);
+    try { updateUser(await saveProfileNames({ ...(dirtyFields.name ? { name: values.name } : {}), ...(dirtyFields.surname ? { surname: values.surname } : {}) })); toast("Profile saved."); }
+    catch (error) { toast(error instanceof Error ? error.message : "Could not save profile.", "error"); }
+    finally { setSaving(false); }
   };
 
   return (
@@ -59,6 +69,7 @@ export default function ProfileSettingsCard() {
         type="file"
         accept={ACCEPTED_IMAGE_TYPES.join(",")}
         hidden
+        disabled={uploading}
         onChange={(e) => {
           onFilePicked(e.target.files);
           e.target.value = "";
@@ -70,20 +81,22 @@ export default function ProfileSettingsCard() {
           className="avatar-upload"
           onClick={() => fileInputRef.current?.click()}
           role="button"
+          tabIndex={0}
+          onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); fileInputRef.current?.click(); } }}
           aria-label="Upload profile image"
         >
-          {avatar ? (
-            <img src={avatar} alt="Profile" />
+          {user?.avatar ? (
+            <img src={user.avatar} alt="Profile" />
           ) : (
             <PersonOutlineOutlined className="avatar-upload-icon" />
           )}
           <div className="avatar-upload-overlay">
             <UploadOutlined />
-            <span>Upload Image</span>
+            <span>{uploading ? "Uploading…" : "Upload Image"}</span>
           </div>
         </div>
         <p className="avatar-hint">
-          Customize your profile avatar to make it more yours!
+          JPG, JPEG, PNG or SVG, up to 2 MB. JPG/PNG: max 2048 × 2048 px.
         </p>
       </div>
 
@@ -117,7 +130,7 @@ export default function ProfileSettingsCard() {
         <button
           type="submit"
           className="btn btn-primary settings-submit"
-          disabled={!isValid}
+          disabled={!isValid || saving || (!dirtyFields.name && !dirtyFields.surname)}
         >
           Save
         </button>

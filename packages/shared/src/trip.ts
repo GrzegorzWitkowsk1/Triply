@@ -194,6 +194,8 @@ export const analyzeTripRequestSchema = z
   .object({
     prompt: z.string().trim().max(LIMITS.prompt).default(""),
     badges: z.array(z.string().trim().min(1).max(40)).max(LIMITS.badges).default([]),
+    pace: z.enum(PACE_VALUES).optional(),
+    maxWalkingDistanceKm: z.number().nonnegative().max(LIMITS.maxWalkingDistanceKm).optional(),
   })
   .refine((value) => value.prompt.length > 0 || value.badges.length > 0, {
     message: "Describe your trip or pick at least one interest",

@@ -1,5 +1,4 @@
-export const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-export const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png"];
+export { MAX_AVATAR_BYTES as MAX_IMAGE_SIZE, AVATAR_TYPES as ACCEPTED_IMAGE_TYPES } from "@triply/shared";
 
 export interface ProfileFormDefaults {
   name: string;

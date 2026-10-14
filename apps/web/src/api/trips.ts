@@ -1,5 +1,6 @@
 import type {
   AskableField,
+  AnalyzeTripRequest,
   RegenerateDayPreview,
   RegenerateDayRequest,
   TripAnalysisResult,
@@ -47,10 +48,7 @@ export function getTrip(id: string): Promise<TripDetail> {
   return request<TripDetail>(`/api/trips/${id}`);
 }
 
-export function analyzeTrip(input: {
-  prompt: string;
-  badges: string[];
-}): Promise<TripAnalysisResult> {
+export function analyzeTrip(input: AnalyzeTripRequest): Promise<TripAnalysisResult> {
   return request<TripAnalysisResult>("/api/trips/analyze", {
     method: "POST",
     body: JSON.stringify(input),

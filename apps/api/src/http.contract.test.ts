@@ -143,7 +143,7 @@ describe("HTTP framework compatibility", () => {
   it("preserves session cookies, cross-request persistence, rotation, and logout", async () => {
     const registered = await request(app.server).post("/api/auth/register").set("Origin", origin).send(credentials);
     expect(registered.status).toBe(201);
-    expect(registered.body.user).toEqual({ id: expect.any(String), email: credentials.email });
+    expect(registered.body.user).toEqual({ id: expect.any(String), email: credentials.email, name: "", surname: "", avatar: null, preferences: { interests: [], pace: "balanced", maxWalkingDistanceKm: 5 } });
     const cookie = String(registered.headers["set-cookie"][0]);
     expect(cookie).toMatch(/^triply\.sid=s%3A/);
     expect(cookie).toContain("Path=/");
@@ -178,7 +178,7 @@ describe("HTTP framework compatibility", () => {
     const cookie = `triply.sid=${encodeURIComponent(`s:${id}.${signature}`)}`;
     const result = await request(app.server).get("/api/auth/session").set("Cookie", cookie);
     expect(result.status).toBe(200);
-    expect(result.body).toEqual({ user: { id: user.id, email: credentials.email } });
+    expect(result.body).toEqual({ user: { id: user.id, email: credentials.email, name: "", surname: "", avatar: null, preferences: { interests: [], pace: "balanced", maxWalkingDistanceKm: 5 } } });
     expect(result.headers["set-cookie"][0].split(";")[0]).toBe(cookie);
     const record = await sessions().findOne({ _id: id });
     expect(typeof record?.session).toBe("string");

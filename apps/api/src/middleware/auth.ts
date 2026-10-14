@@ -11,7 +11,7 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply):
     await reply.code(401).send({ error: "Authentication required" });
     return;
   }
-  const user = await UserModel.findById(userId).select("_id email").exec();
+  const user = await UserModel.findById(userId).exec();
   if (!user) {
     await destroySession(request);
     await reply.code(401).send({ error: "Authentication required" });
