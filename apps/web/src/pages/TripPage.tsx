@@ -15,7 +15,6 @@ import {
   DirectionsWalkOutlined,
   EditOutlined,
   PlaceOutlined,
-  ShareOutlined,
 } from "@mui/icons-material";
 import {
   PACE_VALUES,
@@ -36,6 +35,7 @@ import TripMap from "../components/trip/TripMap";
 import TripWeatherRetry from "../components/trip/TripWeatherRetry";
 import TripPreferencesCard from "../components/trip/TripPreferencesCard";
 import TripTimeline from "../components/trip/TripTimeline";
+import TripExportActions from "../components/trip/TripExportActions";
 import {
   buildDayTimeline,
   dayGeometry,
@@ -413,7 +413,7 @@ export default function TripPage() {
               className="trip-action"
               onClick={() => navigate(`/trips/${id}/equipment`)}
             >
-              <BackpackOutlined />
+              <BackpackOutlined /> What should I take?
             </button>
             {/* <button
               type="button"
@@ -422,9 +422,6 @@ export default function TripPage() {
             >
               <EditOutlined /> Edit
             </button> */}
-            <button type="button" className="trip-action">
-              <ShareOutlined /> Share
-            </button>
             {status === "ready" && (
               <button
                 type="button"
@@ -435,6 +432,7 @@ export default function TripPage() {
                 <AutoFixHighOutlined /> Regenerate Day
               </button>
             )}
+            {id && <TripExportActions key={`export-${id}`} ready={status === "ready"} target={{ tripId: id }} />}
           </div>
         </section>
 

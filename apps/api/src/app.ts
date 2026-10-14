@@ -19,6 +19,9 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerProfileRoutes } from "./routes/profile.js";
 import { registerTripRoutes } from "./routes/trips.js";
 import { registerLocationRoutes } from "./routes/location.js";
+import { registerPublicTripRoutes, registerSharingRoutes } from "./routes/sharing.js";
+import { registerPrivatePdfRoutes, registerPublicPdfRoutes } from "./routes/pdf.js";
+import { registerPrivateCalendarRoutes, registerPublicCalendarRoutes } from "./routes/calendar.js";
 
 const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -58,12 +61,18 @@ export async function createApp() {
   await app.register(rateLimit, { global: false, store: FixedWindowStore });
   const limits = createLimiters(app);
   registerHealthRoutes(app);
+  registerPublicTripRoutes(app);
+  registerPublicPdfRoutes(app);
+  registerPublicCalendarRoutes(app);
   registerAuthRoutes(app, limits.auth);
   await registerProfileRoutes(app, limits.auth);
   await app.register(async protectedApi => {
     protectedApi.addHook("preHandler", requireAuth);
     protectedApi.addHook("preHandler", validatePathParameters);
     registerTripRoutes(protectedApi, limits.planning);
+    registerSharingRoutes(protectedApi);
+    registerPrivatePdfRoutes(protectedApi);
+    registerPrivateCalendarRoutes(protectedApi);
     registerLocationRoutes(protectedApi);
   }, { prefix: "/api" });
   await app.ready();

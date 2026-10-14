@@ -12,3 +12,5 @@ export * from "./openingHours.js";
 export * from "./admission.js";
 export * from "./trip.js";
 export * from "./profile.js";
+export * from "./sharing.js";
+export * from "./calendar.js";

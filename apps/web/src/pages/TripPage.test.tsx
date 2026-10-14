@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { TripDetail } from "@triply/shared";
 import { ApiError } from "../api/client";
 import TripPage from "./TripPage";
+vi.mock("../components/ToastProvider", () => ({ useToast: () => vi.fn() }));
 
 const mocks = vi.hoisted(() => ({
   mutate: vi.fn(), reset: vi.fn(), refetch: vi.fn(),

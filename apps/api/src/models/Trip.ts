@@ -67,6 +67,7 @@ export interface TripRegenerationRecord {
 }
 
 export interface TripRecord {
+  sharing?: { enabled: boolean; tokenHash?: string | null; createdAt: Date | null; updatedAt: Date | null };
   createdAt: Date;
   updatedAt: Date;
   expenses: import("@triply/shared").TripExpense[];
@@ -458,11 +459,17 @@ const tripSchema = new Schema<TripRecord>(
       default: () => ({ startedAt: null, generatedAt: null, error: null }),
     },
     fixtureKey: { type: String, default: null, trim: true },
+    sharing: { type: new Schema({
+      enabled: { type: Boolean, default: false },
+      tokenHash: { type: String, default: undefined, select: false },
+      createdAt: { type: Date, default: null }, updatedAt: { type: Date, default: null },
+    }, { _id: false }), default: () => ({ enabled: false, createdAt: null, updatedAt: null }) },
   },
   { timestamps: true },
 );
 
 tripSchema.index({ user: 1, status: 1 });
+tripSchema.index({ "sharing.tokenHash": 1 }, { unique: true, partialFilterExpression: { "sharing.tokenHash": { $type: "string" } } });
 tripSchema.index({ user: 1, fixtureKey: 1 });
 
 export const TripModel = model<TripRecord>("Trip", tripSchema);

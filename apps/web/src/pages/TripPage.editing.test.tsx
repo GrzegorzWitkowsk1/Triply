@@ -315,3 +315,4 @@ describe("TripPage manual editing", () => {
     expect(screen.getByText("Day 2 of 2")).toBeTruthy();
   });
 });
+vi.mock("../components/ToastProvider", () => ({ useToast: () => vi.fn() }));

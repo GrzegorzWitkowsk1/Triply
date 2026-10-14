@@ -31,8 +31,10 @@ export default function TripMap({
       zoom: 15,
       scrollWheelZoom: false,
     });
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
+      // OSM requires a Referer; send only the origin, never a shared-link token.
+      referrerPolicy: "origin",
       attribution: "&copy; OpenStreetMap contributors",
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);

@@ -2595,6 +2595,14 @@ body {
   background: #fffaf7;
 }
 
+.trip-page.shared-trip-page {
+  width: 100%;
+  margin: 0;
+  padding: 40px 24px;
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
 .trip-inner {
   max-width: 1200px;
   margin: 0 auto;
@@ -2685,6 +2693,35 @@ body {
   flex-shrink: 0;
   align-self: flex-end;
   margin-top: auto;
+}
+
+.trip-export-actions {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.trip-export-buttons {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.trip-export-actions [role="status"] {
+  max-width: 280px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.trip-action.trip-export-menu {
+  padding: 11px 8px;
+  flex: 0 0 auto;
+}
+
+.trip-export-menu:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
 }
 
 .trip-action {
@@ -3937,6 +3974,7 @@ body {
 
 .equipment-list-subtitle {
   font-size: 14px;
+  padding-left: 24px;
   color: var(--color-muted);
 }
 

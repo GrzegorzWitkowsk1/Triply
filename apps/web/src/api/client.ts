@@ -44,7 +44,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   const response = await fetch(path, {
     ...init,
     headers,
-    credentials: "include",
+    credentials: init.credentials ?? "include",
   });
 
   return parseResponse<T>(response);

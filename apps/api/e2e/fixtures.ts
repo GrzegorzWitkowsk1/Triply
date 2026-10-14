@@ -72,3 +72,7 @@ export async function openTrip(page: Page, id: string): Promise<void> {
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 }
 export const timelineNames = (page: Page) => page.getByRole("button", { name: /^Reorder / });
+export async function openExportMenu(page: Page): Promise<void> {
+  if (await page.getByRole("menu").isVisible()) return;
+  await page.getByRole("button", { name: /More export options|Więcej opcji eksportu/ }).click();
+}

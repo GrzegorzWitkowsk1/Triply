@@ -11,12 +11,14 @@ import ProfilePage from "./pages/ProfilePage";
 import SavedPage from "./pages/SavedPage";
 import TripPage from "./pages/TripPage";
 import TripEquipmentPage from "./pages/TripEquipmentPage";
+import SharedTripPage from "./pages/SharedTripPage";
 
 export default function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
       <Routes>
+        <Route path="/shared/:shareToken" element={<SharedTripPage />} />
         <Route
           path="/"
           element={
