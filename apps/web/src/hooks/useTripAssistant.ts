@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIdentityMutation as useMutation } from "./useIdentityMutation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AssistantConversation, AssistantMessageRequest, AssistantMessageResult, ItineraryEditResponse } from "@triply/shared";
 import { request } from "../api/client";
 import { tripQueryKey, TRIPS_KEY } from "./useTrips";

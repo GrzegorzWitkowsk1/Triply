@@ -19,7 +19,7 @@ bun run typecheck:e2e
 ```
 
 On Linux CI, use `bunx playwright install --with-deps chromium`. The first
-MongoMemoryServer invocation may download its MongoDB binary. No manually
+MongoMemoryReplSet invocation may download its MongoDB binary. No manually
 configured MongoDB, application secrets, or paid provider keys are needed.
 
 `playwright.config.ts` builds shared contracts through the root script and
@@ -29,8 +29,8 @@ V8 implementation cannot load the BSON dependency used by MongoMemoryServer.
 Both readiness URLs are probed by Playwright. Existing servers are never reused.
 
 Chromium runs headlessly with one worker, Europe/Madrid timezone, en-GB locale,
-60-second tests and 10-second assertions/actions. Local failures are not retried;
-CI permits one retry, records its trace, and captures failure screenshots.
+60-second tests and 10-second assertions/actions. Failures are not retried locally
+or in CI; failed tests retain their trace and screenshot.
 HTML reports are written to `playwright-report` and failure assets to
 `test-results`. The workflow uploads both on failure, with seven-day retention.
 
@@ -48,6 +48,12 @@ random `triply_e2e_*` database. Cleanup checks the exact owned database name and
 host before deleting records. Each test resets collections (including native
 sessions), providers and the Fastify instance/limiters. More than one worker is
 rejected. Retries receive fresh state and tests do not depend on execution order.
+
+MongoDB runs as a single-node replica set so guest imports use real transactions.
+Migration scenarios cover registration, six-trip existing-account import,
+defer/resume, ownership preservation, old guest credential rejection and public
+sharing. A guarded harness control injects an interruption after real transaction
+writes to verify rollback and retry without mocking application HTTP routes.
 
 A separate loopback control server on port 4002 requires the token. It seeds
 users/trips, reads MongoDB directly for assertions, selects fixtures, advances

@@ -71,7 +71,7 @@ jobs:
           git diff --exit-code HEAD -- bun.lock package.json apps/api/package.json apps/web/package.json packages/shared/package.json
 
   e2e:
-    name: Playwright Chromium smoke
+    name: Playwright Chromium smoke and Guest Mode
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -105,7 +105,7 @@ jobs:
 
       # Playwright starts and probes both servers. The API executable owns a
       # disposable MongoDB process and stops it with Fastify on termination.
-      - name: Run isolated browser smoke tests
+      - name: Run isolated browser smoke and Guest Mode tests
         run: bun run test:e2e
 
       - name: Upload failure reports, screenshots and traces

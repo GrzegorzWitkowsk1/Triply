@@ -1,3 +1,4 @@
+import { useGuestUsage } from "../hooks/useGuestUsage";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -123,6 +124,8 @@ function errorMessage(error: unknown): string {
 }
 
 export default function TripPage() {
+  const guestUsage = useGuestUsage();
+  const generationBlocked = guestUsage.isGuest && (!guestUsage.data || guestUsage.data.aiGenerationsRemaining === 0);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -176,14 +179,14 @@ export default function TripPage() {
     (location.state as { autoStart?: boolean } | null)?.autoStart ?? false;
 
   useEffect(() => {
-    if (!id || !trip.data || !autoStart || autoStartRef.current === id || status !== "draft" || generate.isPending) {
+    if (!id || !trip.data || !autoStart || autoStartRef.current === id || status !== "draft" || generate.isPending || generationBlocked) {
       return;
     }
 
     autoStartRef.current = id;
     navigate(location.pathname, { replace: true });
     generate.mutate(id);
-  }, [autoStart, id, trip.data, status, location.pathname, navigate, generate.mutate, generate.isPending]);
+  }, [autoStart, id, trip.data, status, location.pathname, navigate, generate.mutate, generate.isPending, generationBlocked]);
 
   if (trip.isPending) {
     return (
@@ -264,6 +267,7 @@ export default function TripPage() {
     setPreferencesError(null);
   };
   const regeneratePreferences = () => {
+    if (generationBlocked) { setPreferencesError("Your itinerary generation allowance is used. Your current itinerary remains available to edit."); return; }
     if (!id || !preferencesDirty || preferencesDisabled) return;
     setPreferencesError(null);
     saveRequirements.mutate({ draftId: id, regenerate: true, confirmedFields: [], answers: {
@@ -280,7 +284,7 @@ export default function TripPage() {
   };
 
   const handleGenerate = () => {
-    if (!id || generate.isPending) {
+    if (!id || generate.isPending || generationBlocked) {
       return;
     }
 
@@ -576,7 +580,7 @@ export default function TripPage() {
                 : `${dateLabel}${days > 0 ? ` · ${days} days` : ""} in ${city}. Let's turn your ideas into a day-by-day plan.`}
               actionLabel={isFailed ? "Try again" : "Generate my trip"}
               onAction={handleGenerate}
-              disabled={saveRequirements.isPending}
+              disabled={saveRequirements.isPending || generationBlocked}
               onBack={() => navigate("/trips")}
               onEdit={() => { saveRequirements.reset(); setEditOpen(true); }}
             />
@@ -584,6 +588,7 @@ export default function TripPage() {
         )}
       </div>
       <TripRequirementsDialog
+        maxTripDays={guestUsage.isGuest ? guestUsage.data?.maxTripDays : undefined}
         mode="edit"
         key={`${id}:${editOpen}`}
         open={editOpen}
@@ -603,6 +608,7 @@ export default function TripPage() {
         saving={itineraryEdit.isPending} error={editError} onClose={() => setMovingId(null)}
         onConfirm={(targetDayIndex, position) => movingId && submitEdit({ type: "move", sourceDayIndex: dayIndex, targetDayIndex, attractionId: movingId, position })} />
       <RegenerateDayDialog
+        aiRemaining={guestUsage.isGuest ? guestUsage.data?.dayRegenerationsRemaining : undefined}
         open={regenerateOpen}
         dayNumber={dayIndex}
         preview={regenerationPreview}
@@ -617,7 +623,7 @@ export default function TripPage() {
           setRegenerationPreview(null);
         }}
       />
-      {id && <TripAssistant key={id} city={city} tripId={id} selectedDayId={String(dayIndex)} />}
+      {id && !guestUsage.isGuest && <TripAssistant key={id} city={city} tripId={id} selectedDayId={String(dayIndex)} />}
     </div>
   );
 }

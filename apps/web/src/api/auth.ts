@@ -1,5 +1,5 @@
-import { parseResponse, request } from "./client";
-import type { ProfileUser } from "@triply/shared";
+import { request } from "./client";
+import type { IdentitySession, ProfileUser } from "@triply/shared";
 
 export type AuthUser = ProfileUser;
 
@@ -12,20 +12,11 @@ interface UserResponse {
   user: AuthUser;
 }
 
-export function getSession(): Promise<AuthUser | null> {
-  const response = fetch("/api/auth/session", {
-    headers: { Accept: "application/json" },
-    credentials: "include",
-    cache: "no-store",
-  });
-
-  return response.then((result) => {
-    if (result.status === 401) {
-      return null;
-    }
-    return parseResponse<UserResponse>(result).then((data) => data.user);
-  });
+export function getSession(): Promise<IdentitySession> {
+ return request<IdentitySession>('/api/auth/session?identity=1', { cache: 'no-store' });
 }
+export function startGuest(): Promise<IdentitySession> { return request('/api/auth/guest', {method:'POST'}); }
+export function endGuest(): Promise<void> { return request('/api/auth/guest/end', {method:'POST'}); }
 
 export function login(credentials: AuthCredentials): Promise<AuthUser> {
   return request<UserResponse>("/api/auth/login", {

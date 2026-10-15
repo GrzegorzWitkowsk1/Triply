@@ -3,7 +3,7 @@ import { expenseCreateSchema, expenseUpdateSchema, budgetUpdateSchema, moneyMino
 import { budgetData } from "../services/budgetSummary.js";
 import { loadBudgetTrip, mutateExpense, updateBudgetAllocations } from "../services/expenses.js";
 import { ItineraryEditError } from "../services/tripItineraryEditor.js";
-import { currentUserId } from "../middleware/auth.js";
+import { currentTripOwner } from "../middleware/tripIdentity.js";
 import { notFoundHandler } from "../middleware/notFound.js";
 import type { HttpRoute, HttpRequest } from "../http/types.js";
 
@@ -20,7 +20,7 @@ export function registerExpenseRoutes(app: FastifyInstance): void {
     }
     try {
       const id = req.params.id;
-      const userId = currentUserId(req);
+      const userId = currentTripOwner(req);
       let trip;
       if (req.method === "GET" && (expenses || budget)) {
         trip = await loadBudgetTrip(id, userId);

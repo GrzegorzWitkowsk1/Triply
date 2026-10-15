@@ -23,6 +23,10 @@ function parseEnabledModes(value: string): TravelMode[] {
 
 const parsed = z
   .object({
+    GUEST_MAX_TRIPS: z.coerce.number().int().positive().max(1000).default(6),
+    GUEST_AI_GENERATIONS_PER_24H: z.coerce.number().int().positive().max(1000).default(2),
+    GUEST_DAY_REGENERATIONS_PER_24H: z.coerce.number().int().positive().max(1000).default(2),
+    GUEST_MAX_TRIP_DAYS: z.coerce.number().int().positive().max(1000).default(7),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     PORT: z.coerce.number().int().positive().default(4000),
     MONGODB_URI: z.string().min(1).default("mongodb://127.0.0.1:27018/triply"),
@@ -54,6 +58,10 @@ const parsed = z
     ROUTING_RETURN_TO_START: z.string().regex(/^(true|false)$/).default("false"),
   })
   .safeParse({
+    GUEST_MAX_TRIPS: process.env.GUEST_MAX_TRIPS,
+    GUEST_AI_GENERATIONS_PER_24H: process.env.GUEST_AI_GENERATIONS_PER_24H,
+    GUEST_DAY_REGENERATIONS_PER_24H: process.env.GUEST_DAY_REGENERATIONS_PER_24H,
+    GUEST_MAX_TRIP_DAYS: process.env.GUEST_MAX_TRIP_DAYS,
     NODE_ENV: process.env.NODE_ENV,
     PORT: process.env.PORT,
     MONGODB_URI: process.env.MONGODB_URI,
@@ -104,6 +112,10 @@ const trustProxy =
       : Number(parsed.data.TRUST_PROXY);
 
 export const env = {
+  GUEST_MAX_TRIPS: parsed.data.GUEST_MAX_TRIPS,
+  GUEST_AI_GENERATIONS_PER_24H: parsed.data.GUEST_AI_GENERATIONS_PER_24H,
+  GUEST_DAY_REGENERATIONS_PER_24H: parsed.data.GUEST_DAY_REGENERATIONS_PER_24H,
+  GUEST_MAX_TRIP_DAYS: parsed.data.GUEST_MAX_TRIP_DAYS,
   NODE_ENV: parsed.data.NODE_ENV,
   PORT: parsed.data.PORT,
   MONGODB_URI: parsed.data.MONGODB_URI,

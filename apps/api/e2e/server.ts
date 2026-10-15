@@ -3,7 +3,7 @@ import { performance } from "node:perf_hooks";
 import { randomUUID } from "node:crypto";
 import argon2 from "argon2";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { analysis, attractions, makeDay, NOW, PASSWORD, type Scenario } from "./data.ts";
 import { ProviderFixtures } from "./providers.ts";
 
@@ -44,7 +44,7 @@ providers.install();
 const database = `triply_e2e_${randomUUID().replaceAll("-", "")}`;
 // MongoDB's OS clock differs from our fixture clock; session expiry is still
 // enforced by the real session store on every request.
-const mongod = await MongoMemoryServer.create({ instance: { ip: "127.0.0.1", dbName: database, args: ["--setParameter", "ttlMonitorEnabled=false"] } });
+const mongod = await MongoMemoryReplSet.create({ replSet: { count: 1, ip: "127.0.0.1", dbName: database, storageEngine: "wiredTiger", args: ["--setParameter", "ttlMonitorEnabled=false"] } });
 const uri = mongod.getUri(database);
 const parsed = new URL(uri);
 if (parsed.protocol !== "mongodb:" || parsed.hostname !== "127.0.0.1" || parsed.pathname !== `/${database}` || !database.startsWith("triply_e2e_")) {
@@ -53,6 +53,8 @@ if (parsed.protocol !== "mongodb:" || parsed.hostname !== "127.0.0.1" || parsed.
 process.env.MONGODB_URI = uri;
 const { UserModel } = await import("../src/models/User.ts");
 const { TripModel } = await import("../src/models/Trip.ts");
+const { migrationWrites } = await import("../src/services/guestMigration.ts");
+const transferWithoutFault = migrationWrites.transfer;
 const { startServer } = await import("../src/server.ts");
 let backend: Awaited<ReturnType<typeof startServer>> | undefined;
 const preflights: { path: string; status: number; origin: unknown; credentials: unknown }[] = [];
@@ -80,6 +82,7 @@ const control = createServer(async (request, response) => {
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown> : {};
     let result: unknown = {};
     if (request.method === "POST" && request.url === "/setup") {
+      migrationWrites.transfer = transferWithoutFault;
       providers.reset();
       preflights.length = 0;
       // Expire process-local provider caches without changing application code.
@@ -129,7 +132,23 @@ const control = createServer(async (request, response) => {
     } else if (request.method === "POST" && request.url === "/hold") providers.hold(String(body.provider));
     else if (request.method === "POST" && request.url === "/release") providers.release(String(body.provider));
     else if (request.method === "POST" && request.url === "/advance") { offset += 11 * 60_000; result = { now: new Date().toISOString() }; }
-    else if (request.method === "POST" && request.url === "/cleanup") { providers.reset(); await clean(); }
+    else if (request.method === "POST" && request.url === "/expire-guest") {
+      if (typeof body.guestId !== "string" || !/^[a-f0-9]{32}$/.test(body.guestId)) throw new Error("Invalid fixture guest identity");
+      const sessions = mongoose.connection.db!.collection<{ _id: string; session: string }>("sessions");
+      for (const record of await sessions.find({}).toArray()) {
+        if (JSON.parse(record.session).guest?.id === body.guestId) {
+          await sessions.updateOne({ _id: record._id }, { $set: { expires: new Date(0) } });
+        }
+      }
+    }
+    else if (request.method === "POST" && request.url === "/fail-import-once") {
+      migrationWrites.transfer = async (...args) => {
+        migrationWrites.transfer = transferWithoutFault;
+        await transferWithoutFault(...args);
+        throw new Error("Fixture interruption after transaction writes");
+      };
+    }
+    else if (request.method === "POST" && request.url === "/cleanup") { migrationWrites.transfer = transferWithoutFault; providers.reset(); await clean(); }
     else if (request.method === "POST" && request.url === "/shutdown") {
       await close(); response.end('{}'); return;
     }

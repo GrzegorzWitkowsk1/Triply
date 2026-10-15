@@ -45,6 +45,7 @@ import {
 } from "../../schemas/tripAnalysis";
 
 interface TripRequirementsDialogProps {
+  maxTripDays?: number;
   mode?: "complete" | "edit";
   open: boolean;
   analysis: TripAnalysis;
@@ -56,6 +57,7 @@ interface TripRequirementsDialogProps {
 }
 
 export default function TripRequirementsDialog({
+  maxTripDays,
   mode = "complete",
   open,
   analysis,
@@ -99,6 +101,7 @@ export default function TripRequirementsDialog({
   const hasRange =
     isIsoDate(startDate) && isIsoDate(endDate) && endDate >= startDate;
   const derivedDurationDays = hasRange ? diffDaysInclusive(startDate, endDate) : null;
+  const durationTooLong = maxTripDays !== undefined && (derivedDurationDays ?? Number(durationDaysValue)) > maxTripDays;
 
   useEffect(() => {
     if (derivedDurationDays === null) {
@@ -143,6 +146,7 @@ export default function TripRequirementsDialog({
   }, [startDate, durationDaysValue, endDate, setValue]);
 
   const submit = handleSubmit((values) => {
+    if (durationTooLong) return;
     onSave(buildRequirementsPayload(values, missingFields));
   });
 
@@ -269,7 +273,8 @@ export default function TripRequirementsDialog({
                 />
               )}
 
-              <p className="requirements-hint">{DATE_FIELDS_HINT}</p>
+              <p className="requirements-hint">{DATE_FIELDS_HINT}{maxTripDays !== undefined && ` Guest trips: up to ${maxTripDays} calendar days.`}</p>
+              {durationTooLong && <p role="alert">Guest trips can contain at most {maxTripDays} calendar days.</p>}
             </div>
           )}
 

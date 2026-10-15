@@ -81,7 +81,7 @@ function Fields({
 export default function LoginPage({ mode }: LoginPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, register, isSubmitting } = useAuth();
+  const { login, register, startGuest, isSubmitting, sessionExpired } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -188,6 +188,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
                 {error}
               </p>
             )}
+            {sessionExpired && <p className="auth-error" role="status">Your guest session has expired. Enter Guest Mode to start a new session. Trips from the expired session will not be reassigned.</p>}
 
             <Fields mode={mode} {...formState} />
 
@@ -201,6 +202,11 @@ export default function LoginPage({ mode }: LoginPageProps) {
                   : "Sign in"}
             </button>
 
+            <button type="button" className="btn" disabled={isSubmitting} onClick={() => {
+              setError(null);
+              void startGuest().then(() => navigate('/home', { replace: true })).catch((caught: unknown) =>
+                setError(caught instanceof Error ? caught.message : 'Could not start Guest Mode. Try again.'));
+            }}>{isSubmitting ? 'Please wait...' : 'Continue as guest'}</button>
             <p className="auth-switch-link">
               {isRegister ? "Already have an account? " : "New to Triply? "}
               <button

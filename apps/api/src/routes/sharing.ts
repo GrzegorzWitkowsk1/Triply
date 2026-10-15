@@ -3,7 +3,7 @@ import { Types } from "mongoose";
 import type { FastifyInstance } from "fastify";
 import { publicTripSchema, type SharingStatus } from "@triply/shared";
 import { TripModel, type TripRecord } from "../models/Trip.js";
-import { currentUserId } from "../middleware/auth.js";
+import { currentTripOwner, ownerFilter } from "../middleware/tripIdentity.js";
 
 export const hashShareToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 export const PUBLIC_TRIP_PROJECTION = "analysis.destination analysis.country analysis.startDate analysis.endDate analysis.durationDays analysis.location weather itinerary attractions";
@@ -69,7 +69,7 @@ export function registerSharingRoutes(app: FastifyInstance): void {
       handler: async (req, reply) => {
         reply.header("Cache-Control", "no-store");
         if (!Types.ObjectId.isValid(req.params.id)) return reply.code(404).send({ error: "Trip not found" });
-        const filter = { _id: new Types.ObjectId(req.params.id), user: new Types.ObjectId(currentUserId(req)) };
+        const filter = { _id: new Types.ObjectId(req.params.id), ...ownerFilter(currentTripOwner(req)) };
         if (operation === "status") {
           const trip = await TripModel.findOne(filter).select("sharing").exec();
           return trip ? reply.send(status(trip)) : reply.code(404).send({ error: "Trip not found" });

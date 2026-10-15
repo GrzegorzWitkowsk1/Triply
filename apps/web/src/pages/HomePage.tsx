@@ -1,3 +1,4 @@
+import { useGuestUsage } from "../hooks/useGuestUsage";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowForwardOutlined,
@@ -50,6 +51,8 @@ function getRecognition(): SpeechRecognition | null {
 
 export default function HomePage() {
   const { user } = useAuth();
+  const guestUsage = useGuestUsage();
+  const storageBlocked = guestUsage.isGuest && (!guestUsage.data || guestUsage.data.tripCount >= guestUsage.data.tripLimit);
   const location = useLocation();
   const [prompt, setPrompt] = useState("");
   const [selectedBadges, setSelectedBadges] = useState<string[]>(user?.preferences?.interests ?? []);
@@ -83,7 +86,7 @@ export default function HomePage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const canPlan = prompt.trim().length > 0 || selectedBadges.length > 0;
+  const canPlan = !storageBlocked && (prompt.trim().length > 0 || selectedBadges.length > 0);
   const isPlanning = planning.hasStarted;
   const showProgress = planning.hasStarted && !planning.isDone;
 
@@ -252,6 +255,7 @@ export default function HomePage() {
   };
 
   const generateTrip = () => {
+    if (guestUsage.isGuest && guestUsage.data?.aiGenerationsRemaining === 0) { setCreateError("Your itinerary generation allowance is used for the last 24 hours. You can still edit your trip details."); return; }
     if (!draft || createTrip.isPending) return;
 
     setCreateError(null);
@@ -464,6 +468,7 @@ export default function HomePage() {
 
       {draft && (
         <TripRequirementsDialog
+          maxTripDays={guestUsage.isGuest ? guestUsage.data?.maxTripDays : undefined}
           key={draft.missingFields.join(",")}
           open={isDialogOpen}
           analysis={draft.analysis}

@@ -41,3 +41,21 @@ describe("routing environment defaults", () => {
     expect(env.ROUTING_ENABLED_MODES).toEqual(["cycling"]);
   });
 });
+
+describe("guest environment limits", () => {
+  it("uses the exact default guest limits", async () => {
+    for (const key of ["GUEST_MAX_TRIPS", "GUEST_AI_GENERATIONS_PER_24H", "GUEST_DAY_REGENERATIONS_PER_24H", "GUEST_MAX_TRIP_DAYS"]) vi.stubEnv(key, undefined);
+    vi.resetModules();
+    const { env } = await import("./env.js");
+    expect(env).toMatchObject({ GUEST_MAX_TRIPS: 6, GUEST_AI_GENERATIONS_PER_24H: 2, GUEST_DAY_REGENERATIONS_PER_24H: 2, GUEST_MAX_TRIP_DAYS: 7 });
+  });
+  it.each(["GUEST_MAX_TRIPS", "GUEST_AI_GENERATIONS_PER_24H", "GUEST_DAY_REGENERATIONS_PER_24H", "GUEST_MAX_TRIP_DAYS"])("validates %s", async key => {
+    vi.stubEnv(key, "-1"); vi.resetModules();
+    await expect(import("./env.js")).rejects.toThrow("Invalid environment configuration");
+  });
+  it("accepts configurable integer overrides", async () => {
+    vi.stubEnv("GUEST_MAX_TRIPS", "3"); vi.stubEnv("GUEST_AI_GENERATIONS_PER_24H", "4");
+    vi.stubEnv("GUEST_DAY_REGENERATIONS_PER_24H", "5"); vi.stubEnv("GUEST_MAX_TRIP_DAYS", "6"); vi.resetModules();
+    expect((await import("./env.js")).env).toMatchObject({ GUEST_MAX_TRIPS: 3, GUEST_AI_GENERATIONS_PER_24H: 4, GUEST_DAY_REGENERATIONS_PER_24H: 5, GUEST_MAX_TRIP_DAYS: 6 });
+  });
+});

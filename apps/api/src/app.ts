@@ -7,7 +7,13 @@ import { parse } from "node:querystring";
 import { env } from "./config/env.js";
 import { registerSessions } from "./config/session.js";
 import { errorHandler } from "./middleware/error.js";
-import { requireAuth } from "./middleware/auth.js";
+import { requireTripIdentity } from "./middleware/tripIdentity.js";
+import { guestNetworkLimit } from "./middleware/guestNetworkLimit.js";
+import { registerGuestUsageRoutes } from "./routes/guestUsage.js";
+import { prepareGuestLimits } from "./services/guestLimits.js";
+import { prepareGuestHandoffs } from "./models/GuestHandoff.js";
+import { registerGuestActivity } from "./middleware/guestActivity.js";
+import { registerGuestMigrationRoutes } from "./routes/guestMigration.js";
 import { notFoundHandler } from "./middleware/notFound.js";
 import { createLimiters } from "./middleware/rateLimit.js";
 import { registerBodyParsing, JSON_BODY_LIMIT } from "./http/body.js";
@@ -58,6 +64,9 @@ export async function createApp() {
   registerResponseCompatibility(app);
   await app.register(cookie);
   await registerSessions(app);
+  await prepareGuestLimits();
+  await prepareGuestHandoffs();
+  registerGuestActivity(app);
   await app.register(rateLimit, { global: false, store: FixedWindowStore });
   const limits = createLimiters(app);
   registerHealthRoutes(app);
@@ -65,9 +74,16 @@ export async function createApp() {
   registerPublicPdfRoutes(app);
   registerPublicCalendarRoutes(app);
   registerAuthRoutes(app, limits.auth);
+  registerGuestMigrationRoutes(app);
   await registerProfileRoutes(app, limits.auth);
   await app.register(async protectedApi => {
-    protectedApi.addHook("preHandler", requireAuth);
+    protectedApi.addHook("onRequest", async (_request, reply) => {
+      // Private trip payloads must not survive logout in browser/proxy HTTP caches.
+      reply.header("Cache-Control", "no-store");
+    });
+    protectedApi.addHook("preHandler", requireTripIdentity);
+    protectedApi.addHook("preHandler", guestNetworkLimit(protectedApi));
+    registerGuestUsageRoutes(protectedApi);
     protectedApi.addHook("preHandler", validatePathParameters);
     registerTripRoutes(protectedApi, limits.planning);
     registerSharingRoutes(protectedApi);

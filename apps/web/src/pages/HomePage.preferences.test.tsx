@@ -5,6 +5,7 @@ import type { ProfileUser } from "@triply/shared";
 import HomePage from "./HomePage";
 const mocks = vi.hoisted(() => ({ user: null as ProfileUser | null, analyze: vi.fn() }));
 vi.mock("../auth/AuthProvider", () => ({ useAuth: () => ({ user: mocks.user }) }));
+vi.mock("../hooks/useGuestUsage", () => ({ useGuestUsage: () => ({ isGuest: false }) }));
 vi.mock("../hooks/useTrips", () => ({ useTrips: () => ({ data: [], isPending: false, isError: false }) }));
 vi.mock("../hooks/useTripAnalysis", () => ({ useAnalyzeTrip: () => ({ mutate: mocks.analyze }), useUpdateTripRequirements: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock("../hooks/useTripGeneration", () => ({ useConfirmTrip: () => ({ mutate: vi.fn(), isPending: false }) }));

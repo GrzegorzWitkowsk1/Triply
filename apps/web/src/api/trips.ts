@@ -80,6 +80,7 @@ export function confirmTrip(id: string): Promise<TripDetail> {
 export function generateTrip(id: string): Promise<TripDetail> {
   return request<TripDetail>(`/api/trips/${id}/generate`, {
     method: "POST",
+    headers: { "Idempotency-Key": crypto.randomUUID() },
   });
 }
 
@@ -90,8 +91,13 @@ export function regenerateTripDay(
 ): Promise<RegenerateDayPreview> {
   return request<RegenerateDayPreview>(`/api/trips/${tripId}/days/${dayIndex}/regenerate`, {
     method: "POST",
+    headers: { "Idempotency-Key": crypto.randomUUID() },
     body: JSON.stringify(input),
   });
+}
+
+export function deleteTrip(id: string): Promise<void> {
+  return request<void>(`/api/trips/${id}`, { method: "DELETE" });
 }
 
 export function applyRegeneratedDay(

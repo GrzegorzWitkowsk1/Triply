@@ -405,6 +405,44 @@ body {
   gap: 12px;
 }
 
+.guest-indicator {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.guest-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+.guest-usage p, .guest-usage small { flex-basis: 100%; margin: 0; }
+
+.guest-welcome {
+  min-height: 50vh;
+  gap: 16px;
+  text-align: center;
+}
+
+.guest-header a:focus-visible,
+.guest-header button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+
+@media (max-width: 480px) {
+  .guest-header .app-header-inner { padding: 0 12px; gap: 8px; }
+  .guest-header .header-actions { gap: 8px; }
+  .guest-header .auth-link { font-size: 12px; white-space: nowrap; }
+  .guest-header .header-icon { width: 32px; flex-shrink: 0; }
+  .guest-indicator { font-size: 12px; }
+}
+
 .header-icon {
   width: 40px;
   height: 40px;

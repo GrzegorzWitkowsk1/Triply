@@ -5,6 +5,7 @@ import {
   PersonOutlineOutlined,
 } from "@mui/icons-material";
 import { NavLink } from "react-router-dom";
+import { useAuth } from "../../auth/AuthProvider";
 
 const ITEMS = [
   { to: "/trips", label: "trips", icon: MapOutlined },
@@ -14,9 +15,10 @@ const ITEMS = [
 ];
 
 export default function BottomNav() {
+  const { isGuest } = useAuth();
   return (
     <nav className="bottom-nav">
-      {ITEMS.map((item) => {
+      {ITEMS.filter(item => !isGuest || item.to !== "/profile").map((item) => {
         const Icon = item.icon;
         return (
           <NavLink

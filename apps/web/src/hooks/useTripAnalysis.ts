@@ -1,4 +1,7 @@
-import { useMutation } from "@tanstack/react-query";
+import { GUEST_USAGE_KEY } from "./useGuestUsage";
+import { TRIPS_KEY } from "./useTrips";
+import { useQueryClient } from "@tanstack/react-query";
+import { useIdentityMutation as useMutation } from "./useIdentityMutation";
 import type {
   AskableField,
   AnalyzeTripRequest,
@@ -7,13 +10,18 @@ import type {
 import { analyzeTrip, updateTripRequirements } from "../api/trips";
 
 export function useAnalyzeTrip() {
+  const queryClient = useQueryClient();
   return useMutation({
+    onSettled: () => { void queryClient.invalidateQueries({ queryKey: GUEST_USAGE_KEY }); },
     mutationFn: (input: AnalyzeTripRequest) => analyzeTrip(input),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: TRIPS_KEY }); },
   });
 }
 
 export function useUpdateTripRequirements() {
+  const queryClient = useQueryClient();
   return useMutation({
+    onSettled: () => { void queryClient.invalidateQueries({ queryKey: GUEST_USAGE_KEY }); },
     mutationFn: (input: {
       draftId: string;
       regenerate?: boolean;

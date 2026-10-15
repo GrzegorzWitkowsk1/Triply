@@ -1,3 +1,4 @@
+import { ownerFilter } from "../middleware/tripIdentity.js";
 import { Types } from "mongoose";
 import type { CreateTripEquipmentItem, TripEquipmentItem, UpdateTripEquipmentItem } from "@triply/shared";
 import { LIMITS } from "@triply/shared";
@@ -25,7 +26,7 @@ export class EquipmentError extends Error {
 function findOwnedTrip(tripId: string, userId: string): Promise<TripDocument | null> {
   return TripModel.findOne({
     _id: new Types.ObjectId(tripId),
-    user: new Types.ObjectId(userId),
+    ...ownerFilter(userId),
   }).exec();
 }
 

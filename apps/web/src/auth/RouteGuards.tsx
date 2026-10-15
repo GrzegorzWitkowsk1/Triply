@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 
@@ -22,8 +22,8 @@ function AuthErrorState({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-export function RequireAuth({ children }: { children: ReactNode }) {
-  const { user, isLoading, error, refetchSession } = useAuth();
+export function RequireAuth({ children, allowGuest = false }: { children: ReactNode; allowGuest?: boolean }) {
+  const { user, guest, isGuest, isLoading, error, refetchSession } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -34,11 +34,11 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     return <AuthErrorState onRetry={() => void refetchSession()} />;
   }
 
-  if (!user) {
+  if (!user && !(allowGuest && isGuest)) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  return <>{children}</>;
+  return <Fragment key={user ? `user:${user.id}` : `guest:${guest?.id}`}>{children}</Fragment>;
 }
 
 export function PublicOnlyRoute({ children }: { children: ReactNode }) {

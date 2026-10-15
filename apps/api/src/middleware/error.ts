@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { GuestLimitError } from "../services/guestLimits.js";
 
 function getHttpStatus(error: unknown): number | undefined {
   if (typeof error === "object" && error !== null) {
@@ -9,6 +10,12 @@ function getHttpStatus(error: unknown): number | undefined {
 }
 export function errorHandler(error: unknown, _request: FastifyRequest, reply: FastifyReply): void {
   if (reply.sent) return;
+  if (error instanceof GuestLimitError) {
+    if (error.resetsAt) reply.header("Retry-After", Math.max(1, Math.ceil((Date.parse(error.resetsAt) - Date.now()) / 1000)));
+    reply.code(error.status).send({ error: error.message, code: error.code, ...error.details,
+      ...(error.resetsAt ? { resetsAt: error.resetsAt } : {}) });
+    return;
+  }
   const status = getHttpStatus(error);
   if (typeof error === "object" && error !== null && "expose" in error && error.expose === true && "message" in error) {
     reply.code(status ?? 500).send({ error: typeof error.message === "string" ? error.message : "Request could not be processed" });

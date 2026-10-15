@@ -7,6 +7,7 @@ import { NavLink, Link } from "react-router-dom";
 import { useNotifications } from "../../hooks/useNotifications";
 import { useAuth } from "../../auth/AuthProvider";
 import Logo from "../Logo";
+import { useState } from "react";
 
 const TABS = [
   { to: "/trips", label: "My Trips" },
@@ -16,12 +17,13 @@ const TABS = [
 
 export default function Header() {
   const { data: notifications } = useNotifications();
-  const { user, logout, isLoggingOut } = useAuth();
+  const { user, isGuest, logout, endGuest, isLoggingOut } = useAuth();
+  const [exitError, setExitError] = useState(false);
   const unreadCount =
     notifications?.filter((notification) => !notification.isRead).length ?? 0;
 
   return (
-    <header className="app-header">
+    <header className={`app-header${isGuest ? " guest-header" : ""}`}>
       <div className="app-header-inner">
         <Link to="/home" className="logo-link">
           <Logo />
@@ -42,6 +44,7 @@ export default function Header() {
         </nav>
 
         <div className="header-actions">
+          {isGuest ? <><span className="guest-indicator">Guest</span><Link className="auth-link" to="/register">Create account</Link><Link className="auth-link" to="/login">Log in</Link></> : <>
           <Link
             to="/notifications"
             className="header-icon header-notif"
@@ -56,17 +59,20 @@ export default function Header() {
             </span>
             <span className="user-email">{user?.email}</span>
           </Link>
+          </>}
           <button
             type="button"
             className="header-icon logout-btn"
-            aria-label="Sign out"
+            aria-label={isGuest ? "End guest session" : "Sign out"}
             onClick={() => {
-              void logout().catch(() => undefined);
+              setExitError(false);
+              void (isGuest ? endGuest() : logout()).catch(() => setExitError(true));
             }}
             disabled={isLoggingOut}
           >
             <LogoutOutlined />
           </button>
+          {exitError && <span role="alert">Could not end session. Try again.</span>}
         </div>
       </div>
     </header>

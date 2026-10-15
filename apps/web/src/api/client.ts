@@ -3,6 +3,7 @@ interface ErrorResponse {
 }
 
 export class ApiError extends Error {
+  readonly code?: string;
   readonly status: number;
   readonly details: unknown;
 
@@ -11,6 +12,7 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
     this.details = details;
+    if (details && typeof details === "object" && "code" in details && typeof details.code === "string") this.code = details.code;
   }
 }
 
@@ -19,6 +21,7 @@ export async function parseResponse<T>(response: Response): Promise<T> {
     response.status === 204 ? null : await response.json().catch(() => null);
 
   if (!response.ok) {
+    if (response.status === 401) window.dispatchEvent(new CustomEvent("triply:session-expired", { detail: body?.code }));
     const message =
       body && typeof body === "object" && "error" in body
         ? (body as ErrorResponse).error

@@ -1,3 +1,4 @@
+import { ownerFilter, storedOwner } from "../middleware/tripIdentity.js";
 import { type TripWeatherRefresh } from "@triply/shared";
 import { TripModel, type TripDocument } from "../models/Trip.js";
 import { DestinationResolutionError } from "./location.js";
@@ -56,7 +57,7 @@ async function refresh(trip: TripDocument, options: WeatherOptions & { force?: b
   }
   if (options.force) {
     // Reserve the next attempt atomically so multiple tabs or API instances cannot bypass the limit.
-    const claimed = await TripModel.findOneAndUpdate({ _id: trip._id, user: trip.user, updatedAt: trip.updatedAt,
+    const claimed = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)), updatedAt: trip.updatedAt,
       $or: [{ "weatherAvailability.retryAfter": null }, { "weatherAvailability.retryAfter": { $lte: now.toISOString() } }] },
     { $set: { weatherAvailability: { ...availability, retryAfter: new Date(now.getTime() + WEATHER_POLICY.failureCooldownMs).toISOString() } } }, { new: true }).exec();
     if (!claimed) return await TripModel.findById(trip._id).exec() ?? trip;
@@ -73,7 +74,7 @@ async function refresh(trip: TripDocument, options: WeatherOptions & { force?: b
       JSON.stringify(resolved.toObject().weatherAvailability) === JSON.stringify(result.availability) &&
       resolved.weatherFetchedAt?.getTime() === result.fetchedAt?.getTime()) return resolved;
   const saved = await TripModel.findOneAndUpdate({
-    _id: resolved._id, user: resolved.user, updatedAt: resolved.updatedAt,
+    _id: resolved._id, ...ownerFilter(storedOwner(resolved)), updatedAt: resolved.updatedAt,
     status: { $ne: "generating" },
     "analysis.startDate": resolved.analysis.startDate, "analysis.endDate": resolved.analysis.endDate,
     "analysis.location.lat": resolved.analysis.location?.lat ?? null,

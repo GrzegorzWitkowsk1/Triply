@@ -12,6 +12,7 @@ import SavedPage from "./pages/SavedPage";
 import TripPage from "./pages/TripPage";
 import TripEquipmentPage from "./pages/TripEquipmentPage";
 import SharedTripPage from "./pages/SharedTripPage";
+import { GuestAwarePage } from "./pages/GuestPage";
 
 export default function App() {
   return (
@@ -45,7 +46,7 @@ export default function App() {
         />
         <Route
           element={
-            <RequireAuth>
+            <RequireAuth allowGuest>
               <AppLayout />
             </RequireAuth>
           }
@@ -54,10 +55,10 @@ export default function App() {
           <Route path="/trips" element={<MyTripsPage />} />
           <Route path="/trips/:id" element={<TripPage />} />
           <Route path="/trips/:id/equipment" element={<TripEquipmentPage />} />
-          <Route path="/explore" element={<ExplorePage />} />
-          <Route path="/saved" element={<SavedPage />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/explore" element={<GuestAwarePage><ExplorePage /></GuestAwarePage>} />
+          <Route path="/saved" element={<GuestAwarePage><SavedPage /></GuestAwarePage>} />
+          <Route path="/notifications" element={<GuestAwarePage><NotificationsPage /></GuestAwarePage>} />
+          <Route path="/profile" element={<GuestAwarePage><ProfilePage /></GuestAwarePage>} />
           <Route path="*" element={<Navigate to="/home" replace />} />
         </Route>
       </Routes>

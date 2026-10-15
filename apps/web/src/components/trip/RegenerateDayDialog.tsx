@@ -59,6 +59,7 @@ function MetricRow({ label, before, after }: MetricRowProps) {
 }
 
 interface RegenerateDayDialogProps {
+  aiRemaining?: number;
   zIndex?: number;
   open: boolean;
   dayNumber: number;
@@ -73,6 +74,7 @@ interface RegenerateDayDialogProps {
 }
 
 export default function RegenerateDayDialog({
+  aiRemaining,
   zIndex,
   open,
   dayNumber,
@@ -100,9 +102,10 @@ export default function RegenerateDayDialog({
   const maybeSubmit =
     hasRegenerationPreferences(preferences) || instructions.length > 0;
   const busy = isGenerating || isApplying;
+  const aiBlocked = instructions.length > 0 && aiRemaining === 0;
 
   const handleGenerate = () => {
-    if (!maybeSubmit || busy) {
+    if (!maybeSubmit || busy || aiBlocked) {
       return;
     }
 
@@ -136,6 +139,8 @@ export default function RegenerateDayDialog({
       </DialogTitle>
 
       <DialogContent className="regenerate-content">
+        {aiRemaining !== undefined && <p>AI day regenerations remaining: {aiRemaining}. Free-text instructions use AI; preference-only previews do not.</p>}
+        {aiBlocked && <p role="alert">Your AI day-regeneration allowance is used for the last 24 hours. Clear the instructions to use selected preferences.</p>}
         <p className="regenerate-lead">
           Pick how you'd like this day to change. Only this day is rewritten —
           the rest of your trip stays as it is.
@@ -282,7 +287,7 @@ export default function RegenerateDayDialog({
               type="button"
               variant="contained"
               startIcon={<AutoFixHighOutlined />}
-              disabled={!maybeSubmit || busy}
+              disabled={!maybeSubmit || busy || aiBlocked}
               onClick={handleGenerate}
             >
               {isGenerating ? "Preparing…" : "Generate alternative"}

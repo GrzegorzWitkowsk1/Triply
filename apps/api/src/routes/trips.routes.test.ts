@@ -401,7 +401,7 @@ describe("destination persistence and recovery", () => {
   it("preserves saved coordinates during repeat analysis of the same destination", async () => {
     const trip = await seedTrip(new mongoose.Types.ObjectId().toString(), { analysis: { ...COMPLETE_ANALYSIS, startDate: null, endDate: null } });
     const fetch = mockLookup();
-    const saved = await upsertTripDraft({ userId: trip.user.toString(), prompt: "Paris again", badges: [],
+    const saved = await upsertTripDraft({ userId: trip.user!.toString(), prompt: "Paris again", badges: [],
       analysis: { ...COMPLETE_ANALYSIS, startDate: null, endDate: null, location: null } as TripAnalysis });
     expect(saved.id).toBe(trip.id);
     expect(saved.analysis.location).toMatchObject(COMPLETE_ANALYSIS.location);
@@ -552,7 +552,7 @@ describe("destination persistence and recovery", () => {
   it("prevents claim of an obsolete snapshot after a concurrent edit", async () => {
     const trip = await seedTrip(new mongoose.Types.ObjectId().toString());
     await TripModel.updateOne({ _id: trip._id }, { $set: { "analysis.destination": "Rome", updatedAt: new Date(trip.updatedAt.getTime() + 1000) } });
-    expect(await claimTripForGeneration(trip.id, trip.user.toString(), trip.updatedAt)).toBeNull();
+    expect(await claimTripForGeneration(trip.id, trip.user!.toString(), trip.updatedAt)).toBeNull();
   });
 
   it("preserves coordinates when an unchanged destination update supplies null location", async () => {

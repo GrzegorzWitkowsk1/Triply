@@ -1,8 +1,20 @@
-import { useQuery } from "@tanstack/react-query";
+import { useIdentityMutation as useMutation } from "./useIdentityMutation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { TripDetail, TripStatus } from "@triply/shared";
-import { getTrip, listTrips } from "../api/trips";
+import { deleteTrip, getTrip, listTrips } from "../api/trips";
+import { GUEST_USAGE_KEY } from "./useGuestUsage";
 
 export const TRIPS_KEY = ["trips"] as const;
+
+export function useDeleteTrip() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: deleteTrip, onSuccess: async (_result, id) => {
+    await client.cancelQueries({ queryKey: TRIPS_KEY });
+    client.removeQueries({ queryKey: tripQueryKey(id), exact: true });
+    void client.invalidateQueries({ queryKey: TRIPS_KEY });
+    void client.invalidateQueries({ queryKey: GUEST_USAGE_KEY });
+  } });
+}
 
 export const tripsQueryKey = (status?: TripStatus) =>
   [...TRIPS_KEY, { status: status ?? null }] as const;

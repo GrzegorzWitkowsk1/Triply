@@ -92,7 +92,7 @@ describe("POST /api/trips/:id/weather/refresh", () => {
 
   it("preserves edited routes, times, budget and a new regeneration preview during weather refresh", async () => {
     const { agent, trip, path } = await setup();
-    const reordered = await editTripItinerary(trip.id, trip.user.toString(), {
+    const reordered = await editTripItinerary(trip.id, trip.user!.toString(), {
       expectedVersion: 8, operation: { type: "reorder", dayIndex: 1, attractionIds: ["node/2", "node/1"] },
     }, { provider: null });
     expect(reordered.itineraryVersion).toBe(9);
@@ -129,10 +129,10 @@ describe("POST /api/trips/:id/weather/refresh", () => {
       preferences: relaxedPreferences, provider: null, fetchCandidates: async () => [], now: NOW });
     const stale = (await TripModel.findById(trip._id))!;
     const before = stale.toObject();
-    const removed = await editTripItinerary(trip.id, trip.user.toString(), {
+    const removed = await editTripItinerary(trip.id, trip.user!.toString(), {
       expectedVersion: 8, operation: { type: "remove", dayIndex: 1, attractionId: "node/1" },
     }, { provider: null });
-    const recalculated = await editTripItinerary(trip.id, trip.user.toString(), {
+    const recalculated = await editTripItinerary(trip.id, trip.user!.toString(), {
       expectedVersion: removed.itineraryVersion, operation: { type: "reroute", dayIndex: 1 },
     }, { provider: null });
     const after = recalculated.trip.toObject();
@@ -161,7 +161,7 @@ describe("POST /api/trips/:id/weather/refresh", () => {
     const rejected = expect(pending).rejects.toMatchObject({ status: 409 });
     await started;
     vi.setSystemTime(new Date(NOW.getTime() + 1));
-    const edited = await editTripItinerary(trip.id, trip.user.toString(), {
+    const edited = await editTripItinerary(trip.id, trip.user!.toString(), {
       expectedVersion: 8, operation: { type: "reorder", dayIndex: 1, attractionIds: ["node/2", "node/1"] },
     }, { provider: null });
     finish(forecast()); await rejected;
@@ -196,7 +196,7 @@ describe("POST /api/trips/:id/weather/refresh", () => {
     expect(ready.analysis.location).toMatchObject({ lat: 50.08, lng: 14.43 });
     expect(ready.itinerary!.days.every(d => d.timeZone === "Europe/Prague")).toBe(true);
     const selected = ready.itinerary!.days.find(d => d.stops.length)!;
-    const removed = await editTripItinerary(trip.id, trip.user.toString(), {
+    const removed = await editTripItinerary(trip.id, trip.user!.toString(), {
       expectedVersion: ready.itineraryVersion, operation: { type: "remove", dayIndex: selected.dayIndex, attractionId: selected.stops[0].placeId! },
     }, { provider: null });
     expect(removed.itineraryVersion).toBe(ready.itineraryVersion + 1);

@@ -74,7 +74,9 @@ export interface TripRecord {
   budgetAllocations: import("@triply/shared").BudgetAllocations;
   budgetAllocationCurrency: string | null;
   budgetRevision: number;
-  user: Types.ObjectId;
+  user: Types.ObjectId | null;
+  guestId?: string;
+  guestSlot?: number;
   status: TripStatus;
   prompt: string;
   badges: string[];
@@ -424,9 +426,11 @@ const tripSchema = new Schema<TripRecord>(
     user: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: function () { return !this.guestId; },
       index: true,
     },
+    guestId: { type: String, match: /^[a-f0-9]{32}$/, immutable: true },
+    guestSlot: { type: Number, min: 0, immutable: true },
     status: {
       type: String,
       enum: TRIP_STATUS_VALUES,
@@ -468,7 +472,15 @@ const tripSchema = new Schema<TripRecord>(
   { timestamps: true },
 );
 
+tripSchema.pre("validate", function () {
+  if (Boolean(this.user) === Boolean(this.guestId)) this.invalidate("user", "A trip must have exactly one owner");
+  if (this.guestId && (!Number.isInteger(this.guestSlot) || this.guestSlot! < 0)) this.invalidate("guestSlot", "A guest storage slot is required");
+});
 tripSchema.index({ user: 1, status: 1 });
+tripSchema.index({ guestId: 1, status: 1 });
+// The trip itself is the storage reservation: deletion releases exactly one slot.
+tripSchema.index({ guestId: 1, guestSlot: 1 }, { unique: true,
+  partialFilterExpression: { guestId: { $type: "string" }, guestSlot: { $type: "number" } } });
 tripSchema.index({ "sharing.tokenHash": 1 }, { unique: true, partialFilterExpression: { "sharing.tokenHash": { $type: "string" } } });
 tripSchema.index({ user: 1, fixtureKey: 1 });
 

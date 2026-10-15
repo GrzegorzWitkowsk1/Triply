@@ -1,4 +1,5 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useIdentityMutation as useMutation } from "./useIdentityMutation";
+import { useQueryClient } from "@tanstack/react-query";
 import type { TripDetail, TripWeatherRefresh } from "@triply/shared";
 import { refreshTripWeather } from "../api/trips";
 import { tripQueryKey } from "./useTrips";

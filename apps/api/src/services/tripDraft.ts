@@ -1,3 +1,5 @@
+import { ownerFilter, storedOwner, guestOwnerId } from "../middleware/tripIdentity.js";
+import { validateGuestDuration } from "./guestLimits.js";
 import { budgetData } from "./budgetSummary.js";
 import { assessTripQuality } from "./tripQualityService.js";
 import {
@@ -20,7 +22,6 @@ import {
   type TripSummary,
   type WeatherAvailability,
 } from "@triply/shared";
-import { Types } from "mongoose";
 import { fetchAttractions } from "./attractions.js";
 import { DestinationResolutionError, resolveDestination } from "./location.js";
 import { clusterPois, normalizeDays } from "./poiClustering.js";
@@ -204,6 +205,7 @@ export function mergeConfirmedFields(
 
 export interface UpsertTripDraftInput {
   userId: string;
+  draftId?: string;
   prompt: string;
   badges: string[];
   analysis: TripAnalysis;
@@ -402,12 +404,15 @@ export async function backfillTripAttractions(trip: TripDocument): Promise<void>
 }
 
 export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<TripDocument> {
+  if (guestOwnerId(input.userId) && !input.draftId) throw new Error("Guest storage reservation required");
   const existing = await TripModel.findOne({
-    user: new Types.ObjectId(input.userId),
+    ...ownerFilter(input.userId),
+    ...(input.draftId ? { _id: input.draftId } : {}),
     status: "draft",
   }).exec();
 
   const incoming = tripAnalysisSchema.parse(input.analysis);
+  validateGuestDuration(input.userId, incoming);
   if (!incoming.location && existing && incoming.destination === existing.analysis.destination &&
       incoming.country === existing.analysis.country && tripLocationSchema.safeParse(existing.analysis.location).success) {
     incoming.location = toPlainAnalysis(existing.analysis).location;
@@ -435,7 +440,7 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
   );
 
   const draft = await TripModel.findOneAndUpdate(
-    { user: new Types.ObjectId(input.userId), status: "draft",
+    { ...ownerFilter(input.userId), status: "draft",
       ...(existing ? { _id: existing._id, updatedAt: existing.updatedAt } : {}) },
     {
       $set: {
@@ -470,6 +475,7 @@ export async function saveTripRequirements(
   regenerate = false,
 ): Promise<TripDocument> {
   const merged = mergeRequirements(draft.analysis, answers);
+  validateGuestDuration(storedOwner(draft), merged);
   if (answers.location === undefined &&
       (merged.destination !== draft.analysis.destination || merged.country !== draft.analysis.country)) {
     merged.location = null;
@@ -497,7 +503,7 @@ export async function saveTripRequirements(
   const saved = await TripModel.findOneAndUpdate(
     {
       _id: draft._id,
-      user: draft.user,
+      ...ownerFilter(storedOwner(draft)),
       status: { $in: regenerate ? ["draft", "failed", "ready"] : ["draft", "failed"] },
       updatedAt: (draft as TripDocument & { updatedAt: Date }).updatedAt,
     },

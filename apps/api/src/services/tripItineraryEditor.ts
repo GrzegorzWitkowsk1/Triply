@@ -1,3 +1,4 @@
+import { ownerFilter, storedOwner, guestOwnerId } from "../middleware/tripIdentity.js";
 import {
   itineraryEditRequestSchema, tripAttractionSchema,
   type ItineraryEditRequest, type ItineraryDay, type TripAttraction,
@@ -26,10 +27,10 @@ export class ItineraryEditError extends Error {
 }
 
 export async function loadEditableTrip(tripId: string, userId: string): Promise<TripDocument> {
-  if (!Types.ObjectId.isValid(tripId) || !Types.ObjectId.isValid(userId)) {
+  if (!Types.ObjectId.isValid(tripId) || (!guestOwnerId(userId) && !Types.ObjectId.isValid(userId))) {
     throw new ItineraryEditError("Trip not found", 404);
   }
-  const trip = await TripModel.findOne({ _id: new Types.ObjectId(tripId), user: new Types.ObjectId(userId) }).exec();
+  const trip = await TripModel.findOne({ _id: new Types.ObjectId(tripId), ...ownerFilter(userId) }).exec();
   if (!trip) throw new ItineraryEditError("Trip not found", 404);
   if (trip.status !== "ready" || !trip.itinerary) {
     throw new ItineraryEditError("Generate the itinerary before editing it.");
@@ -77,7 +78,7 @@ export async function itineraryCandidates(
       for (const candidate of additions) {
         // Deduplicate by identity atomically, even when simultaneous discoveries
         // return different metadata for the same upstream place.
-        await TripModel.updateOne({ _id: trip._id, user: trip.user,
+        await TripModel.updateOne({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
           attractions: { $not: { $elemMatch: { $or: [
             { placeId: candidate.placeId }, { lat: candidate.lat, lng: candidate.lng },
           ] } } },
@@ -301,13 +302,13 @@ export async function editTripItinerary(tripId: string, userId: string, input: I
   }
   // Compare after the same Mongoose defaults/casting used by persistence.
   if (JSON.stringify(new TripModel({ itinerary }).toObject().itinerary) === JSON.stringify(trip.toObject().itinerary)) {
-    const unchanged = await TripModel.findOne({ _id: trip._id, user: trip.user,
+    const unchanged = await TripModel.findOne({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
       status: "ready", itineraryVersion: parsed.data.expectedVersion }).exec();
     if (!unchanged) throw new ItineraryEditError("The itinerary has changed. Refresh it and try again.", 409);
     return { trip: unchanged, itineraryVersion: unchanged.itineraryVersion, affectedDayIndices,
       warnings: itinerary.days.filter(day => affectedDayIndices.includes(day.dayIndex)).flatMap(day => day.warnings) };
   }
-  const updated = await TripModel.findOneAndUpdate({ _id: trip._id, user: trip.user,
+  const updated = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
     status: "ready", itineraryVersion: parsed.data.expectedVersion }, {
     $set: { itinerary, regeneration: null }, $inc: { itineraryVersion: 1 },
   }, { new: true, runValidators: true }).exec();

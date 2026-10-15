@@ -1,3 +1,5 @@
+import { currentTripOwner } from "./tripIdentity.js";
+import { getSessionGuest } from "../config/session.js";
 import { createHash } from "node:crypto";
 import { isIPv6 } from "node:net";
 import { Address6 } from "ip-address";
@@ -15,7 +17,8 @@ export function createLimiters(app: FastifyInstance) {
       reply.header("RateLimit", `"${name}"; r=${result.remaining}; t=${result.ttlInSeconds}`);
       reply.header("RateLimit-Policy", `"${name}"; q=${max}; w=${minutes * 60}; pk=:${partition}:`);
       if (result.isExceeded) {
-        await reply.header("Retry-After", result.ttlInSeconds).code(429).send({ error: message });
+        await reply.header("Retry-After", result.ttlInSeconds).code(429).send({ error: message,
+          ...(getSessionGuest(request) ? { code: "GUEST_RATE_LIMITED" } : {}) });
       }
     };
   }
@@ -27,7 +30,7 @@ export function createLimiters(app: FastifyInstance) {
       if (address.isMapped4() || (address.is4() && address.isInSubnet(new Address6("::/96")))) return address.to4().correctForm();
       return new Address6(`${ip}/56`).networkForm();
     }, "Too many authentication attempts. Try again later."),
-    planning: limiter(20, 10, request => `user:${request.user?.id}`,
+    planning: limiter(20, 10, request => currentTripOwner(request),
       "Too many planning requests. Wait a few minutes and try again."),
   };
 }

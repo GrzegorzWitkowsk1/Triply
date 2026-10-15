@@ -1,4 +1,6 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useIdentityMutation as useMutation } from "./useIdentityMutation";
+import { GUEST_USAGE_KEY } from "./useGuestUsage";
+import { useQueryClient } from "@tanstack/react-query";
 import type { TripDetail } from "@triply/shared";
 import { ApiError } from "../api/client";
 import { confirmTrip, generateTrip, getTrip } from "../api/trips";
@@ -8,6 +10,7 @@ export function useConfirmTrip() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    onSettled: () => { void queryClient.invalidateQueries({ queryKey: GUEST_USAGE_KEY }); },
     mutationFn: (id: string) => confirmTrip(id),
     onSuccess: (trip) => {
       queryClient.setQueryData(tripQueryKey(trip.id), trip);
@@ -20,6 +23,7 @@ export function useGenerateTrip() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    onSettled: () => { void queryClient.invalidateQueries({ queryKey: GUEST_USAGE_KEY }); },
     mutationFn: generateTripOnce,
     onSuccess: (trip) => {
       queryClient.setQueryData(tripQueryKey(trip.id), trip);

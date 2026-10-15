@@ -14,6 +14,8 @@ export interface SessionCookie {
 export interface SessionData {
   cookie: SessionCookie;
   userId?: string;
+  guestMigrationId?: string;
+  guest?: { id: string; createdAt: string };
   [key: string]: unknown;
 }
 interface SessionRecord {
@@ -36,7 +38,11 @@ export function createMongoSessionStore() {
     },
     async get(id: string): Promise<SessionData | null> {
       const record = await collection.findOne({ _id: id, $or: [{ expires: { $exists: false } }, { expires: { $gt: new Date() } }] });
-      return record ? JSON.parse(record.session) as SessionData : null;
+      if (!record) return null;
+      const data = JSON.parse(record.session) as SessionData;
+      // Guest API expiry reflects authoritative storage expiry after lazy touches.
+      if (data.guest && record.expires) data.cookie.expires = record.expires.toISOString();
+      return data;
     },
     async save(id: string, data: SessionData): Promise<void> {
       await collection.updateOne({ _id: id }, { $set: {
@@ -44,7 +50,7 @@ export function createMongoSessionStore() {
       } }, { upsert: true });
     },
     async touch(id: string, expires: Date): Promise<void> {
-      await collection.updateOne({ _id: id, $or: [
+      await collection.updateOne({ _id: id, expires: { $gt: new Date() }, $or: [
         { lastModified: { $exists: false } }, { lastModified: { $lte: new Date(Date.now() - TOUCH_INTERVAL_MS) } },
       ] }, { $set: { expires, lastModified: new Date() } });
     },

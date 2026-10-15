@@ -24,7 +24,9 @@ import { TripModel } from "../models/Trip.js";
 import { recoverTripDestination, validateGenerationRequirements } from "../services/tripDestination.js";
 import { refreshTripWeather, toWeatherRefresh } from "../services/tripWeather.js";
 import { registerExpenseRoutes } from "./expenses.js";
-import { currentUserId } from "../middleware/auth.js";
+import { currentTripOwner, ownerFilter } from "../middleware/tripIdentity.js";
+import { guestOwnerId } from "../middleware/tripIdentity.js";
+import { guestOperation, reserveGuestDraft, validateGuestDuration } from "../services/guestLimits.js";
 import {
   backfillTripAttractions,
   backfillTripWeather,
@@ -65,9 +67,17 @@ import {
 export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAsyncHookHandler): void {
   registerExpenseRoutes(app);
 
+  app.delete<HttpRoute>("/trips/:id", async (req, res) => {
+    const id = tripIdParam(req);
+    if (!id) return res.code(404).send({ error: "Trip not found" });
+    const deleted = await TripModel.findOneAndDelete({ _id: id, ...ownerFilter(currentTripOwner(req)) }).exec();
+    if (!deleted) return res.code(404).send({ error: "Trip not found" });
+    return res.code(204).send();
+  });
+
   for (const path of ["/trips/:id/assistant/conversations", "/trips/:id/assistant/conversations/:conversationId"]) app.get<HttpRoute>(path, async (req, res) => {
     try {
-      return res.send(await getAssistantConversation(tripIdParam(req) ?? "", currentUserId(req), typeof req.params.conversationId === "string" ? req.params.conversationId : undefined));
+      return res.send(await getAssistantConversation(tripIdParam(req) ?? "", currentTripOwner(req), typeof req.params.conversationId === "string" ? req.params.conversationId : undefined));
     } catch (error) {
       if (!(error instanceof ItineraryEditError)) throw error;
       return res.code(error.status).send({ error: error.message });
@@ -77,7 +87,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
     async (req, res) => {
     const parsed = assistantMessageRequestSchema.safeParse(req.body);
     if (!parsed.success) { return res.code(400).send({ error: "Enter a message of 1–2000 characters and valid conversation/day identifiers." }); }
-    try { return res.send(await sendAssistantMessage(tripIdParam(req) ?? "", currentUserId(req), parsed.data)); }
+    try { return res.send(await sendAssistantMessage(tripIdParam(req) ?? "", currentTripOwner(req), parsed.data)); }
     catch (error) {
       if (!(error instanceof ItineraryEditError)) throw error;
       return res.code(error.status).send({ error: error.message });
@@ -86,7 +96,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
   app.post<HttpRoute>("/trips/:id/assistant/actions/:previewId/apply", async (req, res) => {
     const previewId = req.params.previewId;
     if (typeof previewId !== "string" || !/^[a-f\d-]{36}$/i.test(previewId)) { return res.code(400).send({ error: "Invalid preview" }); }
-    try { const result = await confirmAssistantEdit(tripIdParam(req) ?? "", currentUserId(req), previewId); return res.send({ ...result, trip: toTripDetail(result.trip) }); }
+    try { const result = await confirmAssistantEdit(tripIdParam(req) ?? "", currentTripOwner(req), previewId); return res.send({ ...result, trip: toTripDetail(result.trip) }); }
     catch (error) {
       if (!(error instanceof ItineraryEditError)) throw error;
       return res.code(error.status).send({ error: error.message });
@@ -95,7 +105,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
   app.delete<HttpRoute>("/trips/:id/assistant/actions/:previewId", async (req, res) => {
     const previewId = req.params.previewId;
     if (typeof previewId !== "string" || !/^[a-f\d-]{36}$/i.test(previewId)) { return res.code(400).send({ error: "Invalid preview" }); }
-    try { await cancelAssistantAction(tripIdParam(req) ?? "", currentUserId(req), previewId); return res.code(204).send(); }
+    try { await cancelAssistantAction(tripIdParam(req) ?? "", currentTripOwner(req), previewId); return res.code(204).send(); }
     catch (error) {
       if (!(error instanceof ItineraryEditError)) throw error;
       return res.code(error.status).send({ error: error.message });
@@ -108,7 +118,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       return res.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid edit operation" });
     }
     try {
-      const result = await editTripItinerary(tripIdParam(req) ?? "", currentUserId(req), parsed.data);
+      const result = await editTripItinerary(tripIdParam(req) ?? "", currentTripOwner(req), parsed.data);
       return res.send({ ...result, trip: toTripDetail(result.trip) });
     } catch (error) {
       if (!(error instanceof ItineraryEditError)) throw error;
@@ -123,7 +133,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       return res.code(400).send({ error: "Invalid attraction search" });
     }
     try {
-      return res.send(await itineraryCandidates(tripIdParam(req) ?? "", currentUserId(req), parsed.data.search, parsed.data.discover));
+      return res.send(await itineraryCandidates(tripIdParam(req) ?? "", currentTripOwner(req), parsed.data.search, parsed.data.discover));
     } catch (error) {
       if (!(error instanceof ItineraryEditError)) throw error;
       return res.code(error.status).send({ error: error.message });
@@ -143,6 +153,10 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       }
 
       const request: AnalyzeTripRequest = parsed.data;
+      const owner = currentTripOwner(req);
+      // Reserve an actual draft before parsing/geocoding; unique slots fence concurrent creates.
+      const reservation = guestOwnerId(owner) ? await reserveGuestDraft(owner, request.prompt, request.badges) : null;
+      try {
       const preferences = req.user?.preferences ?? DEFAULT_PROFILE_PREFERENCES;
       const badges = Object.prototype.hasOwnProperty.call(req.body, "badges") ? request.badges : preferences.interests;
       const parsedAnalysis = await aiService.parseTrip({ prompt: request.prompt, badges });
@@ -152,13 +166,18 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       }, badges);
 
       const draft = await upsertTripDraft({
-        userId: currentUserId(req),
+        userId: owner,
+        ...(reservation ? { draftId: reservation.id } : {}),
         prompt: request.prompt,
         badges,
         analysis,
       });
 
       return res.send(toTripAnalysisResult(draft));
+      } catch (error) {
+        if (reservation) await TripModel.deleteOne({ _id: reservation._id, ...ownerFilter(owner) });
+        throw error;
+      }
     },
   );
 
@@ -180,7 +199,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
 
       const draft = await TripModel.findOne({
         _id: new Types.ObjectId(id),
-        user: new Types.ObjectId(currentUserId(req)),
+        ...ownerFilter(currentTripOwner(req)),
       }).exec();
 
       if (!draft) {
@@ -212,8 +231,8 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         return res.code(400).send({ error: "That trip filter is not valid." });
       }
 
-      const filter: { user: Types.ObjectId; status?: TripStatus } = {
-        user: new Types.ObjectId(currentUserId(req)),
+      const filter: ReturnType<typeof ownerFilter> & { status?: TripStatus } = {
+        ...ownerFilter(currentTripOwner(req)),
       };
 
       if (parsed.data.status) {
@@ -238,7 +257,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
 
       const trip = await TripModel.findOne({
         _id: new Types.ObjectId(id),
-        user: new Types.ObjectId(currentUserId(req)),
+        ...ownerFilter(currentTripOwner(req)),
       }).exec();
 
       if (!trip) {
@@ -259,7 +278,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
     async (req, res) => {
       const id = tripIdParam(req);
       if (!id) { return res.code(404).send({ error: "Trip not found" }); }
-      const trip = await TripModel.findOne({ _id: new Types.ObjectId(id), user: new Types.ObjectId(currentUserId(req)) }).exec();
+      const trip = await TripModel.findOne({ _id: new Types.ObjectId(id), ...ownerFilter(currentTripOwner(req)) }).exec();
       if (!trip) { return res.code(404).send({ error: "Trip not found" }); }
       const controller = new AbortController();
       const cancel = () => { if (!res.raw.writableEnded) controller.abort(); };
@@ -320,7 +339,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         return res.code(404).send({ error: TRIP_NOT_FOUND });
       }
 
-      const equipment = await getEquipment(id, currentUserId(req));
+      const equipment = await getEquipment(id, currentTripOwner(req));
 
       return res.send({ equipment });
     },
@@ -341,7 +360,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         return res.code(400).send({ error: "Enter an item name and a count between 1 and 999." });
       }
 
-      const item = await addEquipmentItem(id, currentUserId(req), parsed.data);
+      const item = await addEquipmentItem(id, currentTripOwner(req), parsed.data);
 
       return res.code(201).send(item);
     },
@@ -369,7 +388,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         return res.code(400).send({ error: "Enter a valid item name and count." });
       }
 
-      const item = await updateEquipmentItem(id, currentUserId(req), itemId, parsed.data);
+      const item = await updateEquipmentItem(id, currentTripOwner(req), itemId, parsed.data);
 
       return res.send(item);
     },
@@ -391,7 +410,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         return res.code(404).send({ error: ITEM_NOT_FOUND });
       }
 
-      await deleteEquipmentItem(id, currentUserId(req), itemId);
+      await deleteEquipmentItem(id, currentTripOwner(req), itemId);
 
       return res.code(204).send();
     },
@@ -408,7 +427,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
 
       const trip = await TripModel.findOne({
         _id: new Types.ObjectId(id),
-        user: new Types.ObjectId(currentUserId(req)),
+        ...ownerFilter(currentTripOwner(req)),
       }).exec();
 
       if (!trip) {
@@ -433,6 +452,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
 
   app.post<HttpRoute>(
     "/trips/:id/generate",
+    { preHandler: async (req, res) => { if (guestOwnerId(currentTripOwner(req))) await aiLimiter.call(app, req, res); } },
     async (req, res) => {
       const id = tripIdParam(req);
 
@@ -440,11 +460,11 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         return res.code(404).send({ error: "Trip not found" });
       }
 
-      const userId = currentUserId(req);
+      const userId = currentTripOwner(req);
 
       const existing = await TripModel.findOne({
         _id: new Types.ObjectId(id),
-        user: new Types.ObjectId(userId),
+        ...ownerFilter(userId),
       }).exec();
 
       if (!existing) {
@@ -457,6 +477,25 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       }
 
       validateGenerationRequirements(existing);
+      validateGuestDuration(userId, existing.analysis);
+      if (guestOwnerId(userId)) {
+        return res.send(await guestOperation(req, "generation", async start => {
+          // Claim first: a concurrent duplicate cannot start providers or consume a second allowance.
+          const claimed = await claimTripForGeneration(id, userId, existing.updatedAt);
+          if (!claimed) throw Object.assign(new Error("The trip changed or is already being generated. Reload it and try again."), { status: 409, expose: true });
+          try {
+            await start();
+            const resolved = await recoverTripDestination(claimed);
+            validateGenerationRequirements(resolved);
+            return toTripDetail(await runTripGeneration(resolved));
+          } catch (error) {
+            await markGenerationFailed(id, userId, GENERIC_GENERATION_ERROR, claimed.generation.startedAt);
+            if (error instanceof GenerationSupersededError) throw Object.assign(new Error("The trip changed during generation."), { status: 409, expose: true });
+            if (error && typeof error === "object" && "expose" in error) throw error;
+            throw Object.assign(new Error(error instanceof GenerationUnavailableError ? error.message : GENERIC_GENERATION_ERROR), { status: 502, expose: true });
+          }
+        }));
+      }
       const resolved = await recoverTripDestination(existing);
       // Validate the fresh snapshot too if another process completed recovery.
       validateGenerationRequirements(resolved);
@@ -513,7 +552,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
 
       const trip = await TripModel.findOne({
         _id: new Types.ObjectId(id),
-        user: new Types.ObjectId(currentUserId(req)),
+        ...ownerFilter(currentTripOwner(req)),
       }).exec();
 
       if (!trip) {
@@ -524,7 +563,32 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         return res.code(400).send({ error: "Generate the itinerary before regenerating a day." });
       }
 
+      if (!trip.itinerary.days.some(day => day.dayIndex === dayIndex)) return res.code(404).send({ error: "Day not found" });
+      validateGuestDuration(currentTripOwner(req), trip.analysis);
+
       const customInstructions = parsed.data.customInstructions?.trim() ?? "";
+      if (guestOwnerId(currentTripOwner(req))) {
+        const preview = async (start: () => Promise<void>) => {
+          let preferences = parsed.data.preferences;
+          let customInstructionWarning: string | null = null;
+          if (customInstructions) {
+            await start();
+            try { preferences = mergePreferences(preferences, await aiService.parseRegeneration({ customInstructions, selectedPreferences: preferences })); }
+            catch { customInstructionWarning = "We couldn't interpret your custom instructions, so we used your selected preferences."; }
+          }
+          return createDayRegenerationPreview({ trip, dayIndex, preferences, customInstructions,
+            variation: parsed.data.variation ?? 0, customInstructionWarning });
+        };
+        // Selected preferences use deterministic planning; only free-text interpretation invokes AI.
+        try {
+          return res.send(customInstructions ? await guestOperation(req, "day", preview) : await preview(async () => {}));
+        } catch (error) {
+          if (error instanceof TripDayNotFoundError) return res.code(404).send({ error: error.message });
+          if (error instanceof NoSuitableAlternativesError) return res.code(422).send({ error: error.message, warnings: error.warnings });
+          if (error instanceof RegenerationConflictError) return res.code(409).send({ error: error.message });
+          throw error;
+        }
+      }
       let preferences = parsed.data.preferences;
       let customInstructionWarning: string | null = null;
 
@@ -593,7 +657,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
 
       const trip = await TripModel.findOne({
         _id: new Types.ObjectId(id),
-        user: new Types.ObjectId(currentUserId(req)),
+        ...ownerFilter(currentTripOwner(req)),
       }).exec();
 
       if (!trip) {
@@ -602,7 +666,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
 
       try {
         const updated = await applyDayRegeneration(trip, parsed.data.previewId, dayIndex);
-        await recordAssistantRegeneration(id, currentUserId(req)).catch(() => { console.warn("[assistant] Applied regeneration; conversation confirmation could not be saved."); });
+        if (!guestOwnerId(currentTripOwner(req))) await recordAssistantRegeneration(id, currentTripOwner(req)).catch(() => { console.warn("[assistant] Applied regeneration; conversation confirmation could not be saved."); });
         return res.send(toTripDetail(updated));
       } catch (error) {
         if (error instanceof RegenerationNotFoundError) {

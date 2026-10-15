@@ -9,7 +9,9 @@ import type { TripStatus } from "@triply/shared";
 import MyTripCard from "../components/trips/MyTripCard";
 import { buildTripCards } from "../config/tripCards";
 import { TRIP_FILTERS, type TripFilter } from "../config/trips";
-import { useTrips } from "../hooks/useTrips";
+import { useTrips, useDeleteTrip } from "../hooks/useTrips";
+import { useGuestUsage } from "../hooks/useGuestUsage";
+import { Dialog, DialogTitle, DialogContent, DialogActions, Button } from "@mui/material";
 
 const FILTER_STATUS: Record<TripFilter, TripStatus | undefined> = {
   "All trips": undefined,
@@ -18,6 +20,10 @@ const FILTER_STATUS: Record<TripFilter, TripStatus | undefined> = {
 };
 
 export default function MyTripsPage() {
+  const usage = useGuestUsage();
+  const storageBlocked = usage.isGuest && (!usage.data || usage.data.tripCount >= usage.data.tripLimit);
+  const deletion = useDeleteTrip();
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const navigate = useNavigate();
   const [filter, setFilter] = useState<TripFilter>("All trips");
 
@@ -49,6 +55,7 @@ export default function MyTripsPage() {
           <button
             type="button"
             className="btn btn-primary my-trips-add-btn"
+            disabled={storageBlocked}
             onClick={() => navigate("/home", { state: { focusPrompt: true } })}
           >
             <Add fontSize="small" />
@@ -80,12 +87,15 @@ export default function MyTripsPage() {
           )}
 
           {trips.map((trip, i) => (
-            <MyTripCard key={trip.id} trip={trip} isFirst={i === 0} />
+            <div key={trip.id}><MyTripCard trip={trip} isFirst={i === 0} />
+              <button type="button" className="auth-link" onClick={() => { deletion.reset(); setDeleteId(trip.id); }} aria-label={`Delete trip ${trip.city}`}>Delete trip</button>
+            </div>
           ))}
 
           <button
             type="button"
             className="empty-trip"
+            disabled={storageBlocked}
             onClick={() => navigate("/home", { state: { focusPrompt: true } })}
           >
             <span className="empty-trip-icon">
@@ -115,6 +125,15 @@ export default function MyTripsPage() {
           </div>
         </div>
       </div>
+      <Dialog open={deleteId !== null} onClose={() => { if (!deletion.isPending) setDeleteId(null); }} aria-labelledby="delete-trip-title">
+        <DialogTitle id="delete-trip-title">Delete this trip?</DialogTitle>
+        <DialogContent>This permanently deletes the trip and its public share link. Deletion does not restore AI quota.
+          {deletion.error && <p role="alert">{deletion.error.message}</p>}
+        </DialogContent>
+        <DialogActions><Button disabled={deletion.isPending} onClick={() => setDeleteId(null)}>Cancel</Button>
+          <Button color="error" disabled={deletion.isPending} onClick={() => { if (deleteId) deletion.mutate(deleteId, { onSuccess: () => setDeleteId(null) }); }}>{deletion.isPending ? "Deleting…" : "Delete trip"}</Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 }

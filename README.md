@@ -205,6 +205,8 @@ docker compose up -d
 bun run dev
 ```
 
+The local MongoDB service runs as a single-node replica set (`rs0`) on port 27018 so guest-to-account imports can use transactions. Its health check initializes the replica set without deleting the existing data volume. If using another MongoDB deployment, imports require a replica set or sharded cluster; standalone deployments keep trips unchanged and return a retryable import error.
+
 | Service | Local address |
 | --- | --- |
 | Application | http://localhost:5173 |

@@ -1,5 +1,5 @@
+import { useIdentityMutation as useMutation } from "./useIdentityMutation";
 import {
-  useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -57,8 +57,8 @@ export function useUpdateEquipmentItem(tripId: string) {
       input: UpdateTripEquipmentItem;
     }) => updateEquipmentItem(tripId, itemId, input),
 
-    onMutate: async ({ itemId, input }) => {
-      await queryClient.cancelQueries({ queryKey: key });
+    onMutate: ({ itemId, input }) => {
+      void queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient.getQueryData<TripEquipmentItem[]>(key);
 
       queryClient.setQueryData<TripEquipmentItem[]>(key, (current) =>
@@ -88,8 +88,8 @@ export function useDeleteEquipmentItem(tripId: string) {
   return useMutation({
     mutationFn: (itemId: string) => deleteEquipmentItem(tripId, itemId),
 
-    onMutate: async (itemId) => {
-      await queryClient.cancelQueries({ queryKey: key });
+    onMutate: (itemId) => {
+      void queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient.getQueryData<TripEquipmentItem[]>(key);
 
       queryClient.setQueryData<TripEquipmentItem[]>(key, (current) =>

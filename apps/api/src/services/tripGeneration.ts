@@ -1,3 +1,4 @@
+import { ownerFilter, storedOwner } from "../middleware/tripIdentity.js";
 import {
   addDays,
   tripLocationSchema,
@@ -58,7 +59,7 @@ export async function claimTripForGeneration(
   return TripModel.findOneAndUpdate(
     {
       _id: new Types.ObjectId(tripId),
-      user: new Types.ObjectId(userId),
+      ...ownerFilter(userId),
       ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
       $or: [
         { status: { $in: ["draft", "failed"] } },
@@ -85,7 +86,7 @@ export async function markGenerationFailed(
 ): Promise<boolean> {
   const result = await TripModel.updateOne(
     {
-      _id: new Types.ObjectId(tripId), user: new Types.ObjectId(userId),
+      _id: new Types.ObjectId(tripId), ...ownerFilter(userId),
       status: "generating", "generation.startedAt": startedAt,
     },
     { $set: { status: "failed", "generation.error": message } },
@@ -253,7 +254,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
   console.info({ event: "trip-generation", stage: "validation", durationMs: Math.round(performance.now() - started), routingSource: result.routing.source, issueCount: quality.issues.length, repairAttempts: repaired.attempts, valid: quality.valid, dimensions: quality.dimensions });
   if (!quality.valid) throw new GenerationUnavailableError(`The itinerary has scheduling conflicts. ${quality.issues.filter(i => i.severity === "error").map(i => i.message).slice(0, 3).join(" ")}`);
   const saved = await TripModel.findOneAndUpdate(
-    { _id: trip._id, user: trip.user, status: "generating", "generation.startedAt": trip.generation.startedAt },
+    { _id: trip._id, ...ownerFilter(storedOwner(trip)), status: "generating", "generation.startedAt": trip.generation.startedAt },
     {
       $set: {
         weather: weather.days,

@@ -518,7 +518,7 @@ describe("manual itinerary editing", () => {
     expect((await other.post(`/api/trips/${trip.id}/itinerary/edit`).set("Origin", env.WEB_ORIGIN).send(payload)).status).toBe(404);
     expect((await other.post(`/api/trips/${trip.id}/itinerary/candidates`).set("Origin", env.WEB_ORIGIN).send({})).status).toBe(404);
     await expect(editTripItinerary(trip.id, new mongoose.Types.ObjectId().toString(), payload)).rejects.toMatchObject({ status: 404 });
-    expect((await TripModel.findById(trip._id))?.user.toString()).toBe(userId);
+    expect((await TripModel.findById(trip._id))?.user!.toString()).toBe(userId);
   });
 
   it("rejects stale versions and allows only one simultaneous writer", async () => {

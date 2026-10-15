@@ -5,14 +5,15 @@ import type { HttpRoute } from "../http/types.js";
 import { z } from "zod";
 import {
   destroySession,
-  regenerateSession,
-  saveSession,
   sessionCookieOptions,
   SESSION_COOKIE_NAME,
-  setSessionUserId,
+  getSessionUserId,
+  getSessionGuest,
+  startGuestSession,
 } from "../config/session.js";
 import { requireAuth } from "../middleware/auth.js";
 import { UserModel, toPublicUser } from "../models/User.js";
+import { authenticateWithGuestHandoff } from "../services/guestMigration.js";
 
 const emailSchema = z.string().trim().email().max(254);
 const registerSchema = z.object({
@@ -88,9 +89,7 @@ export function registerAuthRoutes(app: FastifyInstance, authLimiter: preHandler
         throw error;
       }
 
-      await regenerateSession(req);
-      setSessionUserId(req, user._id.toString());
-      await saveSession(req);
+      await authenticateWithGuestHandoff(req, user._id.toString());
 
       return res.code(201).send({ user: toPublicUser(user) });
     },
@@ -116,9 +115,7 @@ export function registerAuthRoutes(app: FastifyInstance, authLimiter: preHandler
         return res.code(401).send({ error: "Invalid email or password." });
       }
 
-      await regenerateSession(req);
-      setSessionUserId(req, user._id.toString());
-      await saveSession(req);
+      await authenticateWithGuestHandoff(req, user._id.toString());
 
       return res.send({ user: toPublicUser(user) });
     },
@@ -139,8 +136,39 @@ export function registerAuthRoutes(app: FastifyInstance, authLimiter: preHandler
     },
   );
 
-  app.get<HttpRoute>("/api/auth/session", { preHandler: requireAuth }, (req, res) => {
+  app.post<HttpRoute>("/api/auth/guest", { preHandler: authLimiter }, async (req, res) => {
     res.header("Cache-Control", "no-store");
+    if (getSessionUserId(req)) {
+      await requireAuth(req, res);
+      if (res.sent) return;
+      return res.send({ status: "authenticated", user: req.user });
+    }
+    if (!getSessionGuest(req)) await startGuestSession(req);
+    return res.send({ status: "guest", guest: getSessionGuest(req) });
+  });
+
+  app.post<HttpRoute>("/api/auth/guest/end", async (req, res) => {
+    if (getSessionGuest(req)) {
+      await destroySession(req);
+      res.clearCookie(SESSION_COOKIE_NAME, sessionCookieOptions);
+    }
+    return res.code(204).send();
+  });
+
+  app.get<HttpRoute>("/api/auth/session", async (req, res) => {
+    res.header("Cache-Control", "no-store");
+    // Opt-in discriminated contract preserves existing user-only clients.
+    const identity = (req.query as { identity?: string }).identity === "1";
+    if (identity && !getSessionUserId(req)) {
+      const guest = getSessionGuest(req);
+      return res.send(guest ? { status: "guest", guest } : {
+        status: "anonymous",
+        ...(req.cookies[SESSION_COOKIE_NAME]?.startsWith("s:g_") ? { reason: "GUEST_SESSION_EXPIRED" } : {}),
+      });
+    }
+    await requireAuth(req, res);
+    if (res.sent) return;
+    if (identity) return res.send({ status: "authenticated", user: req.user });
     return res.send({ user: req.user });
   });
 }

@@ -1,3 +1,4 @@
+import { ownerFilter, storedOwner, guestOwnerId } from "../middleware/tripIdentity.js";
 import { expenseInputSchema, budgetAllocationsSchema, type BudgetAllocations, type ExpenseInput, type ExpenseOperation } from "@triply/shared";
 import { TripModel, type TripDocument } from "../models/Trip.js";
 import { ItineraryEditError } from "./tripItineraryEditor.js";
@@ -5,8 +6,8 @@ import { summarizeBudget, totalBudgetMinor } from "./budgetSummary.js";
 import { Types } from "mongoose";
 
 export async function loadBudgetTrip(tripId: string, userId: string): Promise<TripDocument> {
-  if (!Types.ObjectId.isValid(tripId) || !Types.ObjectId.isValid(userId)) throw new ItineraryEditError("Trip not found", 404);
-  const trip = await TripModel.findOne({ _id: tripId, user: userId });
+  if (!Types.ObjectId.isValid(tripId) || (!guestOwnerId(userId) && !Types.ObjectId.isValid(userId))) throw new ItineraryEditError("Trip not found", 404);
+  const trip = await TripModel.findOne({ _id: tripId, ...ownerFilter(userId) });
   if (!trip) throw new ItineraryEditError("Trip not found", 404);
   return trip;
 }
@@ -48,7 +49,7 @@ export async function mutateExpense(tripId: string, userId: string, operation: E
   }
   if (current.length > 2000) throw new ItineraryEditError("Expense limit reached");
   try { summarizeBudget({ ...trip.toObject(), expenses: current }); } catch { throw new ItineraryEditError("Combined expenses exceed the supported money range"); }
-  const updated = await TripModel.findOneAndUpdate({ _id: trip._id, user: trip.user,
+  const updated = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
     $and: [{ $or: [{ budgetRevision: revision }, ...(revision === 0 ? [{ budgetRevision: { $exists: false } }] : [])] },
       { $or: [{ itineraryVersion: trip.itineraryVersion ?? 0 }, ...(!trip.itineraryVersion ? [{ itineraryVersion: { $exists: false } }] : [])] }],
   }, { $set: { expenses: current }, $inc: { budgetRevision: 1 } }, { new: true, runValidators: true });
@@ -62,7 +63,7 @@ export async function updateBudgetAllocations(tripId: string, userId: string, al
   const sum = Object.values(parsed.data).reduce((total, value) => total + BigInt(value!), 0n);
   const budget = totalBudgetMinor(trip);
   if (sum > BigInt(Number.MAX_SAFE_INTEGER) || (sum > 0 && (budget === null || sum > BigInt(budget)))) throw new ItineraryEditError("Allocations must fit a known trip budget");
-  const updated = await TripModel.findOneAndUpdate({ _id: trip._id, user: trip.user,
+  const updated = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
     $or: [{ budgetRevision: revision }, ...(revision === 0 ? [{ budgetRevision: { $exists: false } }] : [])],
     "analysis.budget": trip.analysis.budget, "analysis.travelers": trip.analysis.travelers,
   }, { $set: { budgetAllocations: parsed.data, budgetAllocationCurrency: trip.analysis.budget.currency }, $inc: { budgetRevision: 1 } }, { new: true, runValidators: true });

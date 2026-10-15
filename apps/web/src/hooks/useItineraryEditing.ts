@@ -1,4 +1,5 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useIdentityMutation as useMutation } from "./useIdentityMutation";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ItineraryEditRequest } from "@triply/shared";
 import { editTripItinerary } from "../api/trips";
 import { ApiError } from "../api/client";
@@ -8,8 +9,8 @@ export function useItineraryEditing() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ tripId, ...request }: ItineraryEditRequest & { tripId: string }) => editTripItinerary(tripId, request),
-    onSuccess: async (result) => {
-      await client.cancelQueries({ queryKey: tripQueryKey(result.trip.id) });
+    onSuccess: (result) => {
+      void client.cancelQueries({ queryKey: tripQueryKey(result.trip.id) });
       client.setQueryData(tripQueryKey(result.trip.id), result.trip);
       void client.invalidateQueries({ queryKey: TRIPS_KEY });
       void client.invalidateQueries({ queryKey: ["itinerary-candidates", result.trip.id] });

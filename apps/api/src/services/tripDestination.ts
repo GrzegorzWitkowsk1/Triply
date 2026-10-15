@@ -1,3 +1,4 @@
+import { ownerFilter, storedOwner } from "../middleware/tripIdentity.js";
 import { isIsoDate, LIMITS, tripLocationSchema } from "@triply/shared";
 import { TripModel, type TripDocument } from "../models/Trip.js";
 import { DestinationResolutionError, resolveDestination } from "./location.js";
@@ -34,14 +35,14 @@ async function recover(trip: TripDocument): Promise<TripDocument> {
   const { destination, country } = trip.analysis;
   const location = await resolveDestination(destination ?? "", country);
   const saved = await TripModel.findOneAndUpdate({
-    _id: trip._id, user: trip.user, updatedAt: trip.updatedAt,
+    _id: trip._id, ...ownerFilter(storedOwner(trip)), updatedAt: trip.updatedAt,
     "analysis.destination": destination, "analysis.country": country,
     "analysis.location.lat": trip.analysis.location?.lat ?? null,
     "analysis.location.lng": trip.analysis.location?.lng ?? null,
   }, { $set: { "analysis.location": location } }, { new: true, runValidators: true }).exec();
   if (saved) return saved;
   // Another process may have recovered the same destination. Reuse its valid result.
-  const current = await TripModel.findOne({ _id: trip._id, user: trip.user }).exec();
+  const current = await TripModel.findOne({ _id: trip._id, ...ownerFilter(storedOwner(trip)) }).exec();
   if (current && current.analysis.destination === destination && current.analysis.country === country &&
       tripLocationSchema.safeParse(current.analysis.location).success) return current;
   throw new DestinationResolutionError("The trip changed during destination lookup. Reload it and try again.", 409);

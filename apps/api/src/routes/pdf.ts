@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { Types } from "mongoose";
 import { TripModel } from "../models/Trip.js";
-import { currentUserId } from "../middleware/auth.js";
+import { currentTripOwner, ownerFilter } from "../middleware/tripIdentity.js";
 import { findPublicTrip, hashShareToken, PUBLIC_TRIP_PROJECTION, toPublicTrip } from "./sharing.js";
 import { PdfExportError, pdfFilename, renderTripPdf, reservePdfExport } from "../services/tripPdf.js";
 
@@ -17,7 +17,7 @@ export function registerPrivatePdfRoutes(app: FastifyInstance): void {
     config: { rateLimit: { max: 10, timeWindow: "1 minute" } }, onRequest: async (_req, reply) => { headers(reply); },
   }, async (req, reply) => {
     if (!Types.ObjectId.isValid(req.params.id)) return reply.code(404).send({ error: "Trip not found" });
-    const trip = await TripModel.findOne({ _id: new Types.ObjectId(req.params.id), user: new Types.ObjectId(currentUserId(req)) }).select(PUBLIC_TRIP_PROJECTION).exec();
+    const trip = await TripModel.findOne({ _id: new Types.ObjectId(req.params.id), ...ownerFilter(currentTripOwner(req)) }).select(PUBLIC_TRIP_PROJECTION).exec();
     if (!trip) return reply.code(404).send({ error: "Trip not found" });
     let release: (() => void) | undefined;
     try {
