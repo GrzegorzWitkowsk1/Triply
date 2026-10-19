@@ -1,4 +1,5 @@
 import { ownerFilter, storedOwner, guestOwnerId } from "../middleware/tripIdentity.js";
+import { savedAttractionIdentity, savedAttractionPlace } from "./savedAttractionIdentity.js";
 import { validateGuestDuration } from "./guestLimits.js";
 import { budgetData } from "./budgetSummary.js";
 import { assessTripQuality } from "./tripQualityService.js";
@@ -74,6 +75,7 @@ function mergeInterests(current: string[], incoming: string[]): string[] {
 
 function toPlainAnalysis(stored: TripDocument["analysis"]): TripAnalysis {
   return {
+    destinationId: stored.destinationId ?? null,
     destination: stored.destination,
     country: stored.country,
     startDate: stored.startDate,
@@ -108,6 +110,7 @@ export function mergeRequirements(
 
   next.destination = applyText(next.destination, answers.destination);
   next.country = applyText(next.country, answers.country);
+  if (next.destination !== stored.destination || next.country !== stored.country) next.destinationId = null;
 
   if (answers.startDate !== undefined) {
     next.startDate = answers.startDate;
@@ -632,7 +635,7 @@ function toTripItinerary(trip: TripDocument, generatedAt: string | null): TripIt
         ...activity,
         warnings: activity.warnings ? [...activity.warnings] : undefined,
       })),
-      stops: day.stops.map((stop) => ({ ...stop })),
+      stops: day.stops.map((stop) => ({ ...stop, attractionKey: savedAttractionIdentity(savedAttractionPlace(stop, trip.attractions)).attractionKey })),
       geometry: day.geometry ?? null,
       segments: day.segments.map((segment) => ({ ...segment })),
       totalVisitMinutes: day.totalVisitMinutes,

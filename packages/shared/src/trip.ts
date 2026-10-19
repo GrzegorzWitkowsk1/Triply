@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { destinationIdSchema } from "./saved.js";
 import { attractionOpeningHoursSchema } from "./openingHours.js";
 import { attractionAdmissionSchema, type AttractionAdmission, type AdmissionSummary } from "./admission.js";
 import { addDays, diffDaysInclusive, isAfter, isIsoDate } from "./dates.js";
@@ -74,6 +75,7 @@ export const tripBudgetSchema = z.object({
 export type TripBudget = z.infer<typeof tripBudgetSchema>;
 
 export const tripAnalysisSchema = z.object({
+  destinationId: destinationIdSchema.nullable().optional(),
   destination: z.string().trim().min(1).max(120).nullable(),
   country: z.string().trim().min(1).max(120).nullable(),
   startDate: isoDateSchema.nullable(),
@@ -124,6 +126,8 @@ export type TripAttraction = z.infer<typeof tripAttractionSchema>;
 
 /** A scheduled attraction as rendered on the timeline and map. */
 export interface ItineraryStop {
+  /** Server-derived global identity, independent of the itinerary item ID. */
+  attractionKey?: string;
   admission?: AttractionAdmission | null;
   placeId: string | null;
   name: string;
@@ -192,6 +196,7 @@ export const askableFieldSchema = z.enum(ASKABLE_FIELDS);
 
 export const analyzeTripRequestSchema = z
   .object({
+    destinationId: destinationIdSchema.optional(),
     prompt: z.string().trim().max(LIMITS.prompt).default(""),
     badges: z.array(z.string().trim().min(1).max(40)).max(LIMITS.badges).default([]),
     pace: z.enum(PACE_VALUES).optional(),

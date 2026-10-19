@@ -4,6 +4,8 @@ import { findCityPhoto } from "../../config/cityPhotos";
 import type { HomeTripCardModel } from "../../config/tripCards";
 import MediaFallback from "./MediaFallback";
 import PhotoAttribution from "./PhotoAttribution";
+import { findDestinationByCity } from "@triply/shared";
+import DestinationSaveButton from "../DestinationSaveButton";
 
 interface TripCardProps {
   trip: HomeTripCardModel;
@@ -17,6 +19,7 @@ function formatBudget(n: number): string {
 export default function TripCard({ trip, isFirst }: TripCardProps) {
   const navigate = useNavigate();
   const photo = findCityPhoto(trip.city, trip.country);
+  const destination = findDestinationByCity(trip.city, trip.country);
 
   const hasProgress =
     trip.activities !== undefined &&
@@ -32,6 +35,7 @@ export default function TripCard({ trip, isFirst }: TripCardProps) {
   return (
     <article className="trip-card">
       <div className="trip-card-media">
+        {destination && <DestinationSaveButton destinationId={destination.id} name={destination.city} />}
         {photo ? (
           <>
             <img src={photo.imageUrl} alt={`${trip.city}, ${trip.country}`} />

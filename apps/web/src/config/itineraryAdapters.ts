@@ -8,6 +8,7 @@ export interface TimelineTravel {
 }
 
 export interface TimelineAttraction {
+  attractionKey?: string;
   admission?: import("@triply/shared").AttractionAdmission | null;
   placeId?: string;
   kind: "attraction";
@@ -103,6 +104,7 @@ export function buildDayTimeline(day: ItineraryDay): TimelineEntry[] {
 
       return {
         kind: "attraction",
+        attractionKey: stop?.attractionKey,
         placeId: activity.placeId,
         key,
         stopIndex,

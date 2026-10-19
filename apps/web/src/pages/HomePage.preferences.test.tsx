@@ -17,6 +17,13 @@ beforeEach(() => {
 afterEach(cleanup);
 const page = () => <MemoryRouter><HomePage /></MemoryRouter>;
 describe("homepage profile defaults", () => {
+  it("prefills a saved destination without invoking AI and submits its canonical ID", async () => {
+    render(<MemoryRouter initialEntries={[{ pathname: "/home", state: { destinationId: "city-003" } }]}><HomePage /></MemoryRouter>);
+    await waitFor(() => expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("Plan a trip to Barcelona, Spain"));
+    expect(mocks.analyze).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Plan my trip" }));
+    expect(mocks.analyze).toHaveBeenCalledWith(expect.objectContaining({ destinationId: "city-003" }), expect.any(Object));
+  });
   it("preselects all saved preferences and sends them when planning", async () => {
     render(page());
     for (const name of ["Culture & museums", "Shopping"]) {

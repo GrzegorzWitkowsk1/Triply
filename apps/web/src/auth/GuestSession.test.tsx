@@ -55,7 +55,7 @@ describe("guest session UI", () => {
     const { fetcher } = mount(guest);
     expect(await screen.findByText("Guest", { exact: true })).toBeTruthy();
     fireEvent.click(screen.getByRole("link", { name: "My Trips" }));
-    expect(screen.getByText(/Explore, Saved and account features are not available/)).toBeTruthy();
+    expect(screen.getByText(/Account settings and notifications require an account/)).toBeTruthy();
     expect(screen.queryByText("Private planner")).toBeNull();
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[0][0]).toBe("/api/auth/session?identity=1");
@@ -93,9 +93,17 @@ describe("guest session UI", () => {
   it("reports guest creation failure and allows retry", async () => {
     const { fetcher } = mount({ status: "anonymous" }, "/login");
     const button = await screen.findByRole("button", { name: "Continue as guest" });
-    fetcher.mockRejectedValueOnce(new Error("Guest service unavailable"));
+    const normal = fetcher.getMockImplementation()!;
+    let failGuest = true;
+    fetcher.mockImplementation(async url => {
+      if (url === "/api/auth/guest" && failGuest) { failGuest = false; throw new Error("Guest service unavailable"); }
+      return normal(url);
+    });
     fireEvent.click(button);
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Guest service unavailable");
     expect((screen.getByRole("button", { name: "Continue as guest" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Continue as guest" }));
+    expect(await screen.findByText("Guest", { exact: true })).toBeTruthy();
+    expect(fetcher.mock.calls.filter(([url]) => url === "/api/auth/guest")).toHaveLength(2);
   });
 });

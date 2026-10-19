@@ -49,6 +49,7 @@ it.each(["guest", "authenticated"] as const)("clears private caches and cancels 
   await screen.findByText(status === "guest" ? "guest-a" : "user-a");
   client.setQueryData(["trips"], [{ id: "old-private-trip" }]);
   client.setQueryData(["guest", "usage"], { tripCount: 6 });
+  client.setQueryData(["saved", status === "guest" ? "guest:guest-a" : "user:user-a", "list"], { destinations: [{ destinationId: "city-001" }] });
   let finish!: (data: string[]) => void;
   const pending = client.fetchQuery({ queryKey: ["tripSharing", "old-trip"], queryFn: () => new Promise<string[]>(resolve => { finish = resolve; }) }).catch(() => undefined);
   session = { status: "authenticated", user: { id: "user-b", email: "b@example.com" } };
@@ -56,6 +57,7 @@ it.each(["guest", "authenticated"] as const)("clears private caches and cancels 
   await screen.findByText("user-b");
   await waitFor(() => expect(client.getQueryData(["trips"])).toBeUndefined());
   expect(client.getQueryData(["guest", "usage"])).toBeUndefined();
+  expect(client.getQueriesData({ queryKey: ["saved"] })).toEqual([]);
   finish(["late-private-response"]); await pending;
   expect(client.getQueryData(["tripSharing", "old-trip"])).toBeUndefined();
   expect(client.getQueryData(["auth", "session"])).toEqual(session);

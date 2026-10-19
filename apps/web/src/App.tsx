@@ -55,8 +55,8 @@ export default function App() {
           <Route path="/trips" element={<MyTripsPage />} />
           <Route path="/trips/:id" element={<TripPage />} />
           <Route path="/trips/:id/equipment" element={<TripEquipmentPage />} />
-          <Route path="/explore" element={<GuestAwarePage><ExplorePage /></GuestAwarePage>} />
-          <Route path="/saved" element={<GuestAwarePage><SavedPage /></GuestAwarePage>} />
+          <Route path="/explore" element={<ExplorePage />} />
+          <Route path="/saved" element={<SavedPage />} />
           <Route path="/notifications" element={<GuestAwarePage><NotificationsPage /></GuestAwarePage>} />
           <Route path="/profile" element={<GuestAwarePage><ProfilePage /></GuestAwarePage>} />
           <Route path="*" element={<Navigate to="/home" replace />} />

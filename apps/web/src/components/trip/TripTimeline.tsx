@@ -13,8 +13,10 @@ import {
 import type { TimelineEntry } from "../../config/itineraryAdapters";
 import TripAttractionCard from "./TripAttractionCard";
 import TripBreakCard from "./TripBreakCard";
+import AttractionSaveButton from "../AttractionSaveButton";
 
 interface TripTimelineProps {
+  tripId?: string;
   entries: TimelineEntry[];
   activeStop: number;
   onSelectStop: (stopIndex: number) => void;
@@ -23,7 +25,8 @@ interface TripTimelineProps {
   onAction?: (action: "remove" | "replace" | "move", attractionId: string) => void;
 }
 
-function EditableAttraction({ entry, selected, onSelect, saving, onAction }: {
+function EditableAttraction({ entry, selected, onSelect, saving, onAction, tripId }: {
+  tripId?: string;
   entry: TimelineAttraction; selected: boolean; onSelect: (index: number) => void;
   saving: boolean; onAction: NonNullable<TripTimelineProps["onAction"]>;
 }) {
@@ -36,6 +39,7 @@ function EditableAttraction({ entry, selected, onSelect, saving, onAction }: {
     <div className="timeline-body itinerary-editable-card">
       <TripAttractionCard entry={entry} selected={selected} onSelect={onSelect} />
       <div className="itinerary-card-controls">
+        {tripId && entry.attractionKey && <AttractionSaveButton tripId={tripId} attractionKey={entry.attractionKey} name={entry.name} />}
         <IconButton ref={sortable.setActivatorNodeRef} {...sortable.attributes} {...sortable.listeners}
           aria-label={`Reorder ${entry.name}`} disabled={saving} size="small" style={{ touchAction: "none" }}><DragIndicator /></IconButton>
         <IconButton aria-label={`Edit ${entry.name}`} disabled={saving} size="small" onClick={(event) => setAnchor(event.currentTarget)}><MoreVert /></IconButton>
@@ -50,6 +54,7 @@ function EditableAttraction({ entry, selected, onSelect, saving, onAction }: {
 }
 
 export default function TripTimeline({
+  tripId,
   entries,
   activeStop,
   onSelectStop,
@@ -126,7 +131,7 @@ export default function TripTimeline({
         const selected = entry.stopIndex >= 0 && entry.stopIndex === activeStop;
 
         if (onAction && onReorder && entry.placeId) {
-          return <EditableAttraction key={entry.placeId} entry={entry} selected={selected} onSelect={onSelectStop} saving={saving} onAction={onAction} />;
+          return <EditableAttraction key={entry.placeId} entry={entry} selected={selected} onSelect={onSelectStop} saving={saving} onAction={onAction} tripId={tripId} />;
         }
 
         return (
@@ -145,6 +150,7 @@ export default function TripTimeline({
                 selected={selected}
                 onSelect={onSelectStop}
               />
+              {tripId && entry.attractionKey && <AttractionSaveButton tripId={tripId} attractionKey={entry.attractionKey} name={entry.name} />}
             </div>
           </li>
         );

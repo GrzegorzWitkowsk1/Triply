@@ -1,6 +1,7 @@
-﻿import type { Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures.ts";
 import { analysis } from "./data.ts";
+const emptySavedReceipt = { importedDestinationCount: 0, importedAttractionCount: 0, mergedDestinationCount: 0, mergedAttractionCount: 0 };
 
 async function api(page: Page, path: string, method = "GET", body?: unknown) {
   return page.evaluate(async ({ path, method, body }) => {
@@ -34,18 +35,18 @@ test("guest registration imports a generated itinerary, preserving sharing and r
   await page.getByLabel("Email address").fill("migration-new@example.com");
   await page.getByLabel(/^Password/).fill("Password123!Aa");
   await page.locator("form").getByRole("button", { name: "Create account", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Save your guest trips" });
-  await expect(dialog).toContainText("You created 1 trip");
-  await expect(dialog.getByRole("button", { name: "Import trips" })).toBeEnabled();
+  const dialog = page.getByRole("dialog", { name: "Save your guest data" });
+  await expect(dialog).toContainText("You have 1 trip");
+  await expect(dialog.getByRole("button", { name: "Import to my account" })).toBeEnabled();
   const before = await harness.trip(id);
   const calls = (await harness.state()).calls.length;
   await page.setViewportSize({ width: 375, height: 812 });
   const box = await dialog.boundingBox(); expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.width).toBeLessThanOrEqual(375);
   await dialog.getByRole("button", { name: "Not now" }).focus();
   await page.keyboard.press("Tab");
-  await expect(dialog.getByRole("button", { name: "Import trips" })).toBeFocused();
+  await expect(dialog.getByRole("button", { name: "Import to my account" })).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("alert").filter({ hasText: "1 guest trip is saved to your account." })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "1 trip from your guest session is saved to your account." })).toBeVisible();
   expect((await harness.state()).calls.length).toBe(calls);
   const after = await harness.trip(id);
   const { guestId: _source, guestSlot: _slot, ...preserved } = before;
@@ -79,20 +80,20 @@ test.describe("existing account handoff", () => {
     await page.getByLabel("Email address").fill(user.email);
     await page.getByLabel(/^Password/).fill(user.password);
     await page.locator("form").getByRole("button", { name: "Sign in", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "Save your guest trips" });
-    await expect(dialog).toContainText("You created 6 trips");
+    const dialog = page.getByRole("dialog", { name: "Save your guest data" });
+    await expect(dialog).toContainText("You have 6 trips");
     const before = await Promise.all(ids.map(id => harness.trip(id)));
     await dialog.getByRole("button", { name: "Not now" }).click();
     await expect(page.getByLabel("Pending guest import")).toBeVisible();
     await page.getByRole("button", { name: "Resume import" }).click();
     await harness.command("/fail-import-once");
-    await dialog.getByRole("button", { name: "Import trips" }).click();
-    await expect(dialog.getByRole("alert")).toContainText("Your trips are preserved");
+    await dialog.getByRole("button", { name: "Import to my account" }).click();
+    await expect(dialog.getByRole("alert")).toContainText("Your guest data is preserved");
     expect(await Promise.all(ids.map(id => harness.trip(id)))).toEqual(before);
     expect((await api(page, "/api/auth/guest-migration/status")).body).toMatchObject({ status: "pending", tripCount: 6 });
-    await dialog.getByRole("button", { name: "Import trips" }).click();
-    await expect(page.getByRole("alert").filter({ hasText: "6 guest trips are saved to your account." })).toBeVisible();
-    expect((await api(page, "/api/auth/guest-migration/confirm", "POST")).body).toEqual({ importedCount: 6, alreadyImported: true });
+    await dialog.getByRole("button", { name: "Import to my account" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "6 trips from your guest session are saved to your account." })).toBeVisible();
+    expect((await api(page, "/api/auth/guest-migration/confirm", "POST")).body).toEqual({ ...emptySavedReceipt, importedCount: 6, alreadyImported: true });
     expect(await harness.trip(user.tripId!)).toEqual(existing);
     const owned = await api(page, "/api/trips");
     expect(owned.body).toHaveLength(7);

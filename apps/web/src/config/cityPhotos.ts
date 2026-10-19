@@ -1,4 +1,4 @@
-import cityPhotos from "../../public/triply_212_cities_usable.json";
+import { DESTINATIONS as cityPhotos } from "@triply/shared";
 
 export type CityPhoto = (typeof cityPhotos)[number];
 

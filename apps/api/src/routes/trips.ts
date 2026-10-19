@@ -1,7 +1,7 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import type { HttpRoute, HttpRequest } from "../http/types.js";
 import { Types } from "mongoose";
-import { applyProfilePreferences, DEFAULT_PROFILE_PREFERENCES } from "@triply/shared";
+import { applyProfilePreferences, DEFAULT_PROFILE_PREFERENCES, findDestination } from "@triply/shared";
 import {
   analyzeTripRequestSchema,
   applyRegenerationRequestSchema,
@@ -153,6 +153,8 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       }
 
       const request: AnalyzeTripRequest = parsed.data;
+      const selectedDestination = request.destinationId ? findDestination(request.destinationId) : null;
+      if (request.destinationId && !selectedDestination) return res.code(404).send({ code: "DESTINATION_NOT_FOUND", error: "Destination is no longer available." });
       const owner = currentTripOwner(req);
       // Reserve an actual draft before parsing/geocoding; unique slots fence concurrent creates.
       const reservation = guestOwnerId(owner) ? await reserveGuestDraft(owner, request.prompt, request.badges) : null;
@@ -164,6 +166,12 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         ...preferences, pace: request.pace ?? preferences.pace,
         maxWalkingDistanceKm: request.maxWalkingDistanceKm ?? preferences.maxWalkingDistanceKm,
       }, badges);
+      if (selectedDestination) {
+        analysis.destinationId = selectedDestination.id;
+        analysis.destination = selectedDestination.city;
+        analysis.country = selectedDestination.country;
+        analysis.location = null;
+      }
 
       const draft = await upsertTripDraft({
         userId: owner,
