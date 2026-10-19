@@ -415,7 +415,7 @@ body {
   flex-wrap: wrap;
   gap: 8px 20px;
   padding: 12px 16px;
-  margin-bottom: 20px;
+  margin-bottom: 60px;
   border: 1px solid var(--color-border, #e5e7eb);
   border-radius: 12px;
   font-size: 13px;
@@ -436,14 +436,8 @@ body {
 }
 
 @media (max-width: 480px) {
-  .guest-header { height: auto; }
-  .guest-header .app-header-inner {
-    min-height: 72px;
-    padding: 12px;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .guest-header .header-actions { gap: 8px; flex-wrap: wrap; }
+  .guest-header .app-header-inner { padding: 0 12px; gap: 8px; }
+  .guest-header .header-actions { gap: 8px; row-gap: 0; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
   .guest-header .auth-link { font-size: 12px; white-space: nowrap; }
   .guest-header .header-icon { width: 32px; flex-shrink: 0; }
   .guest-indicator { font-size: 12px; }
@@ -5026,6 +5020,60 @@ body {
 }
 .itinerary-editable-card { position: relative; }
 .itinerary-card-controls { display: flex; position: absolute; top: 8px; right: 8px; }
-.itinerary-editable-card .activity-card { padding-right: 86px; }
+.itinerary-editable-card .activity-card { padding-right: 120px; }
 .itinerary-picker-results { display: grid; gap: 10px; margin-top: 12px; max-height: 350px; overflow-y: auto; }
 .itinerary-picker-results .activity-card:disabled { opacity: .55; cursor: default; }
+
+.trip-card-media, .trend-card-media, .saved-card-media { position: relative; }
+.destination-save.MuiIconButton-root { position: absolute; top: 12px; right: 12px; z-index: 2; }
+
+/* Saved collection: reuse the existing page, card and filter palette. */
+.saved-count { margin: 14px 0 0; color: var(--color-muted); font-size: 14px; }
+.guest-usage + .saved-page { margin-top: 0; }
+.app-content > .MuiAlert-root + .saved-page { margin-top: 0; }
+.saved-filters { margin: 28px 0 22px; flex-wrap: wrap; gap: 8px; }
+.saved-filters .trip-filter { min-height: 44px; white-space: nowrap; }
+.saved-filters .trip-filter.is-active { transform: none; }
+.saved-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; margin-bottom: 24px; }
+.saved-toolbar > * { min-width: 0; }
+.saved-query-error { margin-bottom: 16px; }
+.saved-results-title { font-size: 20px; margin: 0 0 8px; }
+.saved-results-count { color: var(--color-muted); font-size: 14px; margin-bottom: 20px; }
+.saved-page .saved-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
+.saved-page .saved-card { min-width: 0; }
+.saved-page .saved-card:hover { transform: none; }
+.saved-page .saved-card-media { aspect-ratio: 16 / 10; flex: none; min-height: 0; background: #f7ede7; display: grid; place-items: center; }
+.saved-page .saved-card-media .saved-image-fallback { color: var(--color-primary); width: 48px; height: 48px; opacity: .65; }
+.saved-page .photo-attribution { position: absolute; bottom: 0; left: 0; right: 0; z-index: 1; padding: 6px 8px; font-size: 10px; line-height: 1.4; background: rgba(0, 0, 0, .65); color: white; overflow-wrap: anywhere; }
+.saved-page .photo-attribution a { color: inherit; text-decoration: underline; }
+.saved-page .saved-card-body { padding: 18px; gap: 12px; }
+.saved-card-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+.saved-card-heading > div { min-width: 0; }
+.saved-page .saved-name { font-size: 18px; line-height: 1.4; margin: 4px 0 0; overflow-wrap: anywhere; }
+.saved-kind { font-size: 11px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; color: var(--color-primary); }
+.saved-remove { display: contents; }
+.saved-remove .MuiAlert-root { grid-column: 1 / -1; }
+.saved-page .saved-locale { align-items: flex-start; line-height: 1.5; overflow-wrap: anywhere; }
+.saved-category { color: var(--color-muted); font-size: 13px; text-transform: capitalize; }
+.saved-card-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: auto; padding-top: 8px; }
+.saved-card-actions .MuiButton-root { min-height: 44px; }
+.saved-empty { border: 1px dashed #e5cfc3; border-radius: 20px; padding: 40px 24px; text-align: center; background: #fff; }
+.saved-empty > .MuiSvgIcon-root { color: var(--color-primary); font-size: 36px; margin-bottom: 16px; }
+.saved-empty h3 { margin-bottom: 10px; font-size: 22px; }
+.saved-empty p { color: var(--color-muted); line-height: 1.6; max-width: 480px; margin: 0 auto 22px; }
+.saved-detail-description { margin: 16px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.saved-detail-actions { flex-wrap: wrap; gap: 8px; }
+.saved-detail-actions .MuiAlert-root { flex-basis: 100%; }
+.saved-detail-locale { margin-bottom: 16px; color: var(--color-muted); }
+.saved-page :is(button, a):focus-visible { outline: 3px solid var(--color-primary); outline-offset: 3px; }
+@media (max-width: 900px) { .saved-page .saved-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) {
+  .saved-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .saved-page .saved-grid { grid-template-columns: minmax(0, 1fr); }
+  .saved-filters .trip-filter { padding: 10px 12px; font-size: 13px; }
+  .saved-title { font-size: 34px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .saved-page .saved-card, .saved-page .saved-card-media img, .saved-page .trip-filter { transition: none; }
+  .saved-page .saved-card:hover img { transform: none; }
+}

@@ -393,6 +393,7 @@ const regenerationSchema = new Schema<TripRegenerationRecord>(
 
 const analysisSchema = new Schema<TripAnalysis>(
   {
+    destinationId: { type: String, default: null },
     destination: { type: String, default: null, trim: true },
     country: { type: String, default: null, trim: true },
     startDate: { type: String, default: null, trim: true },

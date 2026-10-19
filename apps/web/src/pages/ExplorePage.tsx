@@ -6,6 +6,8 @@ import {
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { COLLECTIONS, TRENDING_TRIPS } from "../config/explore";
+import { findDestinationByCity } from "@triply/shared";
+import DestinationSaveButton from "../components/DestinationSaveButton";
 
 export default function ExplorePage() {
   const navigate = useNavigate();
@@ -32,6 +34,7 @@ export default function ExplorePage() {
             <article key={trip.id} className="trend-card">
               <div className="trend-card-media">
                 <img src={trip.image} alt={trip.city} />
+                {findDestinationByCity(trip.city, trip.country) && <DestinationSaveButton destinationId={findDestinationByCity(trip.city, trip.country)!.id} name={trip.city} />}
                 <span className="trend-badge">
                   {trip.days} {trip.days === 1 ? "day" : "days"}
                 </span>

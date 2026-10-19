@@ -9,6 +9,10 @@ export interface GuestHandoff {
   sessionHash?: string;
   expiresAt?: Date;
   importedCount?: number;
+  importedDestinationCount?: number;
+  importedAttractionCount?: number;
+  mergedDestinationCount?: number;
+  mergedAttractionCount?: number;
   empty?: boolean;
   cleanupAt: Date;
 }

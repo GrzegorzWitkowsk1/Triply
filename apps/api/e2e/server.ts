@@ -55,11 +55,24 @@ const { UserModel } = await import("../src/models/User.ts");
 const { TripModel } = await import("../src/models/Trip.ts");
 const { migrationWrites } = await import("../src/services/guestMigration.ts");
 const transferWithoutFault = migrationWrites.transfer;
+const savedTransferWithoutFault = migrationWrites.transferSaved;
+let loseImportResponse = false;
 const { startServer } = await import("../src/server.ts");
 let backend: Awaited<ReturnType<typeof startServer>> | undefined;
 const preflights: { path: string; status: number; origin: unknown; credentials: unknown }[] = [];
 function observePreflights(app: Awaited<ReturnType<typeof startServer>>["app"]): void {
   app.server.on("request", (request, response) => {
+    if (request.method === "POST" && request.url === "/api/auth/guest-migration/confirm") {
+      const end = response.end.bind(response);
+      response.end = ((...args: unknown[]) => {
+        if (loseImportResponse && response.statusCode === 200) {
+          loseImportResponse = false;
+          response.destroy();
+          return response;
+        }
+        return Reflect.apply(end, response, args);
+      }) as typeof response.end;
+    }
     if (request.method !== "OPTIONS") return;
     response.once("finish", () => preflights.push({ path: request.url ?? "", status: response.statusCode,
       origin: response.getHeader("access-control-allow-origin"), credentials: response.getHeader("access-control-allow-credentials") }));
@@ -83,6 +96,8 @@ const control = createServer(async (request, response) => {
     let result: unknown = {};
     if (request.method === "POST" && request.url === "/setup") {
       migrationWrites.transfer = transferWithoutFault;
+      migrationWrites.transferSaved = savedTransferWithoutFault;
+      loseImportResponse = false;
       providers.reset();
       preflights.length = 0;
       // Expire process-local provider caches without changing application code.
@@ -148,7 +163,26 @@ const control = createServer(async (request, response) => {
         throw new Error("Fixture interruption after transaction writes");
       };
     }
-    else if (request.method === "POST" && request.url === "/cleanup") { migrationWrites.transfer = transferWithoutFault; providers.reset(); await clean(); }
+    else if (request.method === "POST" && request.url === "/fail-saved-import-once") {
+      migrationWrites.transferSaved = async (...args) => {
+        migrationWrites.transferSaved = savedTransferWithoutFault;
+        await savedTransferWithoutFault(...args);
+        throw new Error("Fixture interruption after Saved transaction writes");
+      };
+    }
+    else if (request.method === "POST" && request.url === "/lose-import-response-once") loseImportResponse = true;
+    else if (request.method === "POST" && request.url === "/guest-attraction-trip") {
+      if (typeof body.guestId !== "string" || !/^[a-f0-9]{32}$/.test(body.guestId)) throw new Error("Invalid guest fixture identity");
+      const pool = attractions("Barcelona");
+      const base = analysis();
+      const fixture = await TripModel.create({ guestId: body.guestId, guestSlot: await TripModel.countDocuments({ guestId: body.guestId }),
+        analysis: base, status: "ready", attractions: pool, attractionsFetchedAt: new Date(),
+        attractionsQuery: { lat: base.location!.lat, lng: base.location!.lng, interests: base.interests },
+        itinerary: { timeZone: "Europe/Madrid", routingSource: "provider", days: [makeDay(pool, 1, base.startDate!, [0, 1, 2])], unscheduled: [] },
+        itineraryVersion: 1, generation: { generatedAt: new Date() }, weather: [] });
+      result = { tripId: fixture.id };
+    }
+    else if (request.method === "POST" && request.url === "/cleanup") { migrationWrites.transfer = transferWithoutFault; migrationWrites.transferSaved = savedTransferWithoutFault; loseImportResponse = false; providers.reset(); await clean(); }
     else if (request.method === "POST" && request.url === "/shutdown") {
       await close(); response.end('{}'); return;
     }

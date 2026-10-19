@@ -1,7 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import mongoose from "mongoose";
 import type { FastifyRequest } from "fastify";
-import type { GuestMigrationResult, GuestMigrationStatus } from "@triply/shared";
+import type { GuestMigrationResult, GuestMigrationStatus, GuestMigrationReceipt } from "@triply/shared";
+import type { GuestHandoff } from "../models/GuestHandoff.js";
+import { transferSaved } from "./savedMigration.js";
+import { SavedDestinationModel } from "../models/SavedDestination.js";
+import { SavedAttractionModel } from "../models/SavedAttraction.js";
 import { ensureGuestHandoff, handoffs, handoffRetention } from "../models/GuestHandoff.js";
 import { TripModel } from "../models/Trip.js";
 import { getSessionGuest, newSession, regenerateSession, saveSession, setSessionUserId, storageId } from "../config/session.js";
@@ -17,12 +21,19 @@ export class MigrationError extends Error {
 
 /** Audited persistence boundary; the test harness can inject a transaction interruption here. */
 export const migrationWrites = {
+  transferSaved,
   transfer(guestId: string, userId: string, session: mongoose.mongo.ClientSession) {
     return TripModel.collection.updateMany({ guestId, user: null }, {
       $set: { user: new mongoose.Types.ObjectId(userId) }, $unset: { guestId: "", guestSlot: "" },
     }, { session });
   },
 };
+
+function receipt(context: Partial<GuestHandoff>): GuestMigrationReceipt {
+  return { importedCount: context.importedCount ?? 0, importedDestinationCount: context.importedDestinationCount ?? 0,
+    importedAttractionCount: context.importedAttractionCount ?? 0, mergedDestinationCount: context.mergedDestinationCount ?? 0,
+    mergedAttractionCount: context.mergedAttractionCount ?? 0 };
+}
 
 /** Called only after credential validation; no source/destination is accepted from a client. */
 export async function authenticateWithGuestHandoff(request: FastifyRequest, userId: string): Promise<void> {
@@ -77,22 +88,26 @@ export async function migrationStatus(request: FastifyRequest): Promise<GuestMig
   if (!filter) return { status: "none" };
   let context = await handoffs().findOne(filter);
   if (!context) return { status: "expired" };
-  if (context.state === "completed") return { status: "completed", importedCount: context.importedCount ?? 0 };
+  if (context.state === "completed") return { status: "completed", ...receipt(context) };
   if (context.state === "discarded") return { status: context.empty ? "none" : "discarded" };
   if (context.state === "expired" || !context.expiresAt || context.expiresAt.getTime() <= Date.now()) {
     await handoffs().updateOne({ ...filter, state: "pending" }, { $set: { state: "expired" } });
     return { status: "expired" };
   }
   const tripCount = await TripModel.countDocuments({ guestId: context._id, user: null });
+  const owner = { ownerType: "guest", ownerId: context._id };
+  const [destinationCount, attractionCount] = await Promise.all([
+    SavedDestinationModel.countDocuments(owner), SavedAttractionModel.countDocuments(owner),
+  ]);
   const busy = context.activeRequests.length > 0;
-  if (!tripCount && !busy) {
+  if (!tripCount && !destinationCount && !attractionCount && !busy) {
     context = await handoffs().findOneAndUpdate({ ...filter, state: "pending", activeRequests: { $size: 0 } },
       { $set: { state: "discarded", empty: true } }, { returnDocument: "after" });
     if (context) return { status: "none" };
     // Confirmation/discard may have won while the empty-source status was read.
     return migrationStatus(request);
   }
-  return { status: "pending", tripCount, expiresAt: context?.expiresAt?.toISOString() ?? "", busy };
+  return { status: "pending", tripCount, destinationCount, attractionCount, expiresAt: context?.expiresAt?.toISOString() ?? "", busy };
 }
 
 export async function confirmMigration(request: FastifyRequest): Promise<GuestMigrationResult> {
@@ -100,27 +115,36 @@ export async function confirmMigration(request: FastifyRequest): Promise<GuestMi
   if (!filter) throw new MigrationError("There is no guest import available in this sign-in session.", 403);
   const transaction = await mongoose.startSession();
   try {
-    return await transaction.withTransaction(async () => {
-      const context = await handoffs().findOne(filter, { session: transaction });
-      if (!context) throw new MigrationError("This guest import is no longer available.", 403);
-      if (context.state === "completed") return { importedCount: context.importedCount ?? 0, alreadyImported: true };
-      if (context.state !== "pending" || !context.expiresAt || context.expiresAt.getTime() <= Date.now()) {
-        throw new MigrationError("This guest import has expired or was discarded. Your guest trips have not been deleted.", 410);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await transaction.withTransaction(async () => {
+          const context = await handoffs().findOne(filter, { session: transaction });
+          if (!context) throw new MigrationError("This guest import is no longer available.", 403);
+          if (context.state === "completed") return { ...receipt(context), alreadyImported: true };
+          if (context.state !== "pending" || !context.expiresAt || context.expiresAt.getTime() <= Date.now()) {
+            throw new MigrationError("This guest import has expired or was discarded. Your guest data has not been deleted.", 410);
+          }
+          if (context.activeRequests.length) throw new MigrationError("Your last guest operation is still finishing. Please try importing again in a moment.", 409);
+          // Touch the fence in the same transaction as all resource updates and the receipt.
+          const locked = await handoffs().updateOne({ ...filter, state: "pending", activeRequests: { $size: 0 } },
+            { $set: { state: "completed" } }, { session: transaction });
+          if (!locked.modifiedCount) throw new MigrationError("Import state changed. Check its status and try again.", 409);
+          // Deliberately bypass immutable ownership fields only in this authorized transaction.
+          const moved = await migrationWrites.transfer(context._id, filter.userId, transaction);
+          const saved = await migrationWrites.transferSaved(context._id, filter.userId, transaction);
+          const result = { importedCount: moved.modifiedCount, ...saved };
+          await handoffs().updateOne(filter, { $set: result }, { session: transaction });
+          return { ...result, alreadyImported: false };
+        }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" }, maxCommitTimeMS: 10_000 });
+      } catch (error) {
+        // Concurrent account upserts can raise E11000 rather than a transient transaction label.
+        if (attempt < 2 && error && typeof error === "object" && "code" in error && error.code === 11000) continue;
+        throw error;
       }
-      if (context.activeRequests.length) throw new MigrationError("Your last guest operation is still finishing. Please try importing again in a moment.", 409);
-      // Touch the fence in the same transaction as the trip updates and receipt.
-      const locked = await handoffs().updateOne({ ...filter, state: "pending", activeRequests: { $size: 0 } },
-        { $set: { state: "completed" } }, { session: transaction });
-      if (!locked.modifiedCount) throw new MigrationError("Import state changed. Check its status and try again.", 409);
-      // Deliberately bypass immutable guest fields only in this authorized transaction.
-      // Native updates preserve every other field, including timestamps, sharing and itineraryVersion.
-      const moved = await migrationWrites.transfer(context._id, filter.userId, transaction);
-      await handoffs().updateOne(filter, { $set: { importedCount: moved.modifiedCount } }, { session: transaction });
-      return { importedCount: moved.modifiedCount, alreadyImported: false };
-    }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" }, maxCommitTimeMS: 10_000 });
+    }
   } catch (error) {
     if (error instanceof MigrationError) throw error;
-    throw new MigrationError("Import could not finish safely. Your trips are preserved. Check the import status and try again.", 503);
+    throw new MigrationError("Import could not finish safely. Your guest data is preserved. Check the import status and try again.", 503);
   } finally { await transaction.endSession(); }
 }
 

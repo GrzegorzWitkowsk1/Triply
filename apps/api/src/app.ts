@@ -1,4 +1,8 @@
 import Fastify from "fastify";
+import { registerSavedAttractionRoutes } from "./routes/savedAttractions.js";
+import { SavedAttractionModel } from "./models/SavedAttraction.js";
+import { registerSavedRoutes } from "./routes/saved.js";
+import { SavedDestinationModel } from "./models/SavedDestination.js";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
@@ -66,6 +70,8 @@ export async function createApp() {
   await registerSessions(app);
   await prepareGuestLimits();
   await prepareGuestHandoffs();
+  await SavedDestinationModel.createIndexes();
+  await SavedAttractionModel.createIndexes();
   registerGuestActivity(app);
   await app.register(rateLimit, { global: false, store: FixedWindowStore });
   const limits = createLimiters(app);
@@ -84,6 +90,8 @@ export async function createApp() {
     protectedApi.addHook("preHandler", requireTripIdentity);
     protectedApi.addHook("preHandler", guestNetworkLimit(protectedApi));
     registerGuestUsageRoutes(protectedApi);
+    registerSavedRoutes(protectedApi);
+    registerSavedAttractionRoutes(protectedApi);
     protectedApi.addHook("preHandler", validatePathParameters);
     registerTripRoutes(protectedApi, limits.planning);
     registerSharingRoutes(protectedApi);

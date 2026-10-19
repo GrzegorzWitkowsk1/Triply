@@ -8,7 +8,7 @@ import {
 } from "@mui/icons-material";
 import { TextField } from "@mui/material";
 import { useLocation, useNavigate } from "react-router-dom";
-import type { TripAnalysisResult, UpdateTripRequirements } from "@triply/shared";
+import { findDestination, type TripAnalysisResult, type UpdateTripRequirements } from "@triply/shared";
 import { HOME_BADGES } from "../config/home";
 import { buildHomeTripCards } from "../config/tripCards";
 import TripCard from "../components/trips/TripCard";
@@ -55,6 +55,7 @@ export default function HomePage() {
   const storageBlocked = guestUsage.isGuest && (!guestUsage.data || guestUsage.data.tripCount >= guestUsage.data.tripLimit);
   const location = useLocation();
   const [prompt, setPrompt] = useState("");
+  const [selectedDestinationId, setSelectedDestinationId] = useState<string | undefined>();
   const [selectedBadges, setSelectedBadges] = useState<string[]>(user?.preferences?.interests ?? []);
   const badgesEdited = useRef(false);
   const preferencesEdited = useRef(false);
@@ -102,6 +103,12 @@ export default function HomePage() {
   useEffect(() => {
     const shouldFocus = (location.state as { focusPrompt?: boolean } | null)
       ?.focusPrompt;
+    const destinationId = (location.state as { destinationId?: string } | null)?.destinationId;
+    const destination = destinationId ? findDestination(destinationId) : null;
+    if (destination) {
+      setSelectedDestinationId(destination.id);
+      setPrompt(`Plan a trip to ${destination.city}, ${destination.country}`);
+    }
     if (shouldFocus) {
       window.scrollTo({ top: 0, behavior: "auto" });
       promptInputRef.current?.focus();
@@ -184,6 +191,7 @@ export default function HomePage() {
   };
 
   const startListening = () => {
+    setSelectedDestinationId(undefined);
     const recognition = getOrCreateRecognition();
     if (!recognition) return;
 
@@ -236,7 +244,7 @@ export default function HomePage() {
     planning.start();
 
     analyze.mutate(
-      { prompt: prompt.trim(), badges: selectedBadges, pace: preferences.pace, maxWalkingDistanceKm: preferences.maxWalkingDistanceKm },
+      { prompt: prompt.trim(), destinationId: selectedDestinationId, badges: selectedBadges, pace: preferences.pace, maxWalkingDistanceKm: preferences.maxWalkingDistanceKm },
       {
         onSuccess: (result) => {
           setDraft(result);
@@ -341,7 +349,7 @@ export default function HomePage() {
                 rows={3}
                 placeholder={`4 days in Barcelona, starting at ${(new Date(new Date().getTime() + 24 * 60 * 60 * 1000)).toLocaleDateString()}, €500 budget, I love food and architecture, relaxed place...`}
                 value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
+                onChange={(e) => { setSelectedDestinationId(undefined); setPrompt(e.target.value); }}
                 slotProps={{
                   input: { disableUnderline: true },
                   htmlInput: { ref: promptInputRef },

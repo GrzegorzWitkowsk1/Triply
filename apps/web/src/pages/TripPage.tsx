@@ -485,6 +485,7 @@ export default function TripPage() {
                 {editError && <Alert severity="error">{editError}</Alert>}
                 {editNotice && <Alert severity={itineraryEdit.data?.warnings.length || editNotice.startsWith("Route geometry is still unavailable.") ? "warning" : "success"}>{editNotice}</Alert>}
                 <TripTimeline
+                  tripId={id}
                   entries={entries}
                   activeStop={activeStop}
                   onSelectStop={setActiveStop}
