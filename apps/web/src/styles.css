@@ -3567,6 +3567,69 @@ body {
     flex: 1;
     justify-content: center;
   }
+
+  .trip-hero-locale {
+    min-width: 0;
+  }
+
+  .trip-hero-badges {
+    flex-direction: column;
+  }
+
+  .trip-hero-badges .trip-badge {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+
+  .trip-badge > span {
+    min-width: 0;
+  }
+
+  .trip-badge .MuiSvgIcon-root,
+  .trip-badge > span:has(.MuiIconButton-root) {
+    flex-shrink: 0;
+  }
+
+  .trip-hero-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-self: stretch;
+    align-items: start;
+  }
+
+  .trip-hero-actions > .trip-action {
+    grid-column: 1;
+    width: 100%;
+    white-space: normal;
+  }
+
+  .trip-hero-actions > .trip-export-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .trip-day-warnings {
+    padding-inline-start: 24px;
+    padding-inline-end: 16px;
+    overflow-wrap: break-word;
+  }
+
+  .trip-sharing-dialog .MuiDialogActions-root {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .trip-sharing-dialog .MuiDialogActions-root > :not(style) ~ :not(style) {
+    margin-left: 0;
+  }
+
+  .trip-sharing-dialog .MuiAlert-message > .MuiButton-root {
+    display: flex;
+    width: 100%;
+  }
 }
 
 .assistant-fab {
@@ -4269,6 +4332,35 @@ body {
 @media (max-width: 600px) {
   .equipment-hero-title {
     font-size: 34px;
+  }
+
+  .equipment-item-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 36px;
+  }
+
+  .equipment-item-left {
+    min-width: 0;
+  }
+
+  .equipment-item-input {
+    font-weight: 700;
+  }
+
+  .equipment-item-right {
+    display: contents;
+  }
+
+  .equipment-trash-btn {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .equipment-counter {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: space-between;
+    width: 100%;
   }
 }
 

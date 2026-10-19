@@ -32,7 +32,7 @@ export default function TripSharing({ tripId, open: controlledOpen, onClose, hid
       >
         <ShareOutlined /> Share
       </button>}
-      <Dialog open={open} onClose={close} fullWidth maxWidth="sm">
+      <Dialog className="trip-sharing-dialog" open={open} onClose={close} fullWidth maxWidth="sm">
         <DialogTitle>Share itinerary</DialogTitle>
         <DialogContent>
           <p>

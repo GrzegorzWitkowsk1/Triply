@@ -30,7 +30,7 @@ import TripRequirementsDialog from "../components/home/TripRequirementsDialog";
 import TripLoading from "../components/trip/TripLoading";
 import TripStatusCard from "../components/trip/TripStatusCard";
 import RegenerateDayDialog from "../components/trip/RegenerateDayDialog";
-import TripAssistant from "../components/trip/TripAssistant";
+// import TripAssistant from "../components/trip/TripAssistant";
 import TripBudgetCard from "../components/trip/TripBudgetCard";
 import TripMap from "../components/trip/TripMap";
 import TripWeatherRetry from "../components/trip/TripWeatherRetry";
@@ -503,7 +503,7 @@ export default function TripPage() {
                   </p>
                 )}
                 {dayWarnings.length > 0 && (
-                  <ul className="trip-eyebrow">
+                  <ul className="trip-eyebrow trip-day-warnings">
                     {dayWarnings.map((warning) => (
                       <li key={warning}>{warning}</li>
                     ))}
@@ -623,7 +623,7 @@ export default function TripPage() {
           setRegenerationPreview(null);
         }}
       />
-      {id && !guestUsage.isGuest && <TripAssistant key={id} city={city} tripId={id} selectedDayId={String(dayIndex)} />}
+      {/* {id && !guestUsage.isGuest && <TripAssistant key={id} city={city} tripId={id} selectedDayId={String(dayIndex)} />} */}
     </div>
   );
 }
