@@ -436,8 +436,14 @@ body {
 }
 
 @media (max-width: 480px) {
-  .guest-header .app-header-inner { padding: 0 12px; gap: 8px; }
-  .guest-header .header-actions { gap: 8px; }
+  .guest-header { height: auto; }
+  .guest-header .app-header-inner {
+    min-height: 72px;
+    padding: 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .guest-header .header-actions { gap: 8px; flex-wrap: wrap; }
   .guest-header .auth-link { font-size: 12px; white-space: nowrap; }
   .guest-header .header-icon { width: 32px; flex-shrink: 0; }
   .guest-indicator { font-size: 12px; }

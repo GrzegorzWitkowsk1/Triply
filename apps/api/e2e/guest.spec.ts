@@ -32,7 +32,21 @@ test("guest entry, reload, mobile navigation, upgrade and exit", async ({ page, 
   await page.getByRole('link', { name: 'trips', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'My trips', exact: true })).toBeVisible();
   await expect(page.getByLabel('Guest usage')).toContainText('Trips: 0 / 6');
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  for (const width of [320, 375, 480]) {
+    await page.setViewportSize({ width, height: 812 });
+    const overflow = await page.evaluate(() => ({
+      viewport: window.innerWidth,
+      width: document.documentElement.scrollWidth,
+      elements: [...document.querySelectorAll('body *')].flatMap(element => {
+        const rect = element.getBoundingClientRect();
+        return rect.right > window.innerWidth || rect.left < 0
+          ? [{ tag: element.tagName, className: element.getAttribute('class'), left: rect.left, right: rect.right }]
+          : [];
+      }),
+    }));
+    expect(overflow.width, JSON.stringify(overflow, null, 2)).toBeLessThanOrEqual(overflow.viewport);
+  }
+  await page.setViewportSize({ width: 375, height: 812 });
   await expect(page.getByRole('link', { name: 'Notifications', exact: true })).toHaveCount(0);
   await page.getByRole('link', { name: 'Create account', exact: true }).first().click();
   await expect(page).toHaveURL(/\/register$/);
