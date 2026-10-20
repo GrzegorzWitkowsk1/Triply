@@ -1,11 +1,12 @@
 import type { SavedDestinationIdsResponse, SavedDestinationsResponse } from "@triply/shared";
-import { request } from "./client";
+import { request, requestWithTimeout } from "./client";
+import { savedDestinationIdsResponseSchema } from "@triply/shared";
 import type { SavedAttractionsResponse, SavedAttractionKeysResponse, SaveAttractionRequest } from "@triply/shared";
 export const listSavedAttractions = (signal?: AbortSignal) => request<SavedAttractionsResponse>("/api/saved/attractions", { signal });
 export const getSavedAttractionKeys = (signal?: AbortSignal) => request<SavedAttractionKeysResponse>("/api/saved/attractions/status", { signal });
 export const saveAttraction = (input: SaveAttractionRequest) => request("/api/saved/attractions", { method: "POST", body: JSON.stringify(input) });
 export const unsaveAttraction = (key: string) => request(`/api/saved/attractions/${encodeURIComponent(key)}`, { method: "DELETE" });
 export const listSavedDestinations = (signal?: AbortSignal) => request<SavedDestinationsResponse>("/api/saved/destinations", { signal });
-export const getSavedDestinationIds = (signal?: AbortSignal) => request<SavedDestinationIdsResponse>("/api/saved/destinations/status", { signal });
-export const saveDestination = (destinationId: string) => request("/api/saved/destinations", { method: "POST", body: JSON.stringify({ destinationId }) });
-export const unsaveDestination = (destinationId: string) => request(`/api/saved/destinations/${encodeURIComponent(destinationId)}`, { method: "DELETE" });
+export const getSavedDestinationIds = async (signal?: AbortSignal): Promise<SavedDestinationIdsResponse> => savedDestinationIdsResponseSchema.parse(await requestWithTimeout("/api/saved/destinations/status", { signal }));
+export const saveDestination = (destinationId: string) => requestWithTimeout("/api/saved/destinations", { method: "POST", body: JSON.stringify({ destinationId }) });
+export const unsaveDestination = (destinationId: string) => requestWithTimeout(`/api/saved/destinations/${encodeURIComponent(destinationId)}`, { method: "DELETE" });

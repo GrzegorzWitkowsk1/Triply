@@ -1,7 +1,7 @@
 # Triply CI
 
 `workflows/ci.yml` validates pull requests targeting `main` and pushes to `main`.
-One Ubuntu 24.04 job runs these commands in order:
+The validation job on Ubuntu 24.04 runs these commands in order:
 
 ```sh
 bun install --frozen-lockfile
@@ -45,3 +45,16 @@ There is no existing report-file configuration, so diagnostics remain in job log
 Linting is a separate follow-up: the repository currently has no lint script or
 ESLint configuration. The first GitHub-hosted run must confirm Linux MongoDB binary
 download/startup and the workflow's runner/action integration.
+
+The existing separate Chromium E2E job runs `bun run test:e2e` (all specs),
+including Explore discovery, destination planning, Saved and Explore hardening.
+Its timeout is 25 minutes. These tests use browser-to-Fastify-to-MongoDB
+communication with deterministic external provider fixtures, without production
+credentials. Hardening coverage includes real server failures and recovery,
+image fallback, identity isolation, generation, keyboard controls, request counts
+and widths 320/375/768/1024/1440. Fault injection is confined to the existing
+guarded E2E server and its token-protected loopback control service.
+
+`collections.spec.ts` adds editorial collection navigation, editable wizard
+suggestions through generation, Saved synchronization, guest import and missing
+destination recovery to the same automatically discovered E2E suite.

@@ -52,3 +52,18 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 
   return parseResponse<T>(response);
 }
+
+/** Bound short catalog/Saved requests without changing long-running generation requests. */
+export async function requestWithTimeout<T>(path: string, init: RequestInit = {}, timeoutMs = 15_000): Promise<T> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const cancel = () => controller.abort(init.signal?.reason);
+  if (init.signal?.aborted) cancel();
+  else init.signal?.addEventListener("abort", cancel, { once: true });
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+  try { return await request<T>(path, { ...init, signal: controller.signal }); }
+  catch (error) {
+    if (timedOut && !init.signal?.aborted) throw new ApiError("The request timed out. Please retry.", 408);
+    throw error;
+  } finally { clearTimeout(timer); init.signal?.removeEventListener("abort", cancel); }
+}

@@ -60,6 +60,7 @@ let loseImportResponse = false;
 const { startServer } = await import("../src/server.ts");
 let backend: Awaited<ReturnType<typeof startServer>> | undefined;
 const preflights: { path: string; status: number; origin: unknown; credentials: unknown }[] = [];
+const faults = { catalog: false, save: false, status: false };
 function observePreflights(app: Awaited<ReturnType<typeof startServer>>["app"]): void {
   app.server.on("request", (request, response) => {
     if (request.method === "POST" && request.url === "/api/auth/guest-migration/confirm") {
@@ -99,14 +100,25 @@ const control = createServer(async (request, response) => {
       migrationWrites.transferSaved = savedTransferWithoutFault;
       loseImportResponse = false;
       providers.reset();
+      Object.assign(faults, { catalog: false, save: false, status: false });
       preflights.length = 0;
       // Expire process-local provider caches without changing application code.
       // Advance monotonically even if the preceding test advanced its clock.
       offset += 60_000;
       // Recreate Fastify for each test, including its real rate limiter state.
       await currentApp?.close(); await clean();
+      const { seedDestinations } = await import("../src/seed/destinations.ts");
+      await seedDestinations();
       const { createApp } = await import("../src/app.ts");
-      const app = await createApp();
+      const app = await createApp({ configure(app) {
+        // Real Fastify middleware faults; successful requests still execute real routes and MongoDB.
+        app.addHook("preHandler", async (req, reply) => {
+          const path = req.url.split("?")[0];
+          if (faults.catalog && path === "/api/destinations" || faults.save && path === "/api/saved/destinations" && req.method === "POST" || faults.status && path === "/api/saved/destinations/status") {
+            return reply.code(503).send({ error: "Temporary fixture outage" });
+          }
+        });
+      } });
       observePreflights(app);
       await app.listen({ host: "127.0.0.1", port: 4001 });
       // startServer.close owns the original app; explicit teardown also closes this one.
@@ -182,7 +194,26 @@ const control = createServer(async (request, response) => {
         itineraryVersion: 1, generation: { generatedAt: new Date() }, weather: [] });
       result = { tripId: fixture.id };
     }
-    else if (request.method === "POST" && request.url === "/cleanup") { migrationWrites.transfer = transferWithoutFault; migrationWrites.transferSaved = savedTransferWithoutFault; loseImportResponse = false; providers.reset(); await clean(); }
+    else if (request.method === "POST" && request.url === "/exhaust-generation-quota") {
+      if (typeof body.guestId !== "string" || !/^[a-f0-9]{32}$/.test(body.guestId)) throw new Error("Invalid guest fixture identity");
+      const { env } = await import("../src/config/env.ts");
+      await mongoose.connection.db!.collection<{ _id: string; entries: unknown[] }>("guest_usage").updateOne({ _id: body.guestId }, { $set: {
+        entries: Array.from({ length: env.GUEST_AI_GENERATIONS_PER_24H }, (_, index) => ({ id: `fixture-${index}`, kind: "generation", fingerprint: "fixture", state: "completed", at: new Date() })),
+      } }, { upsert: true });
+    }
+    else if (request.method === "POST" && request.url === "/fault") {
+      if (!Object.hasOwn(faults, String(body.target)) || typeof body.enabled !== "boolean") throw new Error("Invalid fixture fault");
+      faults[body.target as keyof typeof faults] = body.enabled;
+    }
+    else if (request.method === "POST" && request.url === "/broken-destination-image") {
+      const { DestinationModel } = await import("../src/models/Destination.ts");
+      await DestinationModel.updateOne({ id: "city-003" }, { $set: { imageUrl: "https://images.e2e.invalid/missing.jpg" } });
+    }
+    else if (request.method === "POST" && request.url === "/remove-collection-destination") {
+      const { DestinationModel } = await import("../src/models/Destination.ts");
+      await DestinationModel.deleteOne({ id: "city-003" });
+    }
+    else if (request.method === "POST" && request.url === "/cleanup") { migrationWrites.transfer = transferWithoutFault; migrationWrites.transferSaved = savedTransferWithoutFault; loseImportResponse = false; providers.reset(); Object.assign(faults, { catalog: false, save: false, status: false }); await clean(); }
     else if (request.method === "POST" && request.url === "/shutdown") {
       await close(); response.end('{}'); return;
     }

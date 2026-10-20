@@ -21,6 +21,7 @@ export async function startServer(options: { uri?: string; port?: number; host?:
   }
   try {
     await connectDb(options.uri ?? env.MONGODB_URI);
+    await seedDestinations();
     app = await createApp();
     await app.listen({ port: options.port ?? env.PORT, host: options.host ?? "::" });
     process.once("SIGINT", shutdown);
@@ -32,3 +33,4 @@ export async function startServer(options: { uri?: string; port?: number; host?:
     throw error;
   }
 }
+import { seedDestinations } from "./seed/destinations.js";

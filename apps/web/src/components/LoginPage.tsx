@@ -158,7 +158,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
             <button
               type="button"
               className={`auth-switch-btn${!isRegister ? " is-active" : ""}`}
-              onClick={() => navigate("/login")}
+              onClick={() => navigate("/login", { state: location.state })}
               aria-pressed={!isRegister}
             >
               Sign in
@@ -166,7 +166,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
             <button
               type="button"
               className={`auth-switch-btn${isRegister ? " is-active" : ""}`}
-              onClick={() => navigate("/register")}
+              onClick={() => navigate("/register", { state: location.state })}
               aria-pressed={isRegister}
             >
               Register
@@ -204,7 +204,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
 
             <button type="button" className="btn" disabled={isSubmitting} onClick={() => {
               setError(null);
-              void startGuest().then(() => navigate('/home', { replace: true })).catch((caught: unknown) =>
+              void startGuest().then(() => navigate(getDestination(), { replace: true })).catch((caught: unknown) =>
                 setError(caught instanceof Error ? caught.message : 'Could not start Guest Mode. Try again.'));
             }}>{isSubmitting ? 'Please wait...' : 'Continue as guest'}</button>
             <p className="auth-switch-link">
@@ -212,7 +212,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
               <button
                 type="button"
                 className="auth-link"
-                onClick={() => navigate(isRegister ? "/login" : "/register")}
+                onClick={() => navigate(isRegister ? "/login" : "/register", { state: location.state })}
               >
                 {isRegister ? "Sign in" : "Create an account"}
               </button>

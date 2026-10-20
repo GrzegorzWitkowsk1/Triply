@@ -6,9 +6,10 @@ import {
   CloseOutlined,
   MicOutlined,
 } from "@mui/icons-material";
-import { TextField } from "@mui/material";
+import { Alert, Button, TextField } from "@mui/material";
 import { useLocation, useNavigate } from "react-router-dom";
-import { findDestination, type TripAnalysisResult, type UpdateTripRequirements } from "@triply/shared";
+import { ASKABLE_FIELDS, collectionForDestination, type DestinationList, type TripAnalysisResult, type UpdateTripRequirements } from "@triply/shared";
+import { useDestinationPrefill } from "../hooks/useDestinationPrefill";
 import { HOME_BADGES } from "../config/home";
 import { buildHomeTripCards } from "../config/tripCards";
 import TripCard from "../components/trips/TripCard";
@@ -54,6 +55,15 @@ export default function HomePage() {
   const guestUsage = useGuestUsage();
   const storageBlocked = guestUsage.isGuest && (!guestUsage.data || guestUsage.data.tripCount >= guestUsage.data.tripLimit);
   const location = useLocation();
+  const prefill = useDestinationPrefill(location.search, location.state);
+  const collectionValues = new URLSearchParams(location.search).getAll("collection");
+  const collection = collectionForDestination(collectionValues, prefill.reference.id);
+  const referenceKey = prefill.reference.id ? `${prefill.reference.id}:${collection?.slug ?? ""}` : undefined;
+  const [appliedCollection, setAppliedCollection] = useState<string>();
+  const [hasCollectionPreferences, setHasCollectionPreferences] = useState(false);
+  const handledReference = useRef<string | undefined>(undefined);
+  const promptEdited = useRef(false);
+  const [prefillConflict, setPrefillConflict] = useState<DestinationList["items"][number] | null>(null);
   const [prompt, setPrompt] = useState("");
   const [selectedDestinationId, setSelectedDestinationId] = useState<string | undefined>();
   const [selectedBadges, setSelectedBadges] = useState<string[]>(user?.preferences?.interests ?? []);
@@ -61,8 +71,8 @@ export default function HomePage() {
   const preferencesEdited = useRef(false);
   const [preferences, setPreferences] = useState(user?.preferences ?? DEFAULT_PROFILE_PREFERENCES);
   useEffect(() => {
-    if (!badgesEdited.current) setSelectedBadges(user?.preferences?.interests ?? []);
-    if (!preferencesEdited.current) setPreferences(user?.preferences ?? DEFAULT_PROFILE_PREFERENCES);
+    if (!badgesEdited.current && !appliedCollection) setSelectedBadges(user?.preferences?.interests ?? []);
+    if (!preferencesEdited.current && !appliedCollection) setPreferences(user?.preferences ?? DEFAULT_PROFILE_PREFERENCES);
   }, [user?.preferences]);
   const [files, setFiles] = useState<File[]>([]);
   const [listening, setListening] = useState(false);
@@ -84,10 +94,13 @@ export default function HomePage() {
   );
   const [draft, setDraft] = useState<TripAnalysisResult | null>(null);
   const [isDialogOpen, setDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<"complete" | "edit">("complete");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const canPlan = !storageBlocked && (prompt.trim().length > 0 || selectedBadges.length > 0);
+  const awaitingPrefill = Boolean(prefill.reference.id && prefill.query.isPending && handledReference.current !== referenceKey);
+  const invalidPrefill = Boolean(prefill.reference.error || prefill.query.isError) && !promptEdited.current;
+  const canPlan = !storageBlocked && !awaitingPrefill && !invalidPrefill && !prefillConflict && (prompt.trim().length > 0 || selectedBadges.length > 0);
   const isPlanning = planning.hasStarted;
   const showProgress = planning.hasStarted && !planning.isDone;
 
@@ -103,17 +116,46 @@ export default function HomePage() {
   useEffect(() => {
     const shouldFocus = (location.state as { focusPrompt?: boolean } | null)
       ?.focusPrompt;
-    const destinationId = (location.state as { destinationId?: string } | null)?.destinationId;
-    const destination = destinationId ? findDestination(destinationId) : null;
-    if (destination) {
-      setSelectedDestinationId(destination.id);
-      setPrompt(`Plan a trip to ${destination.city}, ${destination.country}`);
-    }
     if (shouldFocus) {
       window.scrollTo({ top: 0, behavior: "auto" });
       promptInputRef.current?.focus();
     }
   }, [location.state]);
+
+  const applyDestination = (destination: DestinationList["items"][number]) => {
+    const suggestions = collectionForDestination(collectionValues, destination.id);
+    if (!draft && suggestions) {
+      setHasCollectionPreferences(true);
+      if (!badgesEdited.current) setSelectedBadges([...suggestions.suggestedInterests]);
+      if (!preferencesEdited.current) setPreferences(previous => ({ ...previous, pace: suggestions.suggestedPace }));
+    }
+    setAppliedCollection(suggestions?.title);
+    setSelectedDestinationId(destination.id);
+    setPrompt(`Plan a trip to ${destination.city}, ${destination.country}`);
+    setPrefillConflict(null); setDraft(null); planning.reset(); setDialogOpen(false);
+    handledReference.current = referenceKey; promptEdited.current = false;
+    promptInputRef.current?.focus();
+  };
+  useEffect(() => {
+    const destination = prefill.query.data;
+    if (!destination || handledReference.current === referenceKey) return;
+    handledReference.current = referenceKey;
+    if (promptEdited.current || draft || prompt.trim()) setPrefillConflict(destination);
+    else applyDestination(destination);
+  }, [prefill.query.data, referenceKey]);
+  useEffect(() => {
+    if (prefill.reference.error || prefill.query.isError) { setSelectedDestinationId(undefined); setAppliedCollection(undefined); }
+  }, [prefill.reference.error, prefill.query.isError]);
+
+  const changeDestination = () => {
+    handledReference.current = referenceKey;
+    promptEdited.current = true; setSelectedDestinationId(undefined); setPrefillConflict(null);
+    setPrompt("");
+    setAppliedCollection(undefined);
+    const params = new URLSearchParams(location.search); params.delete("destinationId"); params.delete("collection");
+    navigate({ pathname: "/home", search: params.toString() }, { replace: true, state: null });
+    promptInputRef.current?.focus();
+  };
 
   const getOrCreateRecognition = (): SpeechRecognition | null => {
     if (recognitionRef.current) return recognitionRef.current;
@@ -191,7 +233,8 @@ export default function HomePage() {
   };
 
   const startListening = () => {
-    setSelectedDestinationId(undefined);
+    promptEdited.current = true;
+    if (prefill.query.isPending) handledReference.current = referenceKey;
     const recognition = getOrCreateRecognition();
     if (!recognition) return;
 
@@ -237,6 +280,7 @@ export default function HomePage() {
   };
 
   const startPlan = () => {
+    if (!canPlan || analyze.isPending) return;
     setSaveError(null);
     setCreateError(null);
     setDraft(null);
@@ -244,13 +288,14 @@ export default function HomePage() {
     planning.start();
 
     analyze.mutate(
-      { prompt: prompt.trim(), destinationId: selectedDestinationId, badges: selectedBadges, pace: preferences.pace, maxWalkingDistanceKm: preferences.maxWalkingDistanceKm },
+      { prompt: prompt.trim(), destinationId: selectedDestinationId, badges: hasCollectionPreferences ? selectedBadges.filter(id => HOME_BADGES.some(badge => badge.id === id)) : selectedBadges, ...(hasCollectionPreferences ? { interests: selectedBadges } : {}), pace: preferences.pace, maxWalkingDistanceKm: preferences.maxWalkingDistanceKm },
       {
         onSuccess: (result) => {
           setDraft(result);
           planning.finish();
 
           if (result.missingFields.length > 0) {
+            setDialogMode(selectedDestinationId ? "edit" : "complete");
             setDialogOpen(true);
           }
         },
@@ -290,6 +335,18 @@ export default function HomePage() {
       },
       {
         onSuccess: (result) => {
+          if (hasCollectionPreferences) {
+            setSelectedBadges(result.analysis.interests); badgesEdited.current = true;
+            if (result.analysis.pace) setPreferences(previous => ({ ...previous, pace: result.analysis.pace! }));
+            preferencesEdited.current = true;
+          }
+          if (draft.analysis.destination !== result.analysis.destination || draft.analysis.country !== result.analysis.country) {
+            setAppliedCollection(undefined);
+            const params = new URLSearchParams(location.search); params.delete("collection"); params.delete("destinationId");
+            navigate({ pathname: "/home", search: params.toString() }, { replace: true, state: null });
+            setSelectedDestinationId(result.analysis.destinationId ?? undefined);
+            setPrompt(`Plan a trip to ${result.analysis.destination}, ${result.analysis.country}`);
+          }
           setDraft(result);
           setDialogOpen(false);
         },
@@ -309,6 +366,16 @@ export default function HomePage() {
         </p>
 
         <div className="prompt-card">
+          {awaitingPrefill && <p role="status">Loading selected destination…</p>}
+          {prefill.reference.error && <Alert severity="warning">{prefill.reference.error}</Alert>}
+          {prefill.query.isError && <Alert severity="warning" action={<Button onClick={() => void prefill.query.refetch()}>Retry destination</Button>}>Could not load the selected destination. It may be unavailable. Enter another destination below or retry.</Alert>}
+          {prefillConflict && <Alert severity="info">You already have a trip in progress. Use {prefillConflict.city}, {prefillConflict.country}, or continue your existing draft.
+            <Button onClick={() => applyDestination(prefillConflict)}>Use selected destination</Button><Button onClick={() => setPrefillConflict(null)}>Continue existing draft</Button>
+          </Alert>}
+          {selectedDestinationId && <Alert severity="info" action={<Button onClick={changeDestination} disabled={isPlanning}>Change destination</Button>}>
+            Selected destination: {prefill.query.data?.id === selectedDestinationId ? `${prefill.query.data.city}, ${prefill.query.data.country}` : selectedDestinationId}. This selection takes priority over destinations mentioned in your prompt.
+          </Alert>}
+          {appliedCollection && selectedDestinationId && <p className="collection-prefill-note">Suggestions from {appliedCollection}. You can change interests and pace before generating your trip.</p>}
           {isPlanning ? (
             <div className="prompt-summary">
               <span className="prompt-summary-text">{planSummary}</span>
@@ -349,10 +416,14 @@ export default function HomePage() {
                 rows={3}
                 placeholder={`4 days in Barcelona, starting at ${(new Date(new Date().getTime() + 24 * 60 * 60 * 1000)).toLocaleDateString()}, €500 budget, I love food and architecture, relaxed place...`}
                 value={prompt}
-                onChange={(e) => { setSelectedDestinationId(undefined); setPrompt(e.target.value); }}
+                onChange={(e) => {
+                  promptEdited.current = true;
+                  if (prefill.query.isPending) handledReference.current = referenceKey;
+                  setPrompt(e.target.value);
+                }}
                 slotProps={{
                   input: { disableUnderline: true },
-                  htmlInput: { ref: promptInputRef },
+                  htmlInput: { ref: promptInputRef, "aria-label": "Describe your trip" },
                 }}
               />
               <div className="prompt-divider" />
@@ -411,7 +482,7 @@ export default function HomePage() {
             analysis={draft.analysis}
             missingFields={draft.missingFields}
             requirementsComplete={draft.requirementsComplete}
-            onEdit={() => setDialogOpen(true)}
+            onEdit={() => { setDialogMode("edit"); setDialogOpen(true); }}
             onGenerate={generateTrip}
             isGenerating={createTrip.isPending}
             generateError={createError}
@@ -477,10 +548,11 @@ export default function HomePage() {
       {draft && (
         <TripRequirementsDialog
           maxTripDays={guestUsage.isGuest ? guestUsage.data?.maxTripDays : undefined}
-          key={draft.missingFields.join(",")}
+          key={`${draft.draftId}:${dialogMode}:${draft.missingFields.join(",")}`}
+          mode={dialogMode}
           open={isDialogOpen}
           analysis={draft.analysis}
-          missingFields={draft.missingFields}
+          missingFields={dialogMode === "edit" ? [...ASKABLE_FIELDS] : draft.missingFields}
           isSaving={saveRequirements.isPending}
           error={saveError}
           onSave={saveAnswers}

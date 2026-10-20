@@ -199,6 +199,8 @@ export const analyzeTripRequestSchema = z
     destinationId: destinationIdSchema.optional(),
     prompt: z.string().trim().max(LIMITS.prompt).default(""),
     badges: z.array(z.string().trim().min(1).max(40)).max(LIMITS.badges).default([]),
+    // Explicit editable selections; omitted by legacy prompt-only callers.
+    interests: z.array(z.string().trim().min(1).max(60)).max(LIMITS.interests).optional(),
     pace: z.enum(PACE_VALUES).optional(),
     maxWalkingDistanceKm: z.number().nonnegative().max(LIMITS.maxWalkingDistanceKm).optional(),
   })

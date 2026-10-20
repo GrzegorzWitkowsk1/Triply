@@ -427,6 +427,7 @@ describe("unified Saved migration", () => {
   it.each(["destination-save", "destination-unsave", "attraction-save", "attraction-unsave"])("fences a real in-flight %s until it finishes", async operation => {
     const source = await guest(); const [trip] = await seed(source.id);
     const attraction = operation.startsWith("attraction"); const unsave = operation.endsWith("unsave");
+    if (!attraction && !unsave) await (await import("../seed/destinations.js")).seedDestinations();
     if (unsave) await seedSaved("guest", source.id);
     let entered!: () => void; let release!: () => void;
     const started = new Promise<void>(resolve => { entered = resolve; }); const gate = new Promise<void>(resolve => { release = resolve; });

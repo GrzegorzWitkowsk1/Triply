@@ -6,6 +6,7 @@ export const cities = {
   Barcelona: { country: "Spain", code: "ES", lat: 41.38, lng: 2.17, zone: "Europe/Madrid", names: ["Barcelona Cathedral", "Palau de la Musica", "Gothic Quarter", "La Boqueria", "SITAKE YA", "Roman Walls", "Sant Pau", "Casa Batllo", "Casa Mila"] },
   Prague: { country: "Czech Republic", code: "CZ", lat: 50.08, lng: 14.43, zone: "Europe/Prague", names: ["Prague Castle", "Charles Bridge", "Old Town Square", "Prague Cafe", "Jewish Quarter", "Powder Tower", "National Museum", "Municipal House", "Vysehrad"] },
   Rome: { country: "Italy", code: "IT", lat: 41.9, lng: 12.5, zone: "Europe/Rome", names: ["Colosseum", "Roman Forum", "Pantheon", "Rome Trattoria", "Trevi Fountain", "Capitoline Hill", "Castel Sant Angelo", "Piazza Navona", "Palatine Hill"] },
+  Paris: { country: "France", code: "FR", lat: 48.85, lng: 2.35, zone: "Europe/Paris", names: ["Louvre", "Eiffel Tower", "Notre Dame", "Paris Cafe", "Paris Market", "Pantheon", "Arc de Triomphe", "Sainte Chapelle", "Musee d'Orsay"] },
 } as const;
 export type City = keyof typeof cities;
 export type Scenario = "empty" | "prague" | "weather" | "future" | "editing" | "conflict";

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { seedDestinations } from "./destinations.js";
 import { ASKABLE_FIELDS, missingFields, tripAnalysisSchema } from "@triply/shared";
 import { Types } from "mongoose";
 import { env } from "../config/env.js";
@@ -67,6 +68,7 @@ async function main(): Promise<void> {
   const emails = process.argv.slice(2);
 
   await connectDb(env.MONGODB_URI);
+  await seedDestinations();
 
   if (emails.length === 0) {
     const users = await UserModel.find({}, "email").lean().exec();

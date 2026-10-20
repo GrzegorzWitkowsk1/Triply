@@ -22,7 +22,7 @@ test("guest saves, reloads, sees shared heart state, removes, and starts plannin
   await expect(page.getByRole("button", { name: "Unsave Barcelona", exact: true })).toBeEnabled();
   await page.goto("/saved");
   await page.getByRole("button", { name: /Plan a trip/ }).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/home\?destinationId=city-003$/);
   await expect(page.getByRole("textbox").first()).toHaveValue("Plan a trip to Barcelona, Spain");
   expect((await harness.state()).calls).toEqual([]);
   const analyzed = page.waitForResponse(response => response.url().endsWith("/api/trips/analyze") && response.request().method() === "POST");
@@ -47,6 +47,8 @@ test("expired saved session is rejected and a new guest receives no old saves", 
   });
   expect(status.status).toBe(401); expect(status.body.code).toBe("GUEST_SESSION_EXPIRED");
   await page.reload();
+  await expect(page).toHaveURL(/\/explore$/);
+  await page.getByRole("button", { name: "Save Barcelona", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.getByRole("button", { name: "Continue as guest" }).click();
   await expect(page).toHaveURL(/\/home$/);
@@ -80,7 +82,7 @@ test.describe("authenticated destination cards", () => {
   test.use({ scenario: "future" });
   test("synchronizes Explore, homepage and Saved hearts", async ({ page, user }) => {
     await login(page, user);
-    await page.goto("/explore");
+    await page.goto("/explore?q=rome");
     await page.getByRole("button", { name: "Save Rome", exact: true }).click();
     await expect(page.getByRole("button", { name: "Unsave Rome", exact: true })).toBeEnabled();
     await page.getByRole("link", { name: "Triply", exact: true }).click();

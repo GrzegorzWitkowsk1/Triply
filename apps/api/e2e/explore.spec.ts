@@ -1,0 +1,35 @@
+import { test, expect } from "./fixtures.ts";
+
+test("anonymous catalog pagination and guest Saved survive navigation and reload", async ({ page, harness }) => {
+  await page.goto("/explore");
+  await expect(page.getByRole("heading", { name: "Where to next?" })).toBeVisible();
+  const paris = page.locator('[data-destination-id="city-003"]');
+  await expect(paris).toContainText("Barcelona"); await expect(paris).toContainText("Spain");
+  const firstIds = await page.locator("[data-destination-id]").evaluateAll(cards => cards.map(card => card.getAttribute("data-destination-id")));
+  expect(firstIds).toHaveLength(24);
+  const anonymous = await page.evaluate(async () => (await fetch("/api/auth/session?identity=1")).json());
+  expect(anonymous.status).toBe("anonymous"); expect((await harness.state()).sessions).toBe(0);
+  await page.getByRole("button", { name: "Go to page 2" }).click();
+  await expect(page).toHaveURL(/page=2/);
+  await expect(page.locator("[data-destination-id]").first()).toBeVisible();
+  const secondIds = await page.locator("[data-destination-id]").evaluateAll(cards => cards.map(card => card.getAttribute("data-destination-id")));
+  expect(secondIds).toHaveLength(24); expect(secondIds.every(id => !firstIds.includes(id))).toBe(true);
+  await page.getByRole("button", { name: "Go to page 1" }).click();
+  await paris.getByRole("button", { name: "Save Barcelona", exact: true }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await page.getByRole("button", { name: "Continue as guest" }).click(); await expect(page).toHaveURL(/\/home$/);
+  await page.goto("/explore");
+  await paris.getByRole("button", { name: "Save Barcelona", exact: true }).click();
+  await expect(paris.getByRole("button", { name: "Unsave Barcelona", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("link", { name: "Saved", exact: true }).first().click();
+  await expect(page.getByRole("article", { name: "Destination: Barcelona" })).toContainText("Spain");
+  await page.goto("/explore"); await expect(paris.getByRole("button", { name: "Unsave Barcelona", exact: true })).toBeEnabled();
+  await page.reload(); await expect(paris).toContainText("Spain");
+  await expect(paris.getByRole("button", { name: "Unsave Barcelona", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(paris).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.goto("/saved"); await page.getByRole("button", { name: "Unsave Barcelona", exact: true }).click();
+  await page.goto("/explore"); await expect(paris.getByRole("button", { name: "Save Barcelona", exact: true })).toBeEnabled();
+  expect((await harness.state()).calls).toEqual([]);
+});

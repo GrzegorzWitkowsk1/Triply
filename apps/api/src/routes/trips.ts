@@ -1,7 +1,8 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import type { HttpRoute, HttpRequest } from "../http/types.js";
 import { Types } from "mongoose";
-import { applyProfilePreferences, DEFAULT_PROFILE_PREFERENCES, findDestination } from "@triply/shared";
+import { applyProfilePreferences, DEFAULT_PROFILE_PREFERENCES } from "@triply/shared";
+import { resolveCatalogDestination } from "../services/catalogDestination.js";
 import {
   analyzeTripRequestSchema,
   applyRegenerationRequestSchema,
@@ -153,7 +154,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       }
 
       const request: AnalyzeTripRequest = parsed.data;
-      const selectedDestination = request.destinationId ? findDestination(request.destinationId) : null;
+      const selectedDestination = request.destinationId ? await resolveCatalogDestination(request.destinationId) : null;
       if (request.destinationId && !selectedDestination) return res.code(404).send({ code: "DESTINATION_NOT_FOUND", error: "Destination is no longer available." });
       const owner = currentTripOwner(req);
       // Reserve an actual draft before parsing/geocoding; unique slots fence concurrent creates.
@@ -161,11 +162,18 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       try {
       const preferences = req.user?.preferences ?? DEFAULT_PROFILE_PREFERENCES;
       const badges = Object.prototype.hasOwnProperty.call(req.body, "badges") ? request.badges : preferences.interests;
-      const parsedAnalysis = await aiService.parseTrip({ prompt: request.prompt, badges });
+      const effectivePrompt = selectedDestination
+        ? `The selected destination is ${selectedDestination.city}, ${selectedDestination.country}. This selection overrides any other destination in the request. Other trip preferences: ${request.prompt}`
+        : request.prompt;
+      const parsedAnalysis = await aiService.parseTrip({ prompt: effectivePrompt, badges });
       const analysis = applyProfilePreferences(parsedAnalysis, {
         ...preferences, pace: request.pace ?? preferences.pace,
         maxWalkingDistanceKm: request.maxWalkingDistanceKm ?? preferences.maxWalkingDistanceKm,
       }, badges);
+        if (request.interests !== undefined) {
+          analysis.interests = [...new Set(request.interests)];
+          if (request.pace !== undefined) analysis.pace = request.pace;
+        }
       if (selectedDestination) {
         analysis.destinationId = selectedDestination.id;
         analysis.destination = selectedDestination.city;
@@ -175,8 +183,8 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
 
       const draft = await upsertTripDraft({
         userId: owner,
-        ...(reservation ? { draftId: reservation.id } : {}),
-        prompt: request.prompt,
+        ...(reservation ? { draftId: reservation.id } : selectedDestination ? { draftId: new Types.ObjectId().toHexString() } : {}),
+        prompt: effectivePrompt,
         badges,
         analysis,
       });

@@ -11,6 +11,7 @@ export function findDestinationByCity(city: string, country: string): Destinatio
   return matches.length === 1 ? matches[0]! : null;
 }
 export const destinationIdSchema = z.string().regex(/^city-\d{3}$/);
+export const savedDestinationIdsResponseSchema = z.object({ destinationIds: z.array(destinationIdSchema).max(10_000) });
 export const saveDestinationSchema = z.object({ destinationId: destinationIdSchema }).strict();
 export interface SavedDestination {
   destinationId: string;

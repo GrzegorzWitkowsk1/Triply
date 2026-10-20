@@ -4,6 +4,7 @@ import AppLayout from "./components/layout/AppLayout";
 import ScrollToTop from "./components/layout/ScrollToTop";
 import LoginPage from "./components/LoginPage";
 import ExplorePage from "./pages/ExplorePage";
+import CollectionPage from "./pages/CollectionPage";
 import HomePage from "./pages/HomePage";
 import MyTripsPage from "./pages/MyTripsPage";
 import NotificationsPage from "./pages/NotificationsPage";
@@ -19,6 +20,7 @@ export default function App() {
     <BrowserRouter>
       <ScrollToTop />
       <Routes>
+        <Route element={<AppLayout />}><Route path="/explore" element={<ExplorePage />} /><Route path="/explore/collections/:slug" element={<CollectionPage />} /></Route>
         <Route path="/shared/:shareToken" element={<SharedTripPage />} />
         <Route
           path="/"
@@ -55,7 +57,6 @@ export default function App() {
           <Route path="/trips" element={<MyTripsPage />} />
           <Route path="/trips/:id" element={<TripPage />} />
           <Route path="/trips/:id/equipment" element={<TripEquipmentPage />} />
-          <Route path="/explore" element={<ExplorePage />} />
           <Route path="/saved" element={<SavedPage />} />
           <Route path="/notifications" element={<GuestAwarePage><NotificationsPage /></GuestAwarePage>} />
           <Route path="/profile" element={<GuestAwarePage><ProfilePage /></GuestAwarePage>} />

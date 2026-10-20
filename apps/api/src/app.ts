@@ -1,4 +1,5 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
+import { registerDestinationRoutes } from "./routes/destinations.js";
 import { registerSavedAttractionRoutes } from "./routes/savedAttractions.js";
 import { SavedAttractionModel } from "./models/SavedAttraction.js";
 import { registerSavedRoutes } from "./routes/saved.js";
@@ -35,7 +36,7 @@ import { registerPrivateCalendarRoutes, registerPublicCalendarRoutes } from "./r
 
 const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
 
-export async function createApp() {
+export async function createApp(options: { configure?: (app: FastifyInstance) => void } = {}) {
   const proxyHops = env.TRUST_PROXY;
   const app = Fastify({
     rewriteUrl,
@@ -75,7 +76,9 @@ export async function createApp() {
   registerGuestActivity(app);
   await app.register(rateLimit, { global: false, store: FixedWindowStore });
   const limits = createLimiters(app);
+  options.configure?.(app);
   registerHealthRoutes(app);
+  registerDestinationRoutes(app);
   registerPublicTripRoutes(app);
   registerPublicPdfRoutes(app);
   registerPublicCalendarRoutes(app);

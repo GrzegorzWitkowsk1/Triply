@@ -55,11 +55,11 @@ function applyText(
   return value === null ? null : normalizeText(value);
 }
 
-function mergeInterests(current: string[], incoming: string[]): string[] {
+function normalizeInterests(incoming: string[]): string[] {
   const merged: string[] = [];
   const seen = new Set<string>();
 
-  for (const interest of [...current, ...incoming]) {
+  for (const interest of incoming) {
     const normalized = interest.trim().toLowerCase();
 
     if (!normalized || seen.has(normalized) || merged.length >= LIMITS.interests) {
@@ -148,7 +148,7 @@ export function mergeRequirements(
   }
 
   if (answers.interests !== undefined) {
-    next.interests = answers.interests === null ? [] : mergeInterests(next.interests, answers.interests);
+    next.interests = answers.interests === null ? [] : normalizeInterests(answers.interests);
   }
 
   if (answers.pace !== undefined) {
@@ -444,7 +444,7 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
 
   const draft = await TripModel.findOneAndUpdate(
     { ...ownerFilter(input.userId), status: "draft",
-      ...(existing ? { _id: existing._id, updatedAt: existing.updatedAt } : {}) },
+      ...(existing ? { _id: existing._id, updatedAt: existing.updatedAt } : input.draftId ? { _id: input.draftId } : {}) },
     {
       $set: {
         prompt: input.prompt,

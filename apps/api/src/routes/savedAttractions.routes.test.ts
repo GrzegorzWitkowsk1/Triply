@@ -116,6 +116,7 @@ describe("saved attractions", () => {
     const response = await app.inject({ url, headers: owner.headers }); expect(response.statusCode).toBe(401); expect(response.json().code).toBe("GUEST_SESSION_EXPIRED");
   });
   it("leaves destinations, source documents and guest quotas unchanged", async () => {
+    await (await import("../seed/destinations.js")).seedDestinations();
     const owner = await identity("guest"); const source = await trip(owner);
     const before = JSON.stringify(await TripModel.findById(source.id).lean());
     const usage = (await app.inject({ url: "/api/guest/usage", headers: owner.headers })).json();

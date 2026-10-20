@@ -599,7 +599,7 @@ body {
 }
 
 .home-inner {
-  max-width: 1000px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -1218,7 +1218,7 @@ body {
 }
 
 .explore-inner {
-  max-width: 1000px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -1276,11 +1276,19 @@ body {
 
 .trend-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 20px;
 }
 
+.explore-toolbar { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin: 20px 0 12px; }
+.explore-toolbar > * { min-width: 0; }
+.explore-filter-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.explore-filter-chips .MuiChip-root { max-width: 100%; min-height: 44px; }
+.explore-filter-chips .MuiChip-label { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 600px) { .explore-toolbar { grid-template-columns: minmax(0, 1fr); } }
+
 .trend-card {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: #ffffff;
@@ -1296,8 +1304,9 @@ body {
 }
 
 .trend-card-media {
+  aspect-ratio: 4 / 3;
   position: relative;
-  flex: 3;
+  flex: none;
   min-height: 160px;
   overflow: hidden;
 }
@@ -1337,12 +1346,14 @@ body {
 }
 
 .trend-city {
+  overflow-wrap: anywhere;
   font-size: 18px;
   font-weight: 700;
   color: var(--color-text);
 }
 
 .trend-locale {
+  overflow-wrap: anywhere;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1486,7 +1497,7 @@ body {
 }
 
 .settings-inner {
-  max-width: 1000px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -1654,7 +1665,7 @@ body {
 }
 
 .saved-inner {
-  max-width: 1000px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -2376,7 +2387,7 @@ body {
 }
 
 .notifications-inner {
-  max-width: 1000px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -3535,7 +3546,7 @@ body {
   box-shadow: var(--shadow-soft);
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 1200px) {
   .trip-content {
     grid-template-columns: 1fr;
   }
@@ -3951,7 +3962,7 @@ body {
 }
 
 .equipment-inner {
-  max-width: 1000px;
+  max-width: 1200px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -5026,6 +5037,7 @@ body {
 
 .trip-card-media, .trend-card-media, .saved-card-media { position: relative; }
 .destination-save.MuiIconButton-root { position: absolute; top: 12px; right: 12px; z-index: 2; }
+.saved-detail-actions .destination-save.MuiIconButton-root { position: static; }
 
 /* Saved collection: reuse the existing page, card and filter palette. */
 .saved-count { margin: 14px 0 0; color: var(--color-muted); font-size: 14px; }
@@ -5044,8 +5056,8 @@ body {
 .saved-page .saved-card:hover { transform: none; }
 .saved-page .saved-card-media { aspect-ratio: 16 / 10; flex: none; min-height: 0; background: #f7ede7; display: grid; place-items: center; }
 .saved-page .saved-card-media .saved-image-fallback { color: var(--color-primary); width: 48px; height: 48px; opacity: .65; }
-.saved-page .photo-attribution { position: absolute; bottom: 0; left: 0; right: 0; z-index: 1; padding: 6px 8px; font-size: 10px; line-height: 1.4; background: rgba(0, 0, 0, .65); color: white; overflow-wrap: anywhere; }
-.saved-page .photo-attribution a { color: inherit; text-decoration: underline; }
+.saved-page .photo-attribution, .trend-card .photo-attribution { position: absolute; bottom: 0; left: 0; right: 0; z-index: 1; padding: 6px 8px; font-size: 10px; line-height: 1.4; background: rgba(0, 0, 0, .65); color: white; overflow-wrap: anywhere; }
+.saved-page .photo-attribution a, .trend-card .photo-attribution a { color: inherit; text-decoration: underline; }
 .saved-page .saved-card-body { padding: 18px; gap: 12px; }
 .saved-card-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; }
 .saved-card-heading > div { min-width: 0; }
@@ -5077,3 +5089,41 @@ body {
   .saved-page .saved-card, .saved-page .saved-card-media img, .saved-page .trip-filter { transition: none; }
   .saved-page .saved-card:hover img { transform: none; }
 }
+
+/* Explore hardening: fixed media, keyboard focus and reduced motion. */
+.destination-image { position: relative; width: 100%; height: 100%; min-width: 0; overflow: hidden; }
+.destination-image > img, .destination-image-placeholder { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.destination-image .photo-attribution { z-index: 1; }
+.destination-save-error { position: absolute; inset: auto 0 0; z-index: 3; background: white; color: #9c2516; padding: 8px; font-size: 13px; }
+.explore-page :is(button, a):focus-visible { outline: 3px solid #a63620; outline-offset: 3px; }
+.explore-page .destination-save.MuiIconButton-root { min-width: 44px; min-height: 44px; }
+.explore-page .MuiPaginationItem-root { min-width: 40px; height: 44px; }
+.explore-pagination .MuiPaginationItem-ellipsis { display: inline-flex; align-items: center; justify-content: center; }
+@media (max-width: 375px) { .explore-page .MuiPaginationItem-root { min-width: 32px; margin: 0 1px; } }
+@media (prefers-reduced-motion: reduce) {
+  .explore-page .trend-card, .explore-page .trend-card img { transition: none; }
+  .explore-page .trend-card:hover, .explore-page .trend-card:hover img { transform: none; }
+}
+
+.explore-results-count { margin: 0 0 32px; font-weight: 700; }
+.explore-pagination { margin-top: 40px; display: flex; justify-content: center; }
+
+/* Existing curated cards become links without nested interactive controls. */
+.collections-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.collection-card { position: relative; min-width: 0; }
+.collection-main { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; color: inherit; text-decoration: none; }
+.collection-main::after { content: ""; position: absolute; inset: 0; border-radius: 20px; }
+.collection-card:has(.collection-main:hover) { box-shadow: 0 8px 28px #15243620; }
+.collection-main:focus-visible::after { outline: 3px solid #a63620; outline-offset: 3px; }
+.collection-tags { min-width: 0; }
+.collection-tags a { position: relative; z-index: 1; display: inline-flex; align-items: center; min-height: 44px; text-decoration: none; overflow-wrap: anywhere; }
+.collection-back { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 20px; }
+.collection-header { display: grid; gap: 12px; }
+.collection-suggestions { margin: 28px 0; }
+.collection-suggestions p { margin-top: 10px; line-height: 1.6; }
+.collection-destinations { margin-top: 24px; }
+.collection-destination { min-width: 0; }
+.collection-destination > article { height: 100%; }
+.collection-destination:focus-visible { outline: 3px solid #a63620; outline-offset: 4px; border-radius: 24px; }
+.collection-prefill-note { margin: 12px 0; line-height: 1.5; }
+@media (max-width: 600px) { .collections-grid { grid-template-columns: minmax(0, 1fr); } }

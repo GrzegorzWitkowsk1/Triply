@@ -6,7 +6,7 @@ import { useIdentityMutation } from "./useIdentityMutation";
 
 export function useSavedIdentity() {
   const { user, guest, status } = useAuth();
-  return { id: user ? `user:${user.id}` : guest ? `guest:${guest.id}` : "anonymous", enabled: status === "guest" || status === "authenticated" };
+  return { id: user ? `user:${user.id}` : guest ? `guest:${guest.id}` : "anonymous", enabled: status === "guest" || status === "authenticated", loading: status === "loading" };
 }
 export function useSavedDestinations() {
   const identity = useSavedIdentity();
@@ -25,6 +25,10 @@ function useDestinationMutation(save: boolean) {
   return useIdentityMutation({
     mutationKey: ["saved", identity.id],
     mutationFn: save ? saveDestination : unsaveDestination,
+    onError: () => {
+      // A response can be lost after persistence. Reconcile with the server; do not touch catalog queries.
+      void client.invalidateQueries({ queryKey: ["saved", identity.id], predicate: query => query.queryKey[2] !== "attractions" });
+    },
     onSuccess: (_data, id) => {
       void client.cancelQueries({ queryKey: ["saved", identity.id], predicate: query => query.queryKey[2] !== "attractions" });
       client.setQueryData<SavedDestinationIdsResponse>(["saved", identity.id, "ids"], old => old ? ({ destinationIds: save ? [...new Set([...old.destinationIds, id])] : old.destinationIds.filter(value => value !== id) }) : undefined);

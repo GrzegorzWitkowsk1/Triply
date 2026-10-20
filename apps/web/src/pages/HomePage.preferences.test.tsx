@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import type { ProfileUser } from "@triply/shared";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { findDestination, type ProfileUser } from "@triply/shared";
 import HomePage from "./HomePage";
 const mocks = vi.hoisted(() => ({ user: null as ProfileUser | null, analyze: vi.fn() }));
 vi.mock("../auth/AuthProvider", () => ({ useAuth: () => ({ user: mocks.user }) }));
@@ -10,15 +11,18 @@ vi.mock("../hooks/useTrips", () => ({ useTrips: () => ({ data: [], isPending: fa
 vi.mock("../hooks/useTripAnalysis", () => ({ useAnalyzeTrip: () => ({ mutate: mocks.analyze }), useUpdateTripRequirements: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock("../hooks/useTripGeneration", () => ({ useConfirmTrip: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock("../hooks/useTripPlanning", () => ({ useTripPlanning: () => ({ hasStarted: false, isDone: false, statuses: [], start: vi.fn(), reset: vi.fn(), finish: vi.fn() }) }));
+let client: QueryClient;
 beforeEach(() => {
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(findDestination("city-003")))));
   vi.clearAllMocks();
   mocks.user = { id: "user", email: "user@example.com", preferences: { interests: ["culture", "shopping"], pace: "relaxed", maxWalkingDistanceKm: 3 } };
 });
-afterEach(cleanup);
-const page = () => <MemoryRouter><HomePage /></MemoryRouter>;
+afterEach(() => { cleanup(); client.clear(); vi.unstubAllGlobals(); });
+const page = () => <QueryClientProvider client={client}><MemoryRouter><HomePage /></MemoryRouter></QueryClientProvider>;
 describe("homepage profile defaults", () => {
   it("prefills a saved destination without invoking AI and submits its canonical ID", async () => {
-    render(<MemoryRouter initialEntries={[{ pathname: "/home", state: { destinationId: "city-003" } }]}><HomePage /></MemoryRouter>);
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[{ pathname: "/home", state: { destinationId: "city-003" } }]}><HomePage /></MemoryRouter></QueryClientProvider>);
     await waitFor(() => expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("Plan a trip to Barcelona, Spain"));
     expect(mocks.analyze).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Plan my trip" }));

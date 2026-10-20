@@ -19,3 +19,5 @@ export * from "./guest.js";
 export * from "./guestMigration.js";
 export * from "./saved.js";
 export * from "./savedAttractions.js";
+export * from "./destinationCatalog.js";
+export * from "./curatedCollections.js";

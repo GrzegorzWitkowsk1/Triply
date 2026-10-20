@@ -153,7 +153,7 @@ it("opens destination details and navigates to planning with the canonical ID", 
   mount("/saved?type=destinations&q=Paris"); await ready(); fireEvent.click(screen.getByRole("button", { name: "Open destination" }));
   const dialog = await screen.findByRole("dialog", { name: "Paris" }); expect(within(dialog).getByText("France")).toBeVisible();
   fireEvent.click(within(dialog).getByRole("button", { name: "Plan a trip" }));
-  expect(await screen.findByText("Trip planning")).toBeVisible(); expect(screen.getByTestId("route-state")).toHaveTextContent('"destinationId":"city-001"');
+  expect(await screen.findByText("Trip planning")).toBeVisible(); expect(screen.getByTestId("location")).toHaveTextContent('/home?destinationId=city-001');
 });
 it("opens retained attraction details without linking to its source trip", async () => {
   mount("/saved?type=attractions&q=musee"); await ready(); fireEvent.click(screen.getByRole("button", { name: "View details" }));

@@ -44,7 +44,7 @@ export default function Header() {
         </nav>
 
         <div className="header-actions">
-          {isGuest ? <><span className="guest-indicator">Guest</span><Link className="auth-link" to="/register">Create account</Link><Link className="auth-link" to="/login">Log in</Link></> : <>
+          {!user ? <>{isGuest && <span className="guest-indicator">Guest</span>}<Link className="auth-link" to="/register">Create account</Link><Link className="auth-link" to="/login">Log in</Link></> : <>
           <Link
             to="/notifications"
             className="header-icon header-notif"
@@ -60,7 +60,7 @@ export default function Header() {
             <span className="user-email">{user?.email}</span>
           </Link>
           </>}
-          <button
+          {(user || isGuest) && <button
             type="button"
             className="header-icon logout-btn"
             aria-label={isGuest ? "End guest session" : "Sign out"}
@@ -71,7 +71,7 @@ export default function Header() {
             disabled={isLoggingOut}
           >
             <LogoutOutlined />
-          </button>
+          </button>}
           {exitError && <span role="alert">Could not end session. Try again.</span>}
         </div>
       </div>

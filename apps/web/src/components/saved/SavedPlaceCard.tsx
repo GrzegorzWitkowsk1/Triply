@@ -1,10 +1,11 @@
 import { AttractionsOutlined, LandscapeOutlined, PlaceOutlined } from "@mui/icons-material";
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle } from "@mui/material";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, type ReactNode } from "react";
+import DestinationPlanButton from "../DestinationPlanButton";
 import { savedLocale, savedMapUrl, savedName, type SavedItem } from "../../config/saved";
 import PhotoAttribution from "../trips/PhotoAttribution";
 import SavedRemoveButton from "./SavedRemoveButton";
+import DestinationImage from "../DestinationImage";
 
 function safeImage(value: string | undefined): string | null {
   if (!value) return null;
@@ -15,14 +16,14 @@ function SavedImage({ item }: { item: SavedItem }) {
   const source = item.type === "destinations" ? item.row.destination?.imageUrl : item.row.snapshot?.image;
   const image = safeImage(source);
   const Icon = item.type === "destinations" ? LandscapeOutlined : AttractionsOutlined;
+  if (item.type === "destinations" && item.row.destination) return <div className="saved-card-media"><DestinationImage photo={item.row.destination} /></div>;
   return <div className="saved-card-media">
     {image && !failed ? <img src={image} alt={savedName(item)} loading="lazy" onError={() => setFailed(true)} /> : <Icon className="saved-image-fallback" aria-hidden="true" />}
     {image && !failed && item.type === "destinations" && item.row.destination && <PhotoAttribution photo={item.row.destination} />}
   </div>;
 }
-export function SavedPlanButton({ item }: { item: SavedItem }) {
-  const navigate = useNavigate();
-  return item.type === "destinations" && item.row.destination ? <Button variant="contained" onClick={() => navigate("/home", { state: { destinationId: item.row.destination!.id, focusPrompt: true } })}>Plan a trip</Button> : null;
+export function SavedPlanButton({ item, collectionSlug }: { item: SavedItem; collectionSlug?: string }) {
+  return item.type === "destinations" && item.row.destination ? <DestinationPlanButton destinationId={item.row.destination.id} collectionSlug={collectionSlug} /> : null;
 }
 export default function SavedPlaceCard({ item, onOpen }: { item: SavedItem; onOpen: () => void }) {
   const unavailable = item.type === "destinations" && !item.row.destination;
@@ -40,7 +41,7 @@ export default function SavedPlaceCard({ item, onOpen }: { item: SavedItem; onOp
     </div>
   </article>;
 }
-export function SavedPlaceDetails({ item, onClose }: { item: SavedItem | undefined; onClose: () => void }) {
+export function SavedPlaceDetails({ item, onClose, destinationAction, collectionSlug }: { item: SavedItem | undefined; onClose: () => void; destinationAction?: ReactNode; collectionSlug?: string }) {
   const map = item ? savedMapUrl(item) : null;
   const snapshot = item?.type === "attractions" ? item.row.snapshot : null;
   return <Dialog open={Boolean(item)} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="saved-detail-title">
@@ -55,6 +56,6 @@ export function SavedPlaceDetails({ item, onClose }: { item: SavedItem | undefin
         {map && <a href={map} target="_blank" rel="noreferrer">View on OpenStreetMap</a>}
       </>}
     </DialogContent>
-    <DialogActions className="saved-detail-actions">{item && <><SavedRemoveButton item={item} /><SavedPlanButton item={item} /></>}<Button onClick={onClose}>Close</Button></DialogActions>
+    <DialogActions className="saved-detail-actions">{item && <>{destinationAction ?? <SavedRemoveButton item={item} />}<SavedPlanButton item={item} collectionSlug={collectionSlug} /></>}<Button onClick={onClose}>Close</Button></DialogActions>
   </Dialog>;
 }
