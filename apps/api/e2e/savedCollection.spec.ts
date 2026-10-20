@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, login } from "./fixtures.ts";
+import { test, expect, login, openExploreDestination } from "./fixtures.ts";
 
 async function verifyCollection(page: Page, destination: string, attraction: string) {
   await page.goto("/saved");
@@ -82,9 +82,9 @@ test("guest mixed collection supports filtering, search, sorting, reload and rem
 test.describe("authenticated mixed collection", () => {
   test.use({ scenario: "future" });
   test("supports the same Saved controls and actions for an account", async ({ page, user }) => {
-    await login(page, user); await page.goto("/explore");
-    await page.getByRole("button", { name: "Save Rome", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Unsave Rome", exact: true })).toBeEnabled();
+    await login(page, user); const card = await openExploreDestination(page, "city-005");
+    await card.getByRole("button", { name: "Save Rome", exact: true }).click();
+    await expect(card.getByRole("button", { name: "Unsave Rome", exact: true })).toBeEnabled();
     await page.goto(`/trips/${user.tripId}`); await page.getByRole("button", { name: "Save attraction Colosseum", exact: true }).click();
     await expect(page.getByRole("button", { name: "Unsave attraction Colosseum", exact: true })).toBeEnabled();
     await verifyCollection(page, "Rome", "Colosseum");

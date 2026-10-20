@@ -54,8 +54,8 @@ test("guest attraction collections are isolated and expired guests cannot reuse 
   } finally { await other.close(); }
   await harness.command("/expire-guest", { guestId: session.guest.id });
   await page.reload(); await expect(page).toHaveURL(/\/login$/);
-  await page.getByRole("button", { name: "Continue as guest" }).click(); await expect(page).toHaveURL(/\/home$/);
-  await page.goto("/saved"); await expect(page.getByText(/No saved places yet/)).toBeVisible();
+  await page.getByRole("button", { name: "Continue as guest" }).click(); await expect(page).toHaveURL(/\/saved$/);
+  await expect(page.getByText(/No saved places yet/)).toBeVisible();
 });
 
 test.describe("authenticated saves", () => {

@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
-import { test, expect, login } from "./fixtures.ts";
+import { test, expect, login, openExploreDestination } from "./fixtures.ts";
+import { findDestination } from "@triply/shared";
 
 async function api(page: Page, path: string, method = "GET", body?: unknown) {
   return page.evaluate(async ({ path, method, body }) => {
@@ -12,11 +13,12 @@ async function enterGuest(page: Page) {
   await expect(page).toHaveURL(/\/home$/);
   return (await api(page, "/api/auth/session?identity=1")).body.guest.id as string;
 }
-async function saveDestinations(page: Page, cities = ["Barcelona", "Rome"]) {
-  await page.goto("/explore");
-  for (const city of cities) {
-    await page.getByRole("button", { name: `Save ${city}`, exact: true }).click();
-    await expect(page.getByRole("button", { name: `Unsave ${city}`, exact: true })).toBeEnabled();
+async function saveDestinations(page: Page, destinationIds = ["city-003", "city-005"]) {
+  for (const id of destinationIds) {
+    const card = await openExploreDestination(page, id);
+    const city = findDestination(id)!.city;
+    await card.getByRole("button", { name: `Save ${city}`, exact: true }).click();
+    await expect(card.getByRole("button", { name: `Unsave ${city}`, exact: true })).toBeEnabled();
   }
 }
 async function saveAttractions(page: Page, tripId: string, names = ["Barcelona Cathedral", "Palau de la Musica"]) {
@@ -49,8 +51,10 @@ test("new account imports two destinations and two attractions with its trip and
   expect((await harness.state()).calls).toEqual(calls);
   await page.goto("/saved"); await expect(page.getByRole("button", { name: "All (4)", exact: true })).toBeVisible();
   await page.reload(); await expect(page.getByRole("article")).toHaveCount(4);
-  await page.goto("/explore");
-  for (const city of ["Barcelona", "Rome"]) await expect(page.getByRole("button", { name: `Unsave ${city}`, exact: true })).toHaveAttribute("aria-pressed", "true");
+  for (const id of ["city-003", "city-005"]) {
+    const card = await openExploreDestination(page, id);
+    await expect(card.getByRole("button", { name: `Unsave ${findDestination(id)!.city}`, exact: true })).toHaveAttribute("aria-pressed", "true");
+  }
   await page.goto(`/trips/${tripId}`);
   for (const name of ["Barcelona Cathedral", "Palau de la Musica"]) await expect(page.getByRole("button", { name: `Unsave attraction ${name}`, exact: true })).toHaveAttribute("aria-pressed", "true");
 });
@@ -58,13 +62,13 @@ test("new account imports two destinations and two attractions with its trip and
 test.describe("existing account Saved merge", () => {
   test.use({ scenario: "editing" });
   test("preserves existing places and merges overlapping canonical keys exactly once", async ({ page, user, browser, harness }) => {
-    await login(page, user); await saveDestinations(page, ["Barcelona", "Rome"]);
+    await login(page, user); await saveDestinations(page, ["city-003", "city-005"]);
     await saveAttractions(page, user.tripId!, ["Barcelona Cathedral", "SITAKE YA"]);
     const existingTrip = await harness.trip(user.tripId!);
     const context = await browser.newContext({ baseURL: "http://127.0.0.1:5174" });
     try {
       const guest = await context.newPage(); const guestId = await enterGuest(guest);
-      await saveDestinations(guest, ["Barcelona", "Lisbon"]);
+      await saveDestinations(guest, ["city-003", "city-011"]);
       const { tripId } = await harness.command<{ tripId: string }>("/guest-attraction-trip", { guestId });
       await saveAttractions(guest, tripId);
       await guest.goto("/login");
@@ -109,7 +113,7 @@ test("Saved migration recovers from transaction interruption and a lost committe
 
 test("guest and account isolation survive import and old guest credentials are revoked", async ({ page, user, browser, harness }) => {
   test.setTimeout(120_000);
-  const guestId = await enterGuest(page); await saveDestinations(page, ["Barcelona"]);
+  const guestId = await enterGuest(page); await saveDestinations(page, ["city-003"]);
   const { tripId } = await harness.command<{ tripId: string }>("/guest-attraction-trip", { guestId }); await saveAttractions(page, tripId, ["Barcelona Cathedral"]);
   const oldCookie = (await page.context().cookies()).find(cookie => cookie.name === "triply.sid")!;
   const b = await browser.newContext({ baseURL: "http://127.0.0.1:5174" });

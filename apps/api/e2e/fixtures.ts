@@ -1,6 +1,7 @@
 import { test as base, expect, type APIRequestContext, type Page } from "@playwright/test";
 import type { TripRecord } from "../src/models/Trip.ts";
 import type { Scenario } from "./data.ts";
+import { findDestination } from "@triply/shared";
 
 interface UserFixture { email: string; password: string; tripId: string | null; now: string }
 export interface ProviderState {
@@ -59,6 +60,18 @@ export const test = base.extend<{ scenario: Scenario; harness: Harness; user: Us
   },
 });
 export { expect };
+
+/** Find a fixture city through public search, independently of catalog ordering/pages. */
+export async function openExploreDestination(page: Page, destinationId: string) {
+  const destination = findDestination(destinationId);
+  if (!destination) throw new Error(`Unknown destination fixture: ${destinationId}`);
+  const params = new URLSearchParams({ q: `${destination.city} ${destination.country}` });
+  await page.goto(`/explore?${params}`);
+  const card = page.locator(`[data-destination-id="${destination.id}"]`);
+  await expect(card).toBeVisible();
+  await expect(card).toContainText(destination.country);
+  return card;
+}
 
 export async function login(page: Page, user: UserFixture): Promise<void> {
   await page.goto("/login");
