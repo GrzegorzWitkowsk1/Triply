@@ -386,6 +386,8 @@ describe("Fastify migration regressions", () => {
       ["GET", "/api/location/search"], ["GET", "/api/trips"], ["POST", "/api/trips/analyze"],
       ["PATCH", "/api/trips/:id/requirements"], ["GET", "/api/trips/:id"], ["POST", "/api/trips/:id/weather/refresh"],
       ["GET", "/api/trips/:id/equipment"], ["POST", "/api/trips/:id/equipment"],
+      ["GET", "/api/trips/:id/equipment/context"], ["PATCH", "/api/trips/:id/equipment/bulk"],
+      ["POST", "/api/trips/:id/equipment/generate"], ["POST", "/api/trips/:id/equipment/apply"],
       ["PATCH", "/api/trips/:id/equipment/:itemId"], ["DELETE", "/api/trips/:id/equipment/:itemId"],
       ["POST", "/api/trips/:id/confirm"], ["POST", "/api/trips/:id/generate"],
       ["POST", "/api/trips/:id/days/:dayId/regenerate"], ["POST", "/api/trips/:id/days/:dayId/apply"],
@@ -396,7 +398,7 @@ describe("Fastify migration regressions", () => {
       ["POST", "/api/trips/:id/expenses"], ["PATCH", "/api/trips/:id/expenses/:expenseId"],
       ["DELETE", "/api/trips/:id/expenses/:expenseId"], ["GET", "/api/trips/:id/budget"], ["PATCH", "/api/trips/:id/budget"],
     ] as const;
-    expect([...publicRoutes, ...protectedRoutes]).toHaveLength(32);
+    expect([...publicRoutes, ...protectedRoutes]).toHaveLength(36);
     for (const [method, url] of [...publicRoutes, ...protectedRoutes]) expect(app.hasRoute({ method, url }), `${method} ${url}`).toBe(true);
     for (const [method, url] of protectedRoutes) {
       const response = await app.inject({ method, url: url.replace(/:[a-zA-Z]+/g, "example"), headers: { origin } });

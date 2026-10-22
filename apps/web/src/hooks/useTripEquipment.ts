@@ -37,9 +37,9 @@ export function useCreateEquipmentItem(tripId: string) {
   return useMutation({
     mutationFn: (input: CreateTripEquipmentItem) =>
       createEquipmentItem(tripId, input),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: equipmentQueryKey(tripId) });
-      void queryClient.invalidateQueries({ queryKey: tripQueryKey(tripId) });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: equipmentQueryKey(tripId), exact: true });
+      void queryClient.invalidateQueries({ queryKey: tripQueryKey(tripId), exact: true });
     },
   });
 }
@@ -57,8 +57,8 @@ export function useUpdateEquipmentItem(tripId: string) {
       input: UpdateTripEquipmentItem;
     }) => updateEquipmentItem(tripId, itemId, input),
 
-    onMutate: ({ itemId, input }) => {
-      void queryClient.cancelQueries({ queryKey: key });
+    onMutate: async ({ itemId, input }) => {
+      await queryClient.cancelQueries({ queryKey: key, exact: true });
       const previous = queryClient.getQueryData<TripEquipmentItem[]>(key);
 
       queryClient.setQueryData<TripEquipmentItem[]>(key, (current) =>
@@ -75,8 +75,8 @@ export function useUpdateEquipmentItem(tripId: string) {
       }
     },
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: key });
-      void queryClient.invalidateQueries({ queryKey: tripQueryKey(tripId) });
+      void queryClient.invalidateQueries({ queryKey: key, exact: true });
+      void queryClient.invalidateQueries({ queryKey: tripQueryKey(tripId), exact: true });
     },
   });
 }
@@ -88,8 +88,8 @@ export function useDeleteEquipmentItem(tripId: string) {
   return useMutation({
     mutationFn: (itemId: string) => deleteEquipmentItem(tripId, itemId),
 
-    onMutate: (itemId) => {
-      void queryClient.cancelQueries({ queryKey: key });
+    onMutate: async (itemId) => {
+      await queryClient.cancelQueries({ queryKey: key, exact: true });
       const previous = queryClient.getQueryData<TripEquipmentItem[]>(key);
 
       queryClient.setQueryData<TripEquipmentItem[]>(key, (current) =>
@@ -104,8 +104,8 @@ export function useDeleteEquipmentItem(tripId: string) {
       }
     },
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: key });
-      void queryClient.invalidateQueries({ queryKey: tripQueryKey(tripId) });
+      void queryClient.invalidateQueries({ queryKey: key, exact: true });
+      void queryClient.invalidateQueries({ queryKey: tripQueryKey(tripId), exact: true });
     },
   });
 }

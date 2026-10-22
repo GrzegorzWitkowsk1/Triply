@@ -14,6 +14,7 @@ const token = process.env.TRIPLY_E2E_TOKEN;
 // Override inherited .env/credentials before dynamically importing any app code.
 Object.assign(process.env, {
   SESSION_SECRET: "triply-e2e-only-session-secret-0000000000", WEB_ORIGIN: "http://127.0.0.1:5174",
+  GUEST_PACKING_GENERATIONS_PER_24H: "3",
   TRUST_PROXY: "false", AI_PROVIDER: "gemini", AI_MODEL: "e2e-fixture", GEMINI_API_KEY: "e2e-unused",
   OPENROUTER_API_KEY: "", GEOAPIFY_API_KEY: "e2e-unused", GEOAPIFY_ENABLED: "true",
   ROUTING_PROVIDER: "osrm", ROUTING_OSRM_URL: "https://routing.e2e.invalid", ROUTING_OSRM_PROFILE: "driving",
@@ -201,6 +202,8 @@ const control = createServer(async (request, response) => {
         entries: Array.from({ length: env.GUEST_AI_GENERATIONS_PER_24H }, (_, index) => ({ id: `fixture-${index}`, kind: "generation", fingerprint: "fixture", state: "completed", at: new Date() })),
       } }, { upsert: true });
     }
+    else if (request.method === "POST" && request.url === "/packing-smart-fixtures") { providers.packingSmart = true; }
+    else if (request.method === "POST" && request.url === "/packing-provider-timeout") { providers.packingFailures = 1; }
     else if (request.method === "POST" && request.url === "/fault") {
       if (!Object.hasOwn(faults, String(body.target)) || typeof body.enabled !== "boolean") throw new Error("Invalid fixture fault");
       faults[body.target as keyof typeof faults] = body.enabled;

@@ -23,6 +23,7 @@ function parseEnabledModes(value: string): TravelMode[] {
 
 const parsed = z
   .object({
+    GUEST_PACKING_GENERATIONS_PER_24H: z.coerce.number().int().positive().max(1000).default(3),
     GUEST_MAX_TRIPS: z.coerce.number().int().positive().max(1000).default(6),
     GUEST_AI_GENERATIONS_PER_24H: z.coerce.number().int().positive().max(1000).default(2),
     GUEST_DAY_REGENERATIONS_PER_24H: z.coerce.number().int().positive().max(1000).default(2),
@@ -58,6 +59,7 @@ const parsed = z
     ROUTING_RETURN_TO_START: z.string().regex(/^(true|false)$/).default("false"),
   })
   .safeParse({
+    GUEST_PACKING_GENERATIONS_PER_24H: process.env.GUEST_PACKING_GENERATIONS_PER_24H,
     GUEST_MAX_TRIPS: process.env.GUEST_MAX_TRIPS,
     GUEST_AI_GENERATIONS_PER_24H: process.env.GUEST_AI_GENERATIONS_PER_24H,
     GUEST_DAY_REGENERATIONS_PER_24H: process.env.GUEST_DAY_REGENERATIONS_PER_24H,
@@ -112,6 +114,7 @@ const trustProxy =
       : Number(parsed.data.TRUST_PROXY);
 
 export const env = {
+  GUEST_PACKING_GENERATIONS_PER_24H: parsed.data.GUEST_PACKING_GENERATIONS_PER_24H,
   GUEST_MAX_TRIPS: parsed.data.GUEST_MAX_TRIPS,
   GUEST_AI_GENERATIONS_PER_24H: parsed.data.GUEST_AI_GENERATIONS_PER_24H,
   GUEST_DAY_REGENERATIONS_PER_24H: parsed.data.GUEST_DAY_REGENERATIONS_PER_24H,

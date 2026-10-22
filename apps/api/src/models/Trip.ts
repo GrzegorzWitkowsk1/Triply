@@ -18,9 +18,13 @@ import type {
   TripStatus,
   TripUnscheduledPlace,
 } from "@triply/shared";
-import { EXPENSE_CATEGORIES, PACE_VALUES, POI_ENVIRONMENT_VALUES, TRIP_STATUS_VALUES, WEATHER_STATUS_VALUES, WEATHER_REASON_VALUES } from "@triply/shared";
+import { EQUIPMENT_CATEGORIES, EXPENSE_CATEGORIES, PACE_VALUES, POI_ENVIRONMENT_VALUES, TRIP_STATUS_VALUES, WEATHER_STATUS_VALUES, WEATHER_REASON_VALUES } from "@triply/shared";
 
 export interface EquipmentRecord {
+  source?: "manual" | "ai";
+  reason?: string;
+  category: import("@triply/shared").EquipmentCategory;
+  packed: boolean;
   name: string;
   count: number;
 }
@@ -84,6 +88,7 @@ export interface TripRecord {
   confirmedFields: AskableField[];
   missingFields: AskableField[];
   equipment: Types.DocumentArray<EquipmentRecord>;
+  packingGeneration?: import("@triply/shared").PackingGenerationMetadata | null;
   weather: TripDayWeather[];
   weatherFetchedAt: Date | null;
   weatherAvailability?: WeatherAvailability | null;
@@ -115,6 +120,10 @@ const equipmentItemSchema = new Schema<EquipmentRecord>(
   {
     name: { type: String, required: true, trim: true, maxlength: 120 },
     count: { type: Number, required: true, min: 1, max: 999, default: 1 },
+    category: { type: String, enum: EQUIPMENT_CATEGORIES, default: "other" },
+    packed: { type: Boolean, default: false },
+    source: { type: String, enum: ["manual", "ai"], default: "manual" },
+    reason: { type: String, maxlength: 240, default: undefined },
   },
   { _id: true },
 );
@@ -443,6 +452,11 @@ const tripSchema = new Schema<TripRecord>(
     confirmedFields: { type: [String], default: [] },
     missingFields: { type: [String], default: [] },
     equipment: { type: [equipmentItemSchema], default: [] },
+    packingGeneration: { type: new Schema({
+      generatedAt: { type: String, required: true },
+      contextFingerprint: { type: String, required: true, maxlength: 64 },
+      suggestionCount: { type: Number, required: true, min: 0, max: 30 },
+    }, { _id: false }), default: null },
     weather: { type: [dayWeatherSchema], default: [] },
     weatherFetchedAt: { type: Date, default: null },
     weatherAvailability: { type: new Schema<WeatherAvailability>({

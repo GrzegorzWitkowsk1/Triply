@@ -15,6 +15,7 @@ import { errorHandler } from "./middleware/error.js";
 import { requireTripIdentity } from "./middleware/tripIdentity.js";
 import { guestNetworkLimit } from "./middleware/guestNetworkLimit.js";
 import { registerGuestUsageRoutes } from "./routes/guestUsage.js";
+import { preparePacking } from "./services/packing.js";
 import { prepareGuestLimits } from "./services/guestLimits.js";
 import { prepareGuestHandoffs } from "./models/GuestHandoff.js";
 import { registerGuestActivity } from "./middleware/guestActivity.js";
@@ -70,6 +71,7 @@ export async function createApp(options: { configure?: (app: FastifyInstance) =>
   await app.register(cookie);
   await registerSessions(app);
   await prepareGuestLimits();
+  await preparePacking();
   await prepareGuestHandoffs();
   await SavedDestinationModel.createIndexes();
   await SavedAttractionModel.createIndexes();

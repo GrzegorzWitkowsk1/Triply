@@ -15,6 +15,7 @@ export function nullableSchema(schema: AISchema): AISchema {
 }
 
 export interface AIRequest {
+  signal?: AbortSignal;
   systemInstruction: string;
   prompt: string;
   schema: AISchema;

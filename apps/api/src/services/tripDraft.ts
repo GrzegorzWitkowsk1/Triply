@@ -573,6 +573,10 @@ export function toTripEquipment(trip: TripDocument): TripEquipmentItem[] {
     id: item._id.toString(),
     name: item.name,
     count: item.count,
+    category: item.category ?? "other",
+    packed: item.packed ?? false,
+    source: item.source ?? "manual",
+    ...(item.source === "ai" && item.reason ? { reason: item.reason } : {}),
   }));
 }
 

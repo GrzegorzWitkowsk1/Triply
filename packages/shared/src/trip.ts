@@ -248,10 +248,18 @@ export interface TripAnalysisResult {
   requirementsComplete: boolean;
 }
 
+export const EQUIPMENT_CATEGORIES = ["documents", "clothing", "toiletries", "electronics", "health", "other"] as const;
+export const equipmentCategorySchema = z.enum(EQUIPMENT_CATEGORIES);
+export type EquipmentCategory = z.infer<typeof equipmentCategorySchema>;
+
 export const tripEquipmentItemSchema = z.object({
   id: z.string().trim().min(1).max(64),
   name: z.string().trim().min(1).max(120),
   count: z.number().int().positive().max(999),
+  category: equipmentCategorySchema.default("other"),
+  packed: z.boolean().default(false),
+  source: z.enum(["manual", "ai"]).optional(),
+  reason: z.string().trim().max(240).optional(),
 });
 
 export type TripEquipmentItem = z.infer<typeof tripEquipmentItemSchema>;
@@ -263,6 +271,7 @@ export type TripEquipment = z.infer<typeof tripEquipmentSchema>;
 export const createTripEquipmentItemSchema = z.object({
   name: tripEquipmentItemSchema.shape.name,
   count: tripEquipmentItemSchema.shape.count.default(1),
+  category: equipmentCategorySchema.optional(),
 });
 
 export type CreateTripEquipmentItem = z.infer<typeof createTripEquipmentItemSchema>;
@@ -271,9 +280,11 @@ export const updateTripEquipmentItemSchema = z
   .object({
     name: tripEquipmentItemSchema.shape.name.optional(),
     count: tripEquipmentItemSchema.shape.count.optional(),
+    category: equipmentCategorySchema.optional(),
+    packed: z.boolean().optional(),
   })
-  .refine((value) => value.name !== undefined || value.count !== undefined, {
-    message: "Provide a name or a count to update",
+  .refine((value) => Object.values(value).some((field) => field !== undefined), {
+    message: "Provide an item field to update",
   });
 
 export type UpdateTripEquipmentItem = z.infer<typeof updateTripEquipmentItemSchema>;

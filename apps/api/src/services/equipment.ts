@@ -45,6 +45,10 @@ export async function getEquipment(tripId: string, userId: string): Promise<Trip
     id: entry._id.toString(),
     name: entry.name,
     count: entry.count,
+    category: entry.category ?? "other",
+    packed: entry.packed ?? false,
+    source: entry.source ?? "manual",
+    ...(entry.source === "ai" && entry.reason ? { reason: entry.reason } : {}),
   }));
 }
 
@@ -53,22 +57,19 @@ export async function addEquipmentItem(
   userId: string,
   input: CreateTripEquipmentItem,
 ): Promise<TripEquipmentItem> {
-  const trip = await findOwnedTrip(tripId, userId);
-
+  const itemId = new Types.ObjectId();
+  const trip = await TripModel.findOneAndUpdate({
+    _id: new Types.ObjectId(tripId), ...ownerFilter(userId),
+    $expr: { $lt: [{ $size: "$equipment" }, LIMITS.equipment] },
+  }, { $push: { equipment: { _id: itemId, name: input.name, count: input.count, category: input.category ?? "other", packed: false } },
+    $inc: { __v: 1 } }, { new: true, runValidators: true }).exec();
   if (!trip) {
-    throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
-  }
-
-  if (trip.equipment.length >= LIMITS.equipment) {
+    if (!await findOwnedTrip(tripId, userId)) throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
     throw new EquipmentError("list-full", LIST_FULL, 400);
   }
+  const entry = trip.equipment.find(item => item._id.equals(itemId))!;
 
-  trip.equipment.push({ name: input.name, count: input.count });
-  await trip.save();
-
-  const entry = trip.equipment[trip.equipment.length - 1];
-
-  return { id: entry._id.toString(), name: entry.name, count: entry.count };
+  return { id: entry._id.toString(), name: entry.name, count: entry.count, category: entry.category, packed: entry.packed, source: entry.source ?? "manual", ...(entry.source === "ai" && entry.reason ? { reason: entry.reason } : {}) };
 }
 
 export async function updateEquipmentItem(
@@ -77,31 +78,17 @@ export async function updateEquipmentItem(
   itemId: string,
   input: UpdateTripEquipmentItem,
 ): Promise<TripEquipmentItem> {
-  const trip = await findOwnedTrip(tripId, userId);
-
+  const fields = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)
+    .map(([key, value]) => [`equipment.$.${key}`, value]));
+  const trip = await TripModel.findOneAndUpdate({ _id: new Types.ObjectId(tripId), ...ownerFilter(userId),
+    "equipment._id": new Types.ObjectId(itemId) }, { $set: fields, $inc: { __v: 1 } }, { new: true, runValidators: true }).exec();
   if (!trip) {
-    throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
-  }
-
-  const index = indexOfItem(trip, itemId);
-
-  if (index === -1) {
+    if (!await findOwnedTrip(tripId, userId)) throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
     throw new EquipmentError("item-not-found", ITEM_NOT_FOUND, 404);
   }
+  const entry = trip.equipment[indexOfItem(trip, itemId)];
 
-  const entry = trip.equipment[index];
-
-  if (input.name !== undefined) {
-    entry.name = input.name;
-  }
-
-  if (input.count !== undefined) {
-    entry.count = input.count;
-  }
-
-  await trip.save();
-
-  return { id: entry._id.toString(), name: entry.name, count: entry.count };
+  return { id: entry._id.toString(), name: entry.name, count: entry.count, category: entry.category, packed: entry.packed, source: entry.source ?? "manual", ...(entry.source === "ai" && entry.reason ? { reason: entry.reason } : {}) };
 }
 
 export async function deleteEquipmentItem(
@@ -109,18 +96,26 @@ export async function deleteEquipmentItem(
   userId: string,
   itemId: string,
 ): Promise<void> {
-  const trip = await findOwnedTrip(tripId, userId);
-
-  if (!trip) {
-    throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
-  }
-
-  const index = indexOfItem(trip, itemId);
-
-  if (index === -1) {
+  const result = await TripModel.updateOne({ _id: new Types.ObjectId(tripId), ...ownerFilter(userId),
+    "equipment._id": new Types.ObjectId(itemId) }, { $pull: { equipment: { _id: new Types.ObjectId(itemId) } }, $inc: { __v: 1 } }).exec();
+  if (!result.matchedCount) {
+    if (!await findOwnedTrip(tripId, userId)) throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
     throw new EquipmentError("item-not-found", ITEM_NOT_FOUND, 404);
   }
+}
 
-  trip.equipment.splice(index, 1);
-  await trip.save();
+/** Explicit ID scope makes filters/collapsed categories a client concern, never an implicit "all" update. */
+export async function bulkPackingItems(tripId: string, owner: string, input: import("@triply/shared").BulkPackingInput): Promise<import("@triply/shared").BulkPackingResult> {
+  if (!Types.ObjectId.isValid(tripId)) throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
+  const ids = input.itemIds.map(id => new Types.ObjectId(id));
+  const trip = await TripModel.findOneAndUpdate({ _id: new Types.ObjectId(tripId), ...ownerFilter(owner), "equipment._id": { $all: ids } },
+    { $set: { "equipment.$[selected].packed": input.packed }, $inc: { __v: 1 } },
+    { new: true, runValidators: true, arrayFilters: [{ "selected._id": { $in: ids } }] }).exec();
+  if (!trip) {
+    if (!await findOwnedTrip(tripId, owner)) throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
+    throw new EquipmentError("item-not-found", "Some selected items changed or no longer belong to this checklist. Reload and try again.", 409);
+  }
+  return { equipment: trip.equipment.map(entry => ({ id: entry._id.toString(), name: entry.name, count: entry.count,
+    category: entry.category ?? "other", packed: entry.packed ?? false, source: entry.source ?? "manual",
+    ...(entry.source === "ai" && entry.reason ? { reason: entry.reason } : {}) })), updatedCount: ids.length };
 }

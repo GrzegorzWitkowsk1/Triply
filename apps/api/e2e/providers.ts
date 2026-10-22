@@ -5,6 +5,8 @@ export class ProviderFixtures {
   calls: string[] = [];
   unexpected: string[] = [];
   weatherFailures = 0;
+  packingFailures = 0;
+  packingSmart = false;
   geoapifyFallback = false;
   private gates = new Map<string, { promise: Promise<void>; release: () => void }>();
 
@@ -17,7 +19,7 @@ export class ProviderFixtures {
   release(provider: string): void { this.gates.get(provider)?.release(); this.gates.delete(provider); }
   reset(): void {
     for (const key of this.gates.keys()) this.release(key);
-    this.calls = []; this.unexpected = []; this.weatherFailures = 0; this.geoapifyFallback = false;
+    this.calls = []; this.unexpected = []; this.weatherFailures = 0; this.packingFailures = 0; this.packingSmart = false; this.geoapifyFallback = false;
   }
   private city(lat: number): City {
     const match = (Object.keys(cities) as City[]).find(key => Math.abs(cities[key].lat - lat) < .05);
@@ -36,6 +38,20 @@ export class ProviderFixtures {
       const json = (body: unknown) => Response.json(body);
       try {
         if (url.hostname === "generativelanguage.googleapis.com" && url.pathname.endsWith(":generateContent")) {
+          const request = JSON.parse(String(init?.body)) as { contents?: { parts?: { text?: string }[] }[]; generationConfig?: { responseSchema?: { properties?: { items?: unknown } } } };
+          if (request.generationConfig?.responseSchema?.properties?.items) {
+            await this.boundary("packing");
+            if (this.packingFailures > 0) { this.packingFailures--; return Promise.reject(new DOMException("Fixture timeout", "TimeoutError")); }
+            const context = JSON.parse(request.contents?.[0]?.parts?.[0]?.text ?? "{}") as { activities?: { name: string }[]; trip?: { durationDays?: number } };
+            const items = [
+              { name: "Walking shoes", category: "clothing", count: 1, reason: context.activities?.length ? `Comfort for your planned visit to ${context.activities[0]!.name}.` : "Comfort for everyday travel." },
+              { name: "Phone charger", category: "electronics", count: 1, reason: "Keep your phone charged during travel." },
+              { name: "Everyday socks", category: "clothing", count: context.trip?.durationDays ?? 1, reason: "A fresh pair per trip day, per traveler." },
+              { name: "Passport", category: "documents", count: 1, reason: "Travel identification." },
+            ];
+            if (this.packingSmart) items.push({ name: "Rain jacket", category: "clothing", count: 1, reason: "A general weather-protective layer for travel; check local conditions." });
+            return json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ items, warnings: [] }) }] } }] });
+          }
           await this.boundary("ai");
           // Deliberately incomplete provider output exercises the real requirements UI.
           const draft = { ...analysis(), destination: null, country: null, location: null, startDate: null,

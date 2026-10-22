@@ -453,3 +453,21 @@ describe("unified Saved migration", () => {
     expect(mergeSnapshot(snapshot, { ...snapshot, address: "", description: "" })).toEqual(snapshot);
   });
 });
+
+it("preserves packing provenance, packed state and generation metadata during guest import", async () => {
+  const source = await guest(); const [trip] = await seed(source.id);
+  const metadata = { generatedAt: new Date().toISOString(), contextFingerprint: "a".repeat(64), suggestionCount: 2 };
+  trip!.set({ packingGeneration: metadata, equipment: [
+    { name: "Passport", count: 1, category: "documents", packed: true, source: "manual" },
+    { name: "Walking shoes", count: 1, category: "clothing", packed: false, source: "ai", reason: "For your scheduled walking days." },
+  ] });
+  await trip!.save();
+  const before = await TripModel.collection.findOne({ _id: trip!._id });
+  const account = await register(source.cookie);
+  expect((await confirm(account.cookie)).statusCode).toBe(200);
+  const after = await TripModel.collection.findOne({ _id: trip!._id });
+  expect(after?.packingGeneration).toEqual(before?.packingGeneration);
+  expect(after?.equipment).toEqual(before?.equipment);
+  const response = await call(account.cookie, "GET", `/api/trips/${trip!.id}/equipment`);
+  expect(response.json().equipment[1]).toMatchObject({ source: "ai", reason: "For your scheduled walking days." });
+});

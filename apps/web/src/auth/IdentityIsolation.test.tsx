@@ -48,6 +48,7 @@ it.each(["guest", "authenticated"] as const)("clears private caches and cancels 
   render(<QueryClientProvider client={client}><AuthProvider><Probe /></AuthProvider></QueryClientProvider>);
   await screen.findByText(status === "guest" ? "guest-a" : "user-a");
   client.setQueryData(["trips"], [{ id: "old-private-trip" }]);
+  client.setQueryData(["trips", "old-private-trip", "equipment"], [{ id: "private-item", name: "Passport", count: 1, category: "documents", packed: true }]);
   client.setQueryData(["guest", "usage"], { tripCount: 6 });
   client.setQueryData(["saved", status === "guest" ? "guest:guest-a" : "user:user-a", "list"], { destinations: [{ destinationId: "city-001" }] });
   let finish!: (data: string[]) => void;
@@ -56,6 +57,7 @@ it.each(["guest", "authenticated"] as const)("clears private caches and cancels 
   fireEvent.click(screen.getByRole("button", { name: "Restore session" }));
   await screen.findByText("user-b");
   await waitFor(() => expect(client.getQueryData(["trips"])).toBeUndefined());
+  expect(client.getQueryData(["trips", "old-private-trip", "equipment"])).toBeUndefined();
   expect(client.getQueryData(["guest", "usage"])).toBeUndefined();
   expect(client.getQueriesData({ queryKey: ["saved"] })).toEqual([]);
   finish(["late-private-response"]); await pending;

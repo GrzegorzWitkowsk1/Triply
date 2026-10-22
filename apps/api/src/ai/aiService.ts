@@ -11,6 +11,7 @@ import {
   type RegenerationPreferences,
   type TripAnalysis,
 } from "@triply/shared";
+import { buildPackingRequest, type PackingGenerationContext } from "./prompts/packing.js";
 import { AiError } from "./errors.js";
 import { createAIProvider } from "./providers/factory.js";
 import { buildRegenerationRequest } from "./prompts/parseRegeneration.js";
@@ -250,12 +251,14 @@ function normalizeRegenerationPreferences(raw: unknown): RegenerationPreferences
 }
 
 export interface AiService {
+  generatePacking(context: PackingGenerationContext, signal?: AbortSignal): Promise<unknown>;
   parseTrip(input: AnalyzeTripInput): Promise<TripAnalysis>;
   parseRegeneration(input: ParseRegenerationInput): Promise<RegenerationPreferences>;
 }
 
 export function createAiService(provider: AIProvider): AiService {
   return {
+    generatePacking: (context, signal) => provider.generate(buildPackingRequest(context, signal)),
     async parseTrip(input: AnalyzeTripInput): Promise<TripAnalysis> {
       const raw = await provider.generate(buildTripAnalysisRequest(input));
 

@@ -7,7 +7,7 @@ import { currentTripOwner, guestOwnerId, ownerFilter } from "../middleware/tripI
 import { TripModel, type TripDocument } from "../models/Trip.js";
 
 const WINDOW = 24 * 60 * 60 * 1000;
-type Kind = "generation" | "day";
+type Kind = "generation" | "day" | "packing";
 interface Entry { id: string; kind: Kind; fingerprint: string; at: Date; state: "reserved" | "started" | "completed" | "failed"; result?: string; }
 interface Ledger { _id: string; entries: Entry[]; expiresAt?: Date; }
 const ledger = () => mongoose.connection.db!.collection<Ledger>("guest_usage", { writeConcern: { w: "majority", wtimeoutMS: 5_000 } });
@@ -16,7 +16,12 @@ export async function prepareGuestLimits(): Promise<void> {
   await TripModel.collection.createIndex({ guestId: 1, guestSlot: 1 }, { unique: true,
     partialFilterExpression: { guestId: { $type: "string" }, guestSlot: { $type: "number" } } });
 }
-const limit = (kind: Kind) => kind === "generation" ? env.GUEST_AI_GENERATIONS_PER_24H : env.GUEST_DAY_REGENERATIONS_PER_24H;
+const limit = (kind: Kind) => kind === "packing" ? env.GUEST_PACKING_GENERATIONS_PER_24H : kind === "generation" ? env.GUEST_AI_GENERATIONS_PER_24H : env.GUEST_DAY_REGENERATIONS_PER_24H;
+function quotaReset(entries: Entry[], kind: Kind, now: number): string | undefined {
+  const times = entries.filter(entry => entry.kind === kind && entry.at.getTime() > now - WINDOW)
+    .map(entry => entry.at.getTime() + WINDOW).sort((a, b) => a - b);
+  return times.length ? new Date(times[Math.max(0, times.length - limit(kind))]!).toISOString() : undefined;
+}
 export class GuestLimitError extends Error {
   readonly expose = true;
   constructor(readonly code: GuestErrorCode | "IDEMPOTENCY_CONFLICT", message: string, readonly status: number,
@@ -106,10 +111,11 @@ export async function guestOperation<T>(request: FastifyRequest, kind: Kind, wor
       throw new GuestLimitError("IDEMPOTENCY_CONFLICT", "This request has already started. Reload your trip before retrying with a new request key.", 409);
     }
     const usage = await guestUsage(currentTripOwner(request));
-    throw new GuestLimitError(kind === "generation" ? "GUEST_AI_LIMIT_REACHED" : "GUEST_DAY_REGEN_LIMIT_REACHED",
-      kind === "generation" ? `You've used your ${limit(kind)} itinerary generations for the last 24 hours. You can still view and edit your trips.`
+    const packingReset = kind === "packing" ? quotaReset((await ledger().findOne({ _id: guestId }))?.entries ?? [], kind, now.getTime()) : undefined;
+    throw new GuestLimitError(kind === "packing" ? "GUEST_PACKING_LIMIT_REACHED" : kind === "generation" ? "GUEST_AI_LIMIT_REACHED" : "GUEST_DAY_REGEN_LIMIT_REACHED",
+      kind === "packing" ? `You have used your ${limit(kind)} packing generations for the last 24 hours. You can still add packing items manually.` : kind === "generation" ? `You've used your ${limit(kind)} itinerary generations for the last 24 hours. You can still view and edit your trips.`
         : `You've used your ${limit(kind)} AI day regenerations for the last 24 hours. You can still edit your itinerary manually.`, 429,
-      {}, (kind === "generation" ? usage.aiQuotaResetsAt : usage.dayQuotaResetsAt) ?? undefined);
+      {}, (kind === "packing" ? packingReset : kind === "generation" ? usage.aiQuotaResetsAt : usage.dayQuotaResetsAt) ?? undefined);
   }
   let started = false;
   const start = async () => {

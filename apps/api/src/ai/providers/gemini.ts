@@ -74,7 +74,7 @@ export function createGeminiProvider(config: GeminiConfig): AIProvider {
                 temperature: 0.2,
               },
             }),
-            signal: AbortSignal.timeout(config.timeoutMs),
+            signal: request.signal ? AbortSignal.any([request.signal, AbortSignal.timeout(config.timeoutMs)]) : AbortSignal.timeout(config.timeoutMs),
           },
         );
       } catch (error) {

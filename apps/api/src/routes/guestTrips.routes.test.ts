@@ -291,3 +291,28 @@ describe("guest quota failure and concurrency boundaries", () => {
     expect(blocked.headers["retry-after"]).toBeDefined();
   });
 });
+
+
+it("persists packing categories and packed state through existing owned routes", async () => {
+  const a = await guest(); const b = await guest(); const trip = await seed(a.owner, true);
+  const url = `/api/trips/${trip.id}/equipment`;
+  const created = await call(a.cookie, "POST", url, { name: "  Rain jacket  ", category: "clothing", count: 2 });
+  expect(created.statusCode, created.body).toBe(201);
+  const item = created.json();
+  expect(item).toMatchObject({ name: "Rain jacket", category: "clothing", count: 2, packed: false });
+  expect((await call(b.cookie, "PATCH", `${url}/${item.id}`, { packed: true })).statusCode).toBe(404);
+  const updated = await call(a.cookie, "PATCH", `${url}/${item.id}`, { packed: true, category: "other", count: 3 });
+  expect(updated.statusCode, updated.body).toBe(200);
+  expect(updated.json()).toMatchObject({ packed: true, category: "other", count: 3 });
+  expect((await call(a.cookie, "GET", url)).json().equipment).toEqual([updated.json()]);
+  expect((await call(a.cookie, "GET", `/api/trips/${trip.id}`)).json().equipment).toEqual([updated.json()]);
+  for (const payload of [{ category: "invalid" }, { packed: "yes" }, { count: 1.5 }, { count: 0 }, { name: " " }]) {
+    expect((await call(a.cookie, "PATCH", `${url}/${item.id}`, payload)).statusCode).toBe(400);
+  }
+  expect((await call(a.cookie, "DELETE", `${url}/${item.id}`)).statusCode).toBe(204);
+  expect((await call(a.cookie, "GET", url)).json().equipment).toEqual([]);
+  const legacy = await call(a.cookie, "POST", url, { name: "Legacy", count: 1 });
+  expect(legacy.json()).toMatchObject({ category: "other", packed: false });
+  await TripModel.collection.updateOne({ _id: trip._id }, { $unset: { "equipment.0.category": "", "equipment.0.packed": "" } });
+  expect((await call(a.cookie, "GET", url)).json().equipment[0]).toMatchObject({ category: "other", packed: false });
+});

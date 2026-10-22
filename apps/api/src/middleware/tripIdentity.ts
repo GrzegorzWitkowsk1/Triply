@@ -32,6 +32,8 @@ export async function requireTripIdentity(request: FastifyRequest, reply: Fastif
     "/api/location/search": ["GET"], "/api/trips/:id": ["GET", "DELETE"],
     "/api/trips/:id/requirements": ["PATCH"], "/api/trips/:id/confirm": ["POST"],
     "/api/trips/:id/generate": ["POST"], "/api/trips/:id/weather/refresh": ["POST"],
+    "/api/trips/:id/equipment/context": ["GET"], "/api/trips/:id/equipment/bulk": ["PATCH"],
+    "/api/trips/:id/equipment/generate": ["POST"], "/api/trips/:id/equipment/apply": ["POST"],
     "/api/trips/:id/equipment": ["GET", "POST"], "/api/trips/:id/itinerary/edit": ["POST"],
     "/api/trips/:id/itinerary/candidates": ["POST"], "/api/trips/:id/export/pdf": ["GET"],
     "/api/trips/:id/export/calendar": ["GET"], "/api/trips/:id/sharing": ["GET", "POST", "DELETE"],

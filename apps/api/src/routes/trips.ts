@@ -24,6 +24,7 @@ import { editTripItinerary, itineraryCandidates, ItineraryEditError } from "../s
 import { TripModel } from "../models/Trip.js";
 import { recoverTripDestination, validateGenerationRequirements } from "../services/tripDestination.js";
 import { refreshTripWeather, toWeatherRefresh } from "../services/tripWeather.js";
+import { registerPackingActions } from "./packing.js";
 import { registerExpenseRoutes } from "./expenses.js";
 import { currentTripOwner, ownerFilter } from "../middleware/tripIdentity.js";
 import { guestOwnerId } from "../middleware/tripIdentity.js";
@@ -67,6 +68,7 @@ import {
 
 export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAsyncHookHandler): void {
   registerExpenseRoutes(app);
+  registerPackingActions(app, aiLimiter);
 
   app.delete<HttpRoute>("/trips/:id", async (req, res) => {
     const id = tripIdParam(req);

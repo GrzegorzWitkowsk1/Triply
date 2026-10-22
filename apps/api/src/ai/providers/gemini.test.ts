@@ -224,3 +224,14 @@ describe("GeminiProvider", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+it("combines caller cancellation with the Gemini timeout signal", async () => {
+  const controller = new AbortController();
+  vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init?: RequestInit) => {
+    expect(init?.signal?.aborted).toBe(false);
+    controller.abort();
+    expect(init?.signal?.aborted).toBe(true);
+    throw new DOMException("Aborted", "AbortError");
+  }));
+  await expect(createGeminiProvider(config).generate({ ...request, signal: controller.signal })).rejects.toBeInstanceOf(AiError);
+});
