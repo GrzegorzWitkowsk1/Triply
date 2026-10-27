@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import i18n from "../i18n";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { PackingPreview, TripEquipmentItem } from "@triply/shared";
 import PackingSuggestions from "./PackingSuggestions";
@@ -23,7 +24,7 @@ beforeEach(() => {
     records = [...records, ...added]; return { added, skipped: [], stale: false };
   });
 });
-afterEach(() => { cleanup(); client?.clear(); vi.resetAllMocks(); });
+afterEach(async () => { cleanup(); client?.clear(); vi.resetAllMocks(); await i18n.changeLanguage("en"); });
 function mount() {
   client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const content = (trip = "a", identity = "owner") => <QueryClientProvider client={client}><PackingSuggestions key={`${identity}:${trip}`} tripId={trip} /></QueryClientProvider>;
@@ -34,22 +35,35 @@ async function open() {
   await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false)); fireEvent.click(button);
   await screen.findByText("Walking shoes"); return within(screen.getByRole("dialog", { name: "Packing suggestions" }));
 }
+it("translates duplicate and stale preview states while preserving suggestions and selection", async () => {
+  records = [{ id: "shoe", name: "Comfortable walking shoes", category: "clothing", count: 1, packed: true }];
+  mount(); await open();
+  client.setQueryData(["trips", "a", "equipment", "context"], { contextFingerprint: "changed", generation: null, outdated: true });
+  await screen.findByText(/Your trip has changed since these suggestions were generated/);
+  const original = structuredClone(records);
+  await act(() => i18n.changeLanguage("pl"));
+  const dialog = within(screen.getByRole("dialog", { name: "Sugestie pakowania" }));
+  expect(dialog.getByText("Podobna rzecz jest już na liście.")).toBeTruthy();
+  expect(dialog.getByRole("checkbox", { name: "Użyj mimo to nieaktualnych sugestii" })).toBeTruthy();
+  expect(dialog.getByText("Walking shoes")).toBeTruthy();
+  expect(records).toEqual(original); expect(generatePackingPreview).toHaveBeenCalledTimes(1); expect(applyPackingPreview).not.toHaveBeenCalled();
+});
 it("generates and renders reviewable categories, quantities, reasons and warnings", async () => {
   mount(); const dialog = await open(); expect(generatePackingPreview).toHaveBeenCalledWith("a", expect.any(AbortSignal));
   expect(dialog.getByText(/Clothing.*Quantity/)).toBeTruthy(); expect(dialog.getByText(/Quantity 2/)).toBeTruthy(); expect(dialog.getByText("Keep devices charged.")).toBeTruthy();
-  expect(dialog.getByText(/Forecast is unavailable/)).toBeTruthy(); expect(dialog.getByText("2 suggestions selected")).toBeTruthy(); expect(applyPackingPreview).not.toHaveBeenCalled();
+  expect(dialog.getByText("Some suggestions require review. Check them before adding.")).toBeTruthy(); expect(dialog.getByText("2 suggestions selected")).toBeTruthy(); expect(applyPackingPreview).not.toHaveBeenCalled();
 });
 it("supports individual selection, deselection, select all and no-selection disabled state", async () => {
   mount(); const dialog = await open();
-  fireEvent.click(dialog.getByRole("checkbox", { name: /Walking shoes/ })); expect(dialog.getByText("1 suggestions selected")).toBeTruthy();
+  fireEvent.click(dialog.getByRole("checkbox", { name: /Walking shoes/ })); expect(dialog.getByText("1 suggestion selected")).toBeTruthy();
   fireEvent.click(dialog.getByRole("checkbox", { name: "Select all suggestions" })); expect(dialog.getByText("2 suggestions selected")).toBeTruthy();
   fireEvent.click(dialog.getByRole("checkbox", { name: "Select all suggestions" })); expect(dialog.getByText("0 suggestions selected")).toBeTruthy();
-  expect((dialog.getByRole("button", { name: "Add 0 selected items" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((dialog.getByRole("button", { name: "Add selected items (0)" }) as HTMLButtonElement).disabled).toBe(true);
 });
 it("applies only selected references, preserves packed items and refreshes only the packing query", async () => {
   mount(); const dialog = await open(); const invalidate = vi.spyOn(client, "invalidateQueries");
-  fireEvent.click(dialog.getByRole("checkbox", { name: /Phone charger/ })); fireEvent.click(dialog.getByRole("button", { name: "Add 1 selected items" }));
-  await screen.findByText("1 items added. 0 duplicates skipped.");
+  fireEvent.click(dialog.getByRole("checkbox", { name: /Phone charger/ })); fireEvent.click(dialog.getByRole("button", { name: "Add selected items (1)" }));
+  await screen.findByText("Items added: 1. Duplicates skipped: 0.");
   expect(applyPackingPreview).toHaveBeenCalledWith("a", { token: "signed-preview", selectedIds: [fixture().suggestions[0]!.id] });
   expect(records[0]!.packed).toBe(true); expect(records).toHaveLength(2);
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["trips", "a", "equipment"], exact: true });
@@ -66,21 +80,21 @@ it("announces loading and prevents duplicate generation", async () => {
 it.each(["AI timed out. Try again.", "Guest packing quota reached. Try tomorrow."])("shows actionable failure and retry: %s", async message => {
   vi.mocked(generatePackingPreview).mockRejectedValueOnce(new Error(message)); mount();
   const button = screen.getByRole("button", { name: "Generate packing list" }); await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false)); fireEvent.click(button);
-  await screen.findByText(message); expect(records).toHaveLength(1); fireEvent.click(screen.getByRole("button", { name: "Try again" })); await screen.findByText("Walking shoes");
+  await screen.findByText("Something went wrong. Please try again."); expect(records).toHaveLength(1); fireEvent.click(screen.getByRole("button", { name: "Try again" })); await screen.findByText("Walking shoes");
 });
 it("preserves a failed apply preview and retries without duplicate submissions", async () => {
   vi.mocked(applyPackingPreview).mockRejectedValueOnce(new Error("Could not add items")); mount(); const dialog = await open();
-  fireEvent.click(dialog.getByRole("button", { name: "Add 2 selected items" })); await screen.findByText("Could not add items");
+  fireEvent.click(dialog.getByRole("button", { name: "Add selected items (2)" })); await screen.findByText("Something went wrong. Please try again.");
   expect(dialog.getByRole("checkbox", { name: /Walking shoes/ })).toBeTruthy();
   let finish!: () => void; vi.mocked(applyPackingPreview).mockImplementationOnce(() => new Promise(resolve => { finish = () => resolve({ added: [], skipped: ["duplicate"], stale: true }); }));
-  const add = dialog.getByRole("button", { name: "Add 2 selected items" }); fireEvent.click(add); fireEvent.click(add);
+  const add = dialog.getByRole("button", { name: "Add selected items (2)" }); fireEvent.click(add); fireEvent.click(add);
   expect(await screen.findByText("Adding selected suggestions...")).toBeTruthy(); expect((dialog.getByRole("button", { name: "Adding..." }) as HTMLButtonElement).disabled).toBe(true);
-  expect(applyPackingPreview).toHaveBeenCalledTimes(2); finish(); await screen.findByText(/0 items added. 1 duplicates skipped/);
+  expect(applyPackingPreview).toHaveBeenCalledTimes(2); finish(); await screen.findByText(/Items added: 0. Duplicates skipped: 1/);
 });
 it("marks exact items added manually while the preview is open", async () => {
   mount(); await open();
   client.setQueryData(["trips", "a", "equipment"], [...records, { id: "new", name: "PHONE charger", category: "electronics", count: 1, packed: false }]);
-  await waitFor(() => expect((screen.getByRole("checkbox", { name: /Phone charger/ }) as HTMLInputElement).disabled).toBe(true)); expect(screen.getByText("1 suggestions selected")).toBeTruthy();
+  await waitFor(() => expect((screen.getByRole("checkbox", { name: /Phone charger/ }) as HTMLInputElement).disabled).toBe(true)); expect(screen.getByText("1 suggestion selected")).toBeTruthy();
 });
 it("closes without applying and restores focus to Generate", async () => {
   mount(); const dialog = await open(); fireEvent.click(dialog.getByRole("button", { name: "Cancel" }));
@@ -97,28 +111,28 @@ it.each(["trip", "identity"])("cancels generation and clears private preview on 
 it("handles empty or fully duplicate previews without enabling apply", async () => {
   vi.mocked(generatePackingPreview).mockResolvedValueOnce({ ...fixture(), suggestions: [] }); mount();
   const button = screen.getByRole("button", { name: "Generate packing list" }); await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false)); fireEvent.click(button);
-  await screen.findByText(/No packing suggestions were returned/); expect((screen.getByRole("button", { name: "Add 0 selected items" }) as HTMLButtonElement).disabled).toBe(true);
+  await screen.findByText(/No packing suggestions were returned/); expect((screen.getByRole("button", { name: "Add selected items (0)" }) as HTMLButtonElement).disabled).toBe(true);
 });
 it("shows accurate new/exact/possible counts and lets users inspect, skip or add a possible duplicate", async () => {
   records = [
     { id: "shoe", name: "Comfortable walking shoes", category: "clothing", count: 2, packed: true },
     { id: "charger", name: "PHONE charger", category: "electronics", count: 3, packed: false },
   ]; mount(); const dialog = await open();
-  expect(dialog.getByText("2 suggestions found: 0 new items, 1 already on your list, 1 possible duplicates.")).toBeTruthy();
+  expect(dialog.getByText("Suggestions: 2. New: 0, already on your list: 1, possible duplicates: 1.")).toBeTruthy();
   expect(dialog.getByText("Similar to an item already on your list.")).toBeTruthy();
   expect((dialog.getByRole("checkbox", { name: /Phone charger/ }) as HTMLInputElement).disabled).toBe(true);
   expect((dialog.getByRole("checkbox", { name: /Walking shoes/ }) as HTMLInputElement).checked).toBe(false);
-  fireEvent.click(dialog.getByText("View matching Walking shoes items")); expect(dialog.getByText(/Comfortable walking shoes - Clothing, quantity 2, packed/)).toBeTruthy();
-  fireEvent.click(dialog.getByRole("button", { name: "Add Walking shoes anyway" })); expect(dialog.getByText("1 suggestions selected")).toBeTruthy();
+  fireEvent.click(dialog.getByText("View matching Walking shoes items")); expect(dialog.getByText(/Comfortable walking shoes - Clothing, quantity 2, Packed/)).toBeTruthy();
+  fireEvent.click(dialog.getByRole("button", { name: "Add Walking shoes anyway" })); expect(dialog.getByText("1 suggestion selected")).toBeTruthy();
   fireEvent.click(dialog.getByRole("button", { name: "Skip Walking shoes" })); expect(dialog.getByText("0 suggestions selected")).toBeTruthy();
-  fireEvent.click(dialog.getByRole("button", { name: "Add Walking shoes anyway" })); fireEvent.click(dialog.getByRole("button", { name: "Add 1 selected items" }));
+  fireEvent.click(dialog.getByRole("button", { name: "Add Walking shoes anyway" })); fireEvent.click(dialog.getByRole("button", { name: "Add selected items (1)" }));
   await waitFor(() => expect(applyPackingPreview).toHaveBeenCalledWith("a", { token: "signed-preview", selectedIds: [fixture().suggestions[0]!.id] }));
 });
 it("groups suggestions and keeps category selections across collapse/expand", async () => {
   mount(); const dialog = await open(); const clothing = within(dialog.getByRole("region", { name: "Clothing suggestions" }));
   fireEvent.click(clothing.getByRole("checkbox", { name: "Select all Clothing suggestions" }));
-  expect(dialog.getByText("1 suggestions selected")).toBeTruthy();
-  const toggle = clothing.getByRole("button", { name: "Clothing, 1 suggestions" }); fireEvent.click(toggle); expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(dialog.getByText("1 suggestion selected")).toBeTruthy();
+  const toggle = clothing.getByRole("button", { name: "Clothing, suggestions: 1" }); fireEvent.click(toggle); expect(toggle.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(toggle); expect((clothing.getByRole("checkbox", { name: /Walking shoes/ }) as HTMLInputElement).checked).toBe(false);
   fireEvent.click(clothing.getByRole("checkbox", { name: "Select all Clothing suggestions" })); expect(dialog.getByText("2 suggestions selected")).toBeTruthy();
 });
@@ -132,8 +146,8 @@ it("requires confirmation before applying a stale preview", async () => {
   mount(); const dialog = await open();
   client.setQueryData(["trips", "a", "equipment", "context"], { contextFingerprint: "new-version", generation: null, outdated: true });
   await screen.findByText(/Your trip has changed since these suggestions were generated/);
-  expect((dialog.getByRole("button", { name: "Add 2 selected items" }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(dialog.getByRole("checkbox", { name: "Use these outdated suggestions anyway" })); fireEvent.click(dialog.getByRole("button", { name: "Add 2 selected items" }));
+  expect((dialog.getByRole("button", { name: "Add selected items (2)" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(dialog.getByRole("checkbox", { name: "Use these outdated suggestions anyway" })); fireEvent.click(dialog.getByRole("button", { name: "Add selected items (2)" }));
   await waitFor(() => expect(applyPackingPreview).toHaveBeenCalledWith("a", expect.objectContaining({ allowStale: true })));
 });
 it("does not warn about context staleness after harmless packing checkbox changes", async () => {

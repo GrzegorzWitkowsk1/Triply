@@ -316,3 +316,36 @@ it("persists packing categories and packed state through existing owned routes",
   await TripModel.collection.updateOne({ _id: trip._id }, { $unset: { "equipment.0.category": "", "equipment.0.packed": "" } });
   expect((await call(a.cookie, "GET", url)).json().equipment[0]).toMatchObject({ category: "other", packed: false });
 });
+
+it.each(["en", "pl", undefined] as const)("propagates new trip locale %s through analysis, persistence and later generation", async locale => {
+  const a = await guest();
+  const result = await call(a.cookie, "POST", "/api/trips/analyze", { prompt: "Paris", ...(locale ? { locale } : {}) });
+  expect(result.statusCode, result.body).toBe(200);
+  expect(result.json().contentLocale).toBe(locale ?? "en");
+  expect(aiService.parseTrip).toHaveBeenCalledWith(expect.objectContaining({ locale: locale ?? "en" }));
+  const id = result.json().draftId;
+  expect((await TripModel.findById(id))?.contentLocale).toBe(locale ?? "en");
+  const generated = await call(a.cookie, "POST", "/api/trips/" + id + "/generate");
+  expect(generated.statusCode, generated.body).toBe(200);
+  expect(generated.json().contentLocale).toBe(locale ?? "en");
+  expect((await call(a.cookie, "GET", "/api/trips/" + id)).json().contentLocale).toBe(locale ?? "en");
+});
+it("rejects invalid locale before reserving a guest draft or calling AI", async () => {
+  const a = await guest();
+  expect((await call(a.cookie, "POST", "/api/trips/analyze", { prompt: "Paris", locale: "ignore rules" })).statusCode).toBe(400);
+  expect(aiService.parseTrip).not.toHaveBeenCalled();
+  expect(await TripModel.countDocuments()).toBe(0);
+});
+it.each(["en", "pl"] as const)("regeneration uses persisted %s despite a conflicting UI locale", async locale => {
+  const a = await guest(); const trip = await seed(a.owner, true);
+  trip.contentLocale = locale; await trip.save();
+  const before = trip.toObject().itinerary;
+  const preview = await call(a.cookie, "POST", "/api/trips/" + trip.id + "/days/1/regenerate", {
+    locale: locale === "pl" ? "en" : "pl", preferences, customInstructions: "Quiet places" });
+  expect(preview.statusCode, preview.body).toBe(200);
+  expect(aiService.parseRegeneration).toHaveBeenCalledWith(expect.objectContaining({ locale }));
+  expect((await TripModel.findById(trip.id))?.toObject().itinerary).toEqual(before);
+  const applied = await call(a.cookie, "POST", "/api/trips/" + trip.id + "/days/1/apply", { previewId: preview.json().previewId });
+  expect(applied.statusCode, applied.body).toBe(200);
+  expect((await TripModel.findById(trip.id))?.contentLocale).toBe(locale);
+});

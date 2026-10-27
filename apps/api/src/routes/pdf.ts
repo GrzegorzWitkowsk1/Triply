@@ -1,3 +1,4 @@
+import { exportLocaleQuerySchema } from "@triply/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { Types } from "mongoose";
 import { TripModel } from "../models/Trip.js";
@@ -16,13 +17,16 @@ export function registerPrivatePdfRoutes(app: FastifyInstance): void {
   app.get<{ Params: { id: string } }>("/trips/:id/export/pdf", {
     config: { rateLimit: { max: 10, timeWindow: "1 minute" } }, onRequest: async (_req, reply) => { headers(reply); },
   }, async (req, reply) => {
+    const parsed = exportLocaleQuerySchema.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_LOCALE", error: "Use export locale en or pl." });
+    const locale = parsed.data.locale;
     if (!Types.ObjectId.isValid(req.params.id)) return reply.code(404).send({ error: "Trip not found" });
     const trip = await TripModel.findOne({ _id: new Types.ObjectId(req.params.id), ...ownerFilter(currentTripOwner(req)) }).select(PUBLIC_TRIP_PROJECTION).exec();
     if (!trip) return reply.code(404).send({ error: "Trip not found" });
     let release: (() => void) | undefined;
     try {
-      release = reservePdfExport(); const data = toPublicTrip(trip); const bytes = await renderTripPdf(data);
-      return reply.type("application/pdf").header("Content-Disposition", `attachment; filename="${pdfFilename(data)}"`).send(bytes);
+      release = reservePdfExport(); const data = toPublicTrip(trip); const bytes = await renderTripPdf(data, locale);
+      return reply.header("Content-Language", locale).type("application/pdf").header("Content-Disposition", `attachment; filename="${pdfFilename(data)}"`).send(bytes);
     } catch (error) { return failure(error, reply); } finally { release?.(); }
   });
 }
@@ -30,16 +34,19 @@ export function registerPublicPdfRoutes(app: FastifyInstance): void {
   app.get<{ Params: { shareToken: string } }>("/api/public/trips/:shareToken/export/pdf", {
     config: { rateLimit: { max: 10, timeWindow: "1 minute" } }, onRequest: async (_req, reply) => { headers(reply); },
   }, async (req, reply) => {
+    const parsed = exportLocaleQuerySchema.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_LOCALE", error: "Use export locale en or pl." });
+    const locale = parsed.data.locale;
     const token = req.params.shareToken;
     const trip = await findPublicTrip(token);
     if (!trip) return reply.code(404).send({ error: "Shared trip not found" });
     let release: (() => void) | undefined;
     try {
-      release = reservePdfExport(); const data = toPublicTrip(trip); const bytes = await renderTripPdf(data);
+      release = reservePdfExport(); const data = toPublicTrip(trip); const bytes = await renderTripPdf(data, locale);
       // Revalidate after asynchronous rendering: revocation/rotation during export wins.
       if (!await TripModel.exists({ _id: trip._id, "sharing.enabled": true, "sharing.tokenHash": hashShareToken(token) }))
         return reply.code(404).send({ error: "Shared trip not found" });
-      return reply.type("application/pdf").header("Content-Disposition", `attachment; filename="${pdfFilename(data)}"`).send(bytes);
+      return reply.header("Content-Language", locale).type("application/pdf").header("Content-Disposition", `attachment; filename="${pdfFilename(data)}"`).send(bytes);
     } catch (error) { return failure(error, reply); } finally { release?.(); }
   });
 }

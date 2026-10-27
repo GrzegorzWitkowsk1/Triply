@@ -17,6 +17,31 @@ export async function readPdf(bytes: Buffer) {
   } finally { await task.destroy(); }
 }
 describe("Triply A4 PDF renderer", () => {
+  it.each(["en", "pl"] as const)("renders real %s PDFs with Unicode, localized labels, bounded layout and unchanged saved prose", async locale => {
+    const trip = pdfFixture(3, 7, true);
+    trip.destination = "Łódź — Sagrada Família " .repeat(8);
+    trip.days[0].stops[0].description = "Saved English description. ą ć ę ł ń ó ś ź ż. Park Güell.";
+    const before = structuredClone(trip);
+    const pages = await readPdf(await renderTripPdf(trip, locale));
+    const text = pages.map(page => page.text).join(" ");
+    for (const value of ["Saved English description.", "ą ć ę ł ń ó ś ź ż", "Park Güell", "09:15", "Europe/Warsaw"])
+      expect(text).toContain(value);
+    expect(text).toContain(locale === "pl" ? "PLAN PODRÓŻY" : "TRAVEL ITINERARY");
+    expect(text).toContain(locale === "pl" ? "Dzień 1" : "Day 1");
+    expect(text).toContain(locale === "pl" ? "Strona 1 z" : "Page 1 of");
+    expect(text).not.toContain("�");
+    expect(pages.length).toBeGreaterThan(3);
+    for (const page of pages) {
+      expect(page.text.length).toBeGreaterThan(100);
+      for (const item of page.items) {
+        expect(item.transform[4]).toBeGreaterThanOrEqual(43);
+        expect(item.transform[4] + item.width).toBeLessThanOrEqual(553);
+        expect(item.transform[5]).toBeGreaterThan(18);
+        expect(item.transform[5]).toBeLessThan(800);
+      }
+    }
+    expect(trip).toEqual(before);
+  });
   it("embeds diacritics, preserves local time and saved order across multiple days", async () => {
     const bytes = await renderTripPdf(pdfFixture()); expect(bytes.subarray(0, 5).toString()).toBe("%PDF-"); expect(bytes.length).toBeGreaterThan(1000);
     const pages = await readPdf(bytes); const text = pages.map(p => p.text).join(" ");

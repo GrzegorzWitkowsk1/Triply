@@ -1,0 +1,18 @@
+{
+  "useTheYyyyMmDdFormat": "Use the YYYY-MM-DD format",
+  "theEndDateCanTBeBeforeThe": "The end date can't be before the start date",
+  "enterTheNumberOfDays": "Enter the number of days",
+  "addTheStartDateOrHowManyDays": "Add the start date, or how many days you'll be away",
+  "addTheEndDateOrHowManyDays": "Add the end date, or how many days you'll be away",
+  "addTheTripDatesOrTheNumberOf": "Add the trip dates or the number of days",
+  "enterHowManyPeopleAreTravelling": "Enter how many people are travelling",
+  "pickARangeOrChooseFlexible": "Pick a range or choose Flexible",
+  "enterTheBudgetYouHaveInMind": "Enter the budget you have in mind",
+  "pickACurrency": "Pick a currency",
+  "pickAtLeastOneInterest": "Pick at least one interest",
+  "enterADistanceInKm": "Enter a distance in km",
+  "destinationRequired": "Tell us where you want to go",
+  "countryRequired": "Tell us the country",
+  "fieldTooLong": "Use no more than 120 characters",
+  "notesTooLong": "Use no more than 2000 characters"
+}

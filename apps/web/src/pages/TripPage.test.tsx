@@ -73,7 +73,7 @@ describe("TripPage generation states", () => {
     render(<Page />);
     expect(screen.queryByText(/26° sunny/)).toBeNull();
     expect(screen.queryByText("Weather forecast unavailable for 2026-10-12.")).toBeNull();
-    expect(screen.getByText("Keep other planning warning")).toBeTruthy();
+    expect(screen.getByText("Review this day's schedule before continuing.")).toBeTruthy();
     expect(trip.itinerary.days[0].warnings).toContain("Weather forecast unavailable for 2026-10-12.");
     fireEvent.click(screen.getByRole("button", { name: "Next day" }));
     expect(screen.getByText(/26° sunny/)).toBeTruthy();
@@ -83,7 +83,7 @@ describe("TripPage generation states", () => {
     mocks.trip.data!.itinerary = { timeZone: "Europe/Paris", routingSource: "unavailable", generatedAt: null, days: [], unscheduled: [] };
     mocks.trip.data!.quality = { valid: true, score: null, dimensions: { schedule: null, routing: null, openingHours: null, budget: null, relevance: null, workload: null, dataCompleteness: 0 }, issues: [{ code: "ADMISSION_PRICE_UNKNOWN", severity: "warning", dimension: "budget", message: "Some admission prices are unknown. Check ticket costs." }] };
     render(<Page />);
-    expect(screen.getByText("Some admission prices are unknown. Check ticket costs.")).toBeTruthy();
+    expect(screen.getByText("Review the budget and unconfirmed costs.")).toBeTruthy();
   });
   function preferences() {
     mocks.trip.data!.status = "ready";
@@ -122,7 +122,7 @@ describe("TripPage generation states", () => {
     fireEvent.click(card.getByRole("button", { name: "Low" }));
     fireEvent.click(card.getByRole("button", { name: "Regenerate" }));
     expect(mocks.save.mock.calls[0][0].answers.maxWalkingDistanceKm).toBe(3);
-    expect(card.getByRole("alert").textContent).toBe("Save failed");
+    expect(card.getByRole("alert").textContent).toBe("Something went wrong. Please try again.");
     expect(mocks.mutate).not.toHaveBeenCalled();
     expect(card.getByRole("button", { name: "Regenerate" })).toBeTruthy();
   });
@@ -165,7 +165,7 @@ describe("TripPage generation states", () => {
     mocks.trip.data!.status = "failed";
     mocks.trip.data!.generation.error = "The places service is temporarily unavailable.";
     render(<Page />);
-    expect(screen.getByText("The places service is temporarily unavailable.")).toBeTruthy();
+    expect(screen.getByText("We couldn't finish your itinerary. Please try again.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Adjust trip details" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Try again/ }));
     expect(mocks.mutate).toHaveBeenCalledTimes(1);

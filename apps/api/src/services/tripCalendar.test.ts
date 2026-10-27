@@ -10,6 +10,23 @@ const now = new Date("2026-10-14T12:34:56Z");
 const parse = (content: string) => new ICAL.Component(ICAL.parse(content));
 const events = (content: string) => parse(content).getAllSubcomponents("vevent").map(component => new ICAL.Event(component));
 describe("standards-compliant calendar export", () => {
+  it("localizes calendar text while retaining IDs, times, Unicode and persisted descriptions across DST", async () => {
+    const trip = calendarFixture("Europe/Warsaw", "2030-10-26", 2);
+    trip.days.forEach(day => { day.activities.find(a => a.type === "break")!.title = "Lunch break"; });
+    trip.days[0].stops[0].description = "Saved English prose: Łódź, ą ć ę ł ń ó ś ź ż; Park Güell.";
+    const before = structuredClone(trip);
+    const en = events((await renderTripCalendar(trip, now, "en")).content);
+    const result = await renderTripCalendar(trip, now, "pl"), pl = events(result.content);
+    expect(pl.map(e => [e.uid, e.startDate.toJSDate().toISOString(), e.endDate.toJSDate().toISOString()]))
+      .toEqual(en.map(e => [e.uid, e.startDate.toJSDate().toISOString(), e.endDate.toJSDate().toISOString()]));
+    expect(pl[0].summary).toBe(en[0].summary);
+    expect(pl[0].description).toContain(trip.days[0].stops[0].description);
+    expect(pl[0].description).toContain("Czas lokalny miejsca docelowego");
+    expect(pl[0].description).toContain("26 października 2030");
+    expect(pl[1].summary).toBe("Przerwa na obiad");
+    for (const line of result.content.split("\r\n")) expect(Buffer.byteLength(line, "utf8")).toBeLessThanOrEqual(75);
+    expect(trip).toEqual(before);
+  });
   it("exports attractions and explicit breaks, skips travel and preserves multi-day event order", async () => {
     const trip = calendarFixture(); trip.days.forEach(day => day.activities.reverse());
     const result = await renderTripCalendar(trip, now), parsed = parse(result.content), list = events(result.content);

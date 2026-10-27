@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -17,10 +19,12 @@ export default function TripMap({
   active,
   onSelect,
 }: TripMapProps) {
+  useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
+  const attributionRef = useRef(i18n.t("attribution", { ns: "trips/map" }));
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
 
@@ -35,7 +39,7 @@ export default function TripMap({
       maxZoom: 19,
       // OSM requires a Referer; send only the origin, never a shared-link token.
       referrerPolicy: "origin",
-      attribution: "&copy; OpenStreetMap contributors",
+      attribution: i18n.t("attribution", { ns: "trips/map" }),
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
@@ -45,7 +49,29 @@ export default function TripMap({
       layerRef.current = null;
       markersRef.current = [];
     };
-  }, [center]);
+  }, []);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const attribution = i18n.t("attribution", { ns: "trips/map" });
+    if (attribution !== attributionRef.current && mapRef.current?.attributionControl) {
+      mapRef.current.attributionControl.removeAttribution(attributionRef.current);
+      mapRef.current.attributionControl.addAttribution(attribution);
+      attributionRef.current = attribution;
+    }
+    for (const [selector, key] of [[".leaflet-control-zoom-in", "zoomIn"], [".leaflet-control-zoom-out", "zoomOut"]]) {
+      const button = container?.querySelector(selector);
+      button?.setAttribute("title", i18n.t(key, { ns: "trips/map" }));
+      button?.setAttribute("aria-label", i18n.t(key, { ns: "trips/map" }));
+    }
+    markersRef.current.forEach((marker, index) => {
+      const label = i18n.t("marker", { ns: "trips/map", count: index + 1 });
+      marker.getElement()?.setAttribute("aria-label", label);
+      marker.getElement()?.setAttribute("title", label);
+    });
+  }, [i18n.resolvedLanguage, stops]);
+
+  useEffect(() => { mapRef.current?.setView?.(center, mapRef.current.getZoom()); }, [center[0], center[1]]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -72,7 +98,8 @@ export default function TripMap({
         iconSize: [28, 28],
         iconAnchor: [14, 14],
       });
-      const marker = L.marker(pos, { icon }).addTo(layer);
+      const label = i18n.t("marker", { ns: "trips/map", count: i + 1 });
+      const marker = L.marker(pos, { icon, title: label, alt: label }).addTo(layer);
       marker.on("click", () => onSelectRef.current(i));
       markersRef.current.push(marker);
     });
@@ -98,5 +125,5 @@ export default function TripMap({
     }
   }, [active, stops]);
 
-  return <div className="trip-map" ref={containerRef} />;
+  return <div className="trip-map" role="region" aria-label={i18n.t("mapLabel", { ns: "trips/map" })} ref={containerRef} />;
 }

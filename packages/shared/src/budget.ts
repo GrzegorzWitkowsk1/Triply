@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { intlLocale } from "./formatting.js";
+import type { SupportedLocale } from "./locale.js";
 import { isIsoDate } from "./dates.js";
 
 export const EXPENSE_CATEGORIES = ["attractions", "food_drinks", "transport", "accommodation", "shopping", "other"] as const;
@@ -23,7 +25,7 @@ export function decimalToMinor(value: string, currency: string): number {
   if (amount > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("Amount is too large");
   return Number(amount);
 }
-export function formatMoney(amountMinor: number, currency: string): string {
+export function formatMoney(amountMinor: number, currency: string, locale: SupportedLocale = "en"): string {
   const digits = currencyPrecision(currency);
   const value = BigInt(amountMinor);
   const absolute = value < 0n ? -value : value;
@@ -31,7 +33,7 @@ export function formatMoney(amountMinor: number, currency: string): string {
   const whole = absolute / factor;
   const fraction = (absolute % factor).toString().padStart(digits, "0");
   const signed = value < 0n ? whole === 0n ? -1n : -whole : whole;
-  return new Intl.NumberFormat("en", { style: "currency", currency }).formatToParts(signed)
+  return new Intl.NumberFormat(intlLocale(locale), { style: "currency", currency }).formatToParts(signed)
     .map(part => part.type === "fraction" ? fraction : part.type === "integer" && value < 0n && whole === 0n ? "0" : part.value).join("");
 }
 export function minorToDecimal(amountMinor: number, currency: string): string {

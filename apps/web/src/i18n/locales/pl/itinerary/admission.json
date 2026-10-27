@@ -1,0 +1,9 @@
+{
+  "conditional": "Warunkowa opłata za wstęp",
+  "free": "Wstęp bezpłatny",
+  "paidUnknown": "Wstęp płatny — cena niedostępna",
+  "unknown": "Cena wstępu niedostępna",
+  "price_per_person": "Wstęp: {{amount}} za osobę",
+  "price_per_group": "Wstęp: {{amount}} za grupę",
+  "price_unknown": "Wstęp: {{amount}} (jednostka niepotwierdzona)"
+}

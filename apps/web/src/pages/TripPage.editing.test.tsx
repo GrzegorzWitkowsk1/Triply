@@ -112,7 +112,7 @@ describe("TripPage manual editing", () => {
     renderPage();
     expect(await screen.findByText("Unresolved")).toBeTruthy();
     await openAction("Remove attraction");
-    await screen.findByText(`Saved. ${responseWarnings[0]}`);
+    await screen.findByText("Saved. Review this day's schedule before continuing.");
     expect(edits[0]).toEqual({ expectedVersion: 3, operation: { type: "remove", dayIndex: 1, attractionId: "node/1" } });
     expect(screen.queryByRole("button", { name: "Edit Museum" })).toBeNull();
     expect(await screen.findByRole("button", { name: "Edit Park" })).toBeTruthy();
@@ -175,7 +175,7 @@ describe("TripPage manual editing", () => {
     unavailableRoute(); editFailure = { status, body: { error: status === 409 ? "The itinerary has changed. Refresh it and try again." : "Network unavailable" } };
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
-    await screen.findByText(editFailure.body.error);
+    await screen.findByText(editFailure.status === 409 ? "This data changed in another session. Refresh and try again." : "Something went wrong. Please try again.");
     expect(JSON.parse(screen.getByTestId("map").textContent!).geometry).toBeNull();
     expect(JSON.parse(screen.getByTestId("map").textContent!).stops).toHaveLength(2);
     expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(false);
@@ -271,7 +271,7 @@ describe("TripPage manual editing", () => {
     editFailure = failure;
     renderPage();
     await openAction("Remove attraction");
-    await screen.findByText(new RegExp(failure.body.error.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    await screen.findByText(failure.status === 409 ? "This data changed in another session. Refresh and try again." : failure.status === 422 ? "Check the entered values and try again." : "Something went wrong. Please try again.");
     expect(await screen.findByRole("button", { name: /Museum.*Culture/ })).toBeTruthy();
     expect(JSON.parse(screen.getByTestId("map").textContent!).stops).toHaveLength(2);
     expect(screen.queryByText("Itinerary saved.")).toBeNull();
@@ -296,7 +296,7 @@ describe("TripPage manual editing", () => {
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Add Attraction" }));
     const dialog = await screen.findByRole("dialog");
-    await within(dialog).findByText("Search unavailable");
+    await within(dialog).findByText("Something went wrong. Please try again.");
     candidateFailure = false;
     fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
     expect(await within(dialog).findByRole("button", { name: /Gallery/ })).toBeTruthy();

@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { catalogDestinationSchema, type Destination } from "@triply/shared";
 import MediaFallback from "./trips/MediaFallback";
@@ -10,6 +12,7 @@ export function destinationImageUrl(photo: Destination): string {
   return catalogDestinationSchema.shape.imageUrl.parse(photo.imageUrl);
 }
 export default function DestinationImage({ photo }: { photo: Destination }) {
+  useTranslation();
   const source = destinationImageUrl(photo);
   const [failedSource, setFailedSource] = useState<string | null>(null);
   const [loadedSource, setLoadedSource] = useState<string | null>(null);
@@ -36,6 +39,6 @@ export default function DestinationImage({ photo }: { photo: Destination }) {
         onLoad={() => { clearTimeout(timer.current); setLoadedSource(source); }}
         onError={() => { clearTimeout(timer.current); setFailedSource(source); }} />
       <PhotoAttribution photo={photo} />
-    </> : <MediaFallback alt={`${photo.city}: image unavailable`} />}
+    </> : <MediaFallback alt={i18n.t("imageUnavailable", { ns: "trips", name: photo.city })} />}
   </div>;
 }

@@ -3,6 +3,13 @@ import type { SavedAttraction, SavedDestination } from "@triply/shared";
 import { findDestinationByCity } from "@triply/shared";
 import { filterSaved, savedCollection, savedMapUrl } from "./saved";
 
+it("sorts Polish names using the selected locale without changing identities", () => {
+  const destinations: SavedDestination[] = ["Łódź", "Lublin", "Lwów"].map((city, index) => ({ destinationId: String(index), createdAt: "2026-01-01", destination: { ...findDestinationByCity("Paris", "France")!, city } }));
+  const rows = savedCollection(destinations, []);
+  expect(filterSaved(rows, "all", "", "name-asc", "pl").map(item => item.key)).toEqual(["destination:1", "destination:2", "destination:0"]);
+  expect(rows.map(item => item.key)).toEqual(["destination:0", "destination:1", "destination:2"]);
+});
+
 it("keeps ordering deterministic for equal timestamps or names regardless of input order", () => {
   const destinations: SavedDestination[] = ["a", "b"].map(destinationId => ({ destinationId, createdAt: "2026-01-01", destination: findDestinationByCity("Paris", "France") }));
   const first = savedCollection(destinations, []); const second = savedCollection([...destinations].reverse(), []);

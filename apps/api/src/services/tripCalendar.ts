@@ -1,6 +1,6 @@
 import ical from "ical-generator";
 import { setImmediate as yieldToLoop } from "node:timers/promises";
-import { isIsoDate, type CalendarErrorCode, type CalendarExportStats, type PublicTrip } from "@triply/shared";
+import { contentLocale, exportText, exportActivityTitle, formatDate, formatNumber, type SupportedLocale, isIsoDate, type CalendarErrorCode, type CalendarExportStats, type PublicTrip } from "@triply/shared";
 import { isValidTimeZone, offsetMinutes } from "./timeZone.js";
 import { pdfFilename } from "./tripPdf.js";
 
@@ -32,18 +32,21 @@ export function calendarInstant(value: string, timeZone: string): Date | null {
   return new Date(candidates[0]);
 }
 const clean = (value: string) => value.normalize("NFC").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
-function description(trip: PublicTrip, day: PublicTrip["days"][number], activity: Activity): string {
+function description(trip: PublicTrip, day: PublicTrip["days"][number], activity: Activity, locale: SupportedLocale): string {
+  const t = exportText(locale, "exports/calendar");
   const stop = activity.type === "attraction" && activity.stopIndex !== null ? day.stops[activity.stopIndex] : undefined;
   const notes: string[] = [];
   if (stop?.description) notes.push([...clean(stop.description)].slice(0, 600).join(""));
-  if (activity.durationMinutes > 0) notes.push(`${activity.durationSource === "estimated" ? "Estimated visit duration" : "Saved duration"}: ${activity.durationMinutes} minutes.`);
-  if (activity.type === "attraction") notes.push(activity.openingHoursStatus === "closed" ? "Opening-hours conflict: verify before visiting."
-    : activity.openingHoursStatus === "open" ? "Opening-hours check applies to the saved schedule; verify before visiting." : "Opening hours are unknown; verify before visiting.");
-  notes.push(`Destination local time: ${activity.startTime} — ${activity.endTime} (${day.timeZone}).`);
-  notes.push(`Triply · ${trip.destination ?? "Travel itinerary"}. Manual calendar export; no automatic synchronization.`);
+  if (activity.durationMinutes > 0) notes.push(`${t(activity.durationSource === "estimated" ? "estimatedDuration" : "duration")}: ${t("minutes", { value: formatNumber(activity.durationMinutes, {}, locale) })}`);
+  if (activity.type === "attraction") notes.push(t(activity.openingHoursStatus === "closed" ? "hoursClosed" : activity.openingHoursStatus === "open" ? "hoursOpen" : "hoursUnknown"));
+  notes.push(t("day", { day: formatNumber(day.dayIndex, {}, locale), date: formatDate(day.date, { dateStyle: "long" }, locale) }));
+  notes.push(t("localTime", { start: activity.startTime, end: activity.endTime, zone: day.timeZone }));
+  notes.push(t("footer", { destination: trip.destination ?? t("title") }));
   return clean(notes.join("\n"));
 }
-export async function renderTripCalendar(trip: PublicTrip, now = new Date()): Promise<{ content: string; stats: CalendarExportStats }> {
+export async function renderTripCalendar(trip: PublicTrip, now = new Date(), locale: SupportedLocale = "en"): Promise<{ content: string; stats: CalendarExportStats }> {
+  locale = contentLocale(locale);
+  const t = exportText(locale, "exports/calendar");
   if (!trip.days.length) throw new CalendarExportError(422, "empty-itinerary", "There is no saved itinerary to export.");
   if (trip.days.length > 365 || trip.days.reduce((sum, d) => sum + d.activities.length, 0) > MAX_ACTIVITIES || JSON.stringify(trip).length > MAX_CHARACTERS)
     throw new CalendarExportError(413, "too-large", "This itinerary is too large to export as one calendar.");
@@ -64,12 +67,12 @@ export async function renderTripCalendar(trip: PublicTrip, now = new Date()): Pr
   }
   if (!events.length) throw new CalendarExportError(422, "no-events", `No scheduled activities could be exported. ${stats.excluded} items need valid start/end times and dates.`);
   events.sort((a, b) => a.start.getTime() - b.start.getTime());
-  const calendar = ical({ prodId: { company: "Triply", product: "Travel Itinerary", language: "EN" }, scale: "GREGORIAN", name: clean(`Triply — ${trip.destination ?? "Travel itinerary"}`) });
+  const calendar = ical({ prodId: { company: "Triply", product: "Travel Itinerary", language: locale.toUpperCase() }, scale: "GREGORIAN", name: clean(`Triply — ${trip.destination ?? t("title")}`) });
   calendar.x("X-TRIPLY-EXCLUDED-ITEMS", String(stats.excluded));
   for (const { day, activity, start, end } of events) {
     const stop = activity.type === "attraction" && activity.stopIndex !== null ? day.stops[activity.stopIndex] : undefined;
-    calendar.createEvent({ id: activity.calendarUid, stamp: now, start, end, summary: clean(activity.title),
-      description: description(trip, day, activity), location: clean(stop?.address ?? "Location unavailable") });
+    calendar.createEvent({ id: activity.calendarUid, stamp: now, start, end, summary: clean(exportActivityTitle(activity.title, activity.type, locale)),
+      description: description(trip, day, activity, locale), location: clean(stop?.address ?? t("locationUnknown")) });
   }
   stats.exported = events.length;
   const content = calendar.toString();

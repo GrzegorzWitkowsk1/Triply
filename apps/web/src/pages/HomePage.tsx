@@ -1,3 +1,8 @@
+import { localizedCollection } from "../config/explore";
+import { formatDate } from "../i18n/format";
+import { errorMessage as localizedError, errorKey, resolveMessage } from "../i18n/errors";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { useGuestUsage } from "../hooks/useGuestUsage";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
@@ -32,17 +37,14 @@ interface VoiceHint {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : "Something went wrong. Please try again.";
+  return localizedError(error);
 }
 
 const VOICE_ERRORS: Record<string, string> = {
-  "not-allowed":
-    "Microphone permission denied — allow the mic in your browser's address bar, then try again.",
-  "no-speech": "No speech detected.",
-  "audio-capture": "No microphone found.",
-  network: "Speech service unreachable.",
+  get "not-allowed"() { return i18n.t("microphonePermissionDeniedAllowTheMicInYour", { ns: "tripCreator/home" }); },
+  get "no-speech"() { return i18n.t("noSpeechDetected", { ns: "tripCreator/home" }); },
+  get "audio-capture"() { return i18n.t("noMicrophoneFound", { ns: "tripCreator/home" }); },
+  get network() { return i18n.t("speechServiceUnreachable", { ns: "tripCreator/home" }); },
 };
 
 function getRecognition(): SpeechRecognition | null {
@@ -51,13 +53,15 @@ function getRecognition(): SpeechRecognition | null {
 }
 
 export default function HomePage() {
+  useTranslation();
   const { user } = useAuth();
   const guestUsage = useGuestUsage();
   const storageBlocked = guestUsage.isGuest && (!guestUsage.data || guestUsage.data.tripCount >= guestUsage.data.tripLimit);
   const location = useLocation();
   const prefill = useDestinationPrefill(location.search, location.state);
   const collectionValues = new URLSearchParams(location.search).getAll("collection");
-  const collection = collectionForDestination(collectionValues, prefill.reference.id);
+  const collectionReference = collectionForDestination(collectionValues, prefill.reference.id);
+  const collection = collectionReference ? localizedCollection(collectionReference.slug) : undefined;
   const referenceKey = prefill.reference.id ? `${prefill.reference.id}:${collection?.slug ?? ""}` : undefined;
   const [appliedCollection, setAppliedCollection] = useState<string>();
   const [hasCollectionPreferences, setHasCollectionPreferences] = useState(false);
@@ -90,7 +94,7 @@ export default function HomePage() {
   const tripsQuery = useTrips();
   const myTrips = useMemo(
     () => buildHomeTripCards(tripsQuery.data ?? []),
-    [tripsQuery.data],
+    [tripsQuery.data, i18n.resolvedLanguage],
   );
   const [draft, setDraft] = useState<TripAnalysisResult | null>(null);
   const [isDialogOpen, setDialogOpen] = useState(false);
@@ -123,13 +127,14 @@ export default function HomePage() {
   }, [location.state]);
 
   const applyDestination = (destination: DestinationList["items"][number]) => {
-    const suggestions = collectionForDestination(collectionValues, destination.id);
+    const suggestionReference = collectionForDestination(collectionValues, destination.id);
+    const suggestions = suggestionReference ? localizedCollection(suggestionReference.slug) : undefined;
     if (!draft && suggestions) {
       setHasCollectionPreferences(true);
       if (!badgesEdited.current) setSelectedBadges([...suggestions.suggestedInterests]);
       if (!preferencesEdited.current) setPreferences(previous => ({ ...previous, pace: suggestions.suggestedPace }));
     }
-    setAppliedCollection(suggestions?.title);
+    setAppliedCollection(suggestions?.slug);
     setSelectedDestinationId(destination.id);
     setPrompt(`Plan a trip to ${destination.city}, ${destination.country}`);
     setPrefillConflict(null); setDraft(null); planning.reset(); setDialogOpen(false);
@@ -163,7 +168,7 @@ export default function HomePage() {
     const recognition = getRecognition();
     if (!recognition) {
       setVoiceHint({
-        text: "Voice typing isn't supported in this browser",
+        get text() { return i18n.t("voiceTypingIsnTSupportedInThisBrowser", { ns: "tripCreator/home" }); },
         kind: "error",
       });
       return null;
@@ -204,7 +209,7 @@ export default function HomePage() {
 
       interimRef.current = interimText.trim();
       if (finalText) {
-        setVoiceHint({ text: "Listening…", kind: "info" });
+        setVoiceHint({ text: "tripCreator/home:listening", kind: "info" });
       }
     };
 
@@ -213,7 +218,7 @@ export default function HomePage() {
       interimRef.current = "";
       setListening(false);
       setVoiceHint({
-        text: VOICE_ERRORS[event.error] ?? "Voice input failed.",
+        get text() { return VOICE_ERRORS[event.error] ?? i18n.t("voiceInputFailed", { ns: "tripCreator/home" }); },
         kind: "error",
       });
     };
@@ -238,14 +243,14 @@ export default function HomePage() {
     const recognition = getOrCreateRecognition();
     if (!recognition) return;
 
-    setVoiceHint({ text: "Listening…", kind: "info" });
+    setVoiceHint({ text: "tripCreator/home:listening", kind: "info" });
     setListening(true);
 
     try {
       recognition.start();
     } catch {
       setListening(false);
-      setVoiceHint({ text: "Voice input failed to start.", kind: "error" });
+      setVoiceHint({ get text() { return i18n.t("voiceInputFailedToStart", { ns: "tripCreator/home" }); }, kind: "error" });
       recognitionRef.current = null;
     }
   };
@@ -301,14 +306,14 @@ export default function HomePage() {
         },
         onError: (error) => {
           planning.reset();
-          setVoiceHint({ text: errorMessage(error), kind: "error" });
+          setVoiceHint({ text: errorKey(error), kind: "error" });
         },
       },
     );
   };
 
   const generateTrip = () => {
-    if (guestUsage.isGuest && guestUsage.data?.aiGenerationsRemaining === 0) { setCreateError("Your itinerary generation allowance is used for the last 24 hours. You can still edit your trip details."); return; }
+    if (guestUsage.isGuest && guestUsage.data?.aiGenerationsRemaining === 0) { setCreateError("tripCreator/home:yourItineraryGenerationAllowanceIsUsedForThe"); return; }
     if (!draft || createTrip.isPending) return;
 
     setCreateError(null);
@@ -317,7 +322,7 @@ export default function HomePage() {
       onSuccess: (trip) => {
         navigate(`/trips/${trip.id}`, { state: { autoStart: true } });
       },
-      onError: (error) => setCreateError(errorMessage(error)),
+      onError: (error) => setCreateError(errorKey(error)),
     });
   };
 
@@ -350,7 +355,7 @@ export default function HomePage() {
           setDraft(result);
           setDialogOpen(false);
         },
-        onError: (error) => setSaveError(errorMessage(error)),
+        onError: (error) => setSaveError(errorKey(error)),
       },
     );
   };
@@ -358,24 +363,22 @@ export default function HomePage() {
   return (
     <div className="home-page">
       <div className="home-inner">
-        <p className="home-eyebrow">Your next favorite trip starts here</p>
-        <h1 className="home-title">Plan a trip you’ll actually enjoy.</h1>
+        <p className="home-eyebrow">{i18n.t("yourNextFavoriteTripStartsHere", { ns: "tripCreator/home" })}</p>
+        <h1 className="home-title">{i18n.t("planATripYouLlActuallyEnjoy", { ns: "tripCreator/home" })}</h1>
         <p className="home-subtitle">
-          Tell Triply where you’re going, what you love, and how you like to
-          travel. We’ll take care of the rest.
-        </p>
+          {i18n.t("tellTriplyWhereYouReGoingWhatYou", { ns: "tripCreator/home" })}</p>
 
         <div className="prompt-card">
-          {awaitingPrefill && <p role="status">Loading selected destination…</p>}
+          {awaitingPrefill && <p role="status">{i18n.t("loadingSelectedDestination", { ns: "tripCreator/home" })}</p>}
           {prefill.reference.error && <Alert severity="warning">{prefill.reference.error}</Alert>}
-          {prefill.query.isError && <Alert severity="warning" action={<Button onClick={() => void prefill.query.refetch()}>Retry destination</Button>}>Could not load the selected destination. It may be unavailable. Enter another destination below or retry.</Alert>}
-          {prefillConflict && <Alert severity="info">You already have a trip in progress. Use {prefillConflict.city}, {prefillConflict.country}, or continue your existing draft.
-            <Button onClick={() => applyDestination(prefillConflict)}>Use selected destination</Button><Button onClick={() => setPrefillConflict(null)}>Continue existing draft</Button>
+          {prefill.query.isError && <Alert severity="warning" action={<Button onClick={() => void prefill.query.refetch()}>{i18n.t("retryDestination", { ns: "tripCreator/home" })}</Button>}>{i18n.t("couldNotLoadTheSelectedDestinationItMay", { ns: "tripCreator/home" })}</Alert>}
+          {prefillConflict && <Alert severity="info">{i18n.t("draftConflict", { ns: "tripCreator/home", destination: `${prefillConflict.city}, ${prefillConflict.country}` })}
+            <Button onClick={() => applyDestination(prefillConflict)}>{i18n.t("useSelectedDestination", { ns: "tripCreator/home" })}</Button><Button onClick={() => setPrefillConflict(null)}>{i18n.t("continueExistingDraft", { ns: "tripCreator/home" })}</Button>
           </Alert>}
-          {selectedDestinationId && <Alert severity="info" action={<Button onClick={changeDestination} disabled={isPlanning}>Change destination</Button>}>
-            Selected destination: {prefill.query.data?.id === selectedDestinationId ? `${prefill.query.data.city}, ${prefill.query.data.country}` : selectedDestinationId}. This selection takes priority over destinations mentioned in your prompt.
+          {selectedDestinationId && <Alert severity="info" action={<Button onClick={changeDestination} disabled={isPlanning}>{i18n.t("changeDestination", { ns: "tripCreator/home" })}</Button>}>
+            {i18n.t("selectedDestination", { ns: "tripCreator/home", destination: prefill.query.data?.id === selectedDestinationId ? `${prefill.query.data.city}, ${prefill.query.data.country}` : selectedDestinationId })}
           </Alert>}
-          {appliedCollection && selectedDestinationId && <p className="collection-prefill-note">Suggestions from {appliedCollection}. You can change interests and pace before generating your trip.</p>}
+          {appliedCollection && selectedDestinationId && <p className="collection-prefill-note">{i18n.t("collectionSuggestions", { ns: "tripCreator/home", collection: localizedCollection(appliedCollection)?.title ?? appliedCollection })}</p>}
           {isPlanning ? (
             <div className="prompt-summary">
               <span className="prompt-summary-text">{planSummary}</span>
@@ -384,8 +387,7 @@ export default function HomePage() {
                 className="prompt-summary-cancel"
                 onClick={cancelPlan}
               >
-                Cancel
-              </button>
+                {i18n.t("cancel", { ns: "common" })}</button>
             </div>
           ) : (
             <>
@@ -397,7 +399,7 @@ export default function HomePage() {
                       {file.name}
                       <button
                         type="button"
-                        aria-label={`Remove ${file.name}`}
+                        aria-label={i18n.t("remove", { ns: "tripCreator/home", value0: file.name })}
                         onClick={() =>
                           setFiles((prev) => prev.filter((f) => f !== file))
                         }
@@ -414,7 +416,7 @@ export default function HomePage() {
                 variant="standard"
                 multiline
                 rows={3}
-                placeholder={`4 days in Barcelona, starting at ${(new Date(new Date().getTime() + 24 * 60 * 60 * 1000)).toLocaleDateString()}, €500 budget, I love food and architecture, relaxed place...`}
+                placeholder={i18n.t("promptExample", { ns: "tripCreator/home", date: formatDate(new Date(Date.now() + 86400000), { dateStyle: "short" }) })}
                 value={prompt}
                 onChange={(e) => {
                   promptEdited.current = true;
@@ -423,7 +425,7 @@ export default function HomePage() {
                 }}
                 slotProps={{
                   input: { disableUnderline: true },
-                  htmlInput: { ref: promptInputRef, "aria-label": "Describe your trip" },
+                  htmlInput: { ref: promptInputRef, get "aria-label"() { return i18n.t("describeYourTrip", { ns: "tripCreator/home" }); } },
                 }}
               />
               <div className="prompt-divider" />
@@ -442,7 +444,7 @@ export default function HomePage() {
                   <button
                     type="button"
                     className="prompt-icon"
-                    aria-label="Attachments"
+                    aria-label={i18n.t("attachments", { ns: "tripCreator/home" })}
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <AttachFileOutlined />
@@ -450,7 +452,7 @@ export default function HomePage() {
                   <button
                     type="button"
                     className={`prompt-icon${listening ? " is-active" : ""}`}
-                    aria-label={listening ? "Stop voice writing" : "Voice writing"}
+                    aria-label={listening ? i18n.t("stopVoiceWriting", { ns: "tripCreator/home" }) : i18n.t("voiceWriting", { ns: "tripCreator/home" })}
                     onClick={toggleVoice}
                   >
                     <MicOutlined />
@@ -462,12 +464,11 @@ export default function HomePage() {
                   disabled={!canPlan}
                   onClick={startPlan}
                 >
-                  Plan my trip
-                  <ArrowForwardOutlined fontSize="small" />
+                  {i18n.t("planMyTrip", { ns: "tripCreator/home" })}<ArrowForwardOutlined fontSize="small" />
                 </button>
               </div>
               {voiceHint && (
-                <p className={`prompt-hint is-${voiceHint.kind}`}>{voiceHint.text}</p>
+                <p className={`prompt-hint is-${voiceHint.kind}`} role={voiceHint.kind === "error" ? "alert" : "status"}>{resolveMessage(voiceHint.text)}</p>
               )}
             </>
           )}
@@ -510,18 +511,17 @@ export default function HomePage() {
           })}
         </div>
         <section className="home-section">
-          <p className="home-eyebrow">Pick up where you left off</p>
+          <p className="home-eyebrow">{i18n.t("pickUpWhereYouLeftOff", { ns: "tripCreator/home" })}</p>
           <div className="trips-head">
-            <h2 className="trips-title">My trips</h2>
+            <h2 className="trips-title">{i18n.t("myTrips", { ns: "tripCreator/home" })}</h2>
             <button onClick={() => navigate('/trips')} type="button" className="view-all">
-              View all
-              <ArrowForwardOutlined fontSize="small" />
+              {i18n.t("viewAll", { ns: "tripCreator/home" })}<ArrowForwardOutlined fontSize="small" />
             </button>
           </div>
 
           <div className="trips-grid">
             {tripsQuery.isPending && (
-              <p className="my-trips-subtitle">Loading trips…</p>
+              <p className="my-trips-subtitle">{i18n.t("loadingTrips", { ns: "tripCreator/home" })}</p>
             )}
 
             {tripsQuery.isError && (
@@ -534,8 +534,7 @@ export default function HomePage() {
               !tripsQuery.isError &&
               myTrips.length === 0 && (
                 <p className="my-trips-subtitle">
-                  No trips here yet. Plan your first one.
-                </p>
+                  {i18n.t("noTripsHereYetPlanYourFirstOne", { ns: "tripCreator/home" })}</p>
               )}
 
             {myTrips.map((trip, i) => (

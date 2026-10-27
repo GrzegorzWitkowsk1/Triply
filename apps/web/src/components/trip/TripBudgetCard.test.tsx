@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { expenseInputSchema, EXPENSE_CATEGORIES, type ItineraryDay, type TripBudgetData, type TripExpense } from "@triply/shared";
 import { request } from "../../api/client";
 import TripBudgetCard from "./TripBudgetCard";
+import i18n from "../../i18n";
 
 vi.mock("../../api/client", () => ({ request: vi.fn() }));
 const lunch: TripExpense = {
@@ -36,6 +37,19 @@ beforeEach(() => { vi.resetAllMocks(); vi.mocked(request).mockResolvedValue(fixt
 afterEach(cleanup);
 
 describe("Trip budget & expenses", () => {
+  it("accepts Polish decimal input while preserving EUR integer minor units", async () => {
+    await i18n.changeLanguage("pl");
+    try {
+      mount(); await screen.findByText("Lunch");
+      expect(screen.getByLabelText("Łączne wydatki i budżet").textContent).toContain("35,00");
+      fireEvent.change(screen.getByLabelText("Nazwa wydatku"), { target: { value: "Taxi" } });
+      fireEvent.change(screen.getByLabelText("Kwota"), { target: { value: "12,29" } });
+      fireEvent.click(screen.getByRole("button", { name: "Dodaj wydatek" }));
+      await waitFor(() => expect(vi.mocked(request).mock.calls.some(([, options]) => options?.method === "POST")).toBe(true));
+      const call = vi.mocked(request).mock.calls.find(([, options]) => options?.method === "POST")!;
+      expect(JSON.parse(String(call[1]?.body)).expense).toMatchObject({ title: "Taxi", amountMinor: 1229, currency: "EUR" });
+    } finally { cleanup(); await i18n.changeLanguage("en"); }
+  });
   it("renders combined planned/actual spending, category colors and a single inline form", async () => {
     const view = mount(); await screen.findByText("Lunch");
     expect(screen.getByRole("heading", { name: "Trip budget & expenses" })).toBeTruthy();
@@ -123,11 +137,11 @@ describe("Trip budget & expenses", () => {
   it("retains draft inputs after validation or API errors", async () => {
     mount(); await screen.findByText("Lunch"); fill("Taxi", "1.111");
     fireEvent.click(screen.getByRole("button", { name: "Add expense" }));
-    expect(screen.getByRole("alert").textContent).toContain("precision");
+    expect(screen.getByRole("alert").textContent).toContain("Check the entered values and try again.");
     expect(vi.mocked(request).mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(0);
     fill(); vi.mocked(request).mockRejectedValue(new Error("Could not save"));
     fireEvent.click(screen.getByRole("button", { name: "Add expense" }));
-    await screen.findByText("Could not save");
+    await screen.findByText("Something went wrong. Please try again.");
     expect((screen.getByLabelText("Expense name") as HTMLInputElement).value).toBe("Taxi");
     expect((screen.getByLabelText("Amount") as HTMLInputElement).value).toBe("12.29");
   });
@@ -157,6 +171,6 @@ describe("Trip budget & expenses", () => {
     expect(screen.getByLabelText("Total expenses and budget").textContent).toContain("¥300 · €35.00");
     expect(screen.getByText("Expenses in different currencies are shown separately.")).toBeTruthy();
     fill("Taxi", "1.1"); fireEvent.click(screen.getByRole("button", { name: "Add expense" }));
-    expect(screen.getByRole("alert").textContent).toContain("precision");
+    expect(screen.getByRole("alert").textContent).toContain("Check the entered values and try again.");
   });
 });

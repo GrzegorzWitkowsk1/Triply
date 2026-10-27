@@ -42,7 +42,7 @@ describe("profile settings", () => {
     expect(mocks.upload).not.toHaveBeenCalled();
     mocks.upload.mockRejectedValue(new Error("Invalid image."));
     fireEvent.change(input, { target: { files: [new File(["bad"], "bad.png", { type: "image/png" })] } });
-    await waitFor(() => expect(screen.getAllByText("Invalid image.").length).toBe(2));
+    await waitFor(() => expect(screen.getAllByText("Something went wrong. Please try again.").length).toBe(2));
   });
   it("requires matching new passwords, asks for current password and allows retry after rejection", async () => {
     page();
@@ -60,7 +60,7 @@ describe("profile settings", () => {
     mocks.password.mockRejectedValueOnce(new Error("Current password is incorrect."));
     fireEvent.change(within(dialog).getByLabelText(/^Current password/), { target: { value: "Wrong123!Aa" } });
     fireEvent.click(within(dialog).getByText("Confirm"));
-    expect(await within(dialog).findByText("Current password is incorrect.")).toBeTruthy();
+    expect(await within(dialog).findByText("Something went wrong. Please try again.")).toBeTruthy();
     fireEvent.change(within(dialog).getByLabelText(/^Current password/), { target: { value: "Original123!Aa" } });
     fireEvent.click(within(dialog).getByText("Confirm"));
     await waitFor(() => expect(mocks.password).toHaveBeenLastCalledWith({ currentPassword: "Original123!Aa", newPassword: "Changed123!Aa", repeatPassword: "Changed123!Aa" }));
@@ -87,10 +87,12 @@ describe("profile settings", () => {
   });
   it("persists application language across remounts", () => {
     const first = page();
-    fireEvent.mouseDown(screen.getByRole("combobox"));
-    fireEvent.click(screen.getByRole("option", { name: "English" }));
+    fireEvent.click(screen.getByRole("button", { name: /^(Language|Język):/ }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Polski" }));
+    fireEvent.click(screen.getByRole("button", { name: /^(Language|Język):/ }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "English" }));
     expect(localStorage.getItem("triply.language")).toBe("en");
     first.unmount(); page();
-    expect(screen.getByRole("combobox").textContent).toContain("English");
+    expect(screen.getByRole("button", { name: "Language: English" }).querySelector("img")?.getAttribute("src")).toBe("/flags/en.svg");
   });
 });

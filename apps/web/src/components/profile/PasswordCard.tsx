@@ -1,3 +1,7 @@
+import { resolveMessage } from "../../i18n/errors";
+import { errorKey as localizedErrorKey, errorMessage as localizedError } from "../../i18n/errors";
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { VisibilityOffOutlined, VisibilityOutlined } from "@mui/icons-material";
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, TextField } from "@mui/material";
@@ -8,6 +12,7 @@ import { changePassword } from "../../api/profile";
 import { useToast } from "../ToastProvider";
 
 export default function PasswordCard() {
+  useTranslation();
   const {
     register,
     handleSubmit,
@@ -35,8 +40,8 @@ export default function PasswordCard() {
   const confirm = async () => {
     if (!pendingValues || !currentPassword || saving) return;
     setSaving(true); setError(null);
-    try { await changePassword({ ...pendingValues, currentPassword }); setPendingValues(null); setCurrentPassword(""); reset({ newPassword: "", repeatPassword: "" }); toast("Password changed."); }
-    catch (error) { const message = error instanceof Error ? error.message : "Could not change password."; setError(message); toast(message, "error"); }
+    try { await changePassword({ ...pendingValues, currentPassword }); setPendingValues(null); setCurrentPassword(""); reset({ newPassword: "", repeatPassword: "" }); toast(() => i18n.t("passwordChanged", { ns: "auth/profile" })); }
+    catch (error) { setError(localizedErrorKey(error)); toast(() => localizedError(error), "error"); }
     finally { setSaving(false); }
   };
 
@@ -44,19 +49,19 @@ export default function PasswordCard() {
     <><form className="settings-card" onSubmit={handleSubmit(onSubmit)}>
       <div className="settings-form-row">
         <TextField
-          label="New password"
+          label={i18n.t("newPassword", { ns: "auth/profile" })}
           required
           autoComplete="new-password"
           fullWidth
           type={showNew ? "text" : "password"}
           error={!!errors.newPassword}
-          helperText={errors.newPassword?.message}
+          helperText={(errors.newPassword?.message ? i18n.t(errors.newPassword?.message!) : undefined)}
           slotProps={{
             input: {
               endAdornment: (
                 <InputAdornment position="end">
                   <IconButton
-                    aria-label={showNew ? "Hide password" : "Show password"}
+                    aria-label={showNew ? i18n.t("hidePassword", { ns: "auth" }) : i18n.t("showPassword", { ns: "auth" })}
                     onClick={() => setShowNew((v) => !v)}
                     size="small"
                     edge="end"
@@ -70,19 +75,19 @@ export default function PasswordCard() {
           {...register("newPassword")}
         />
         <TextField
-          label="Repeat password"
+          label={i18n.t("repeatPassword", { ns: "auth/profile" })}
           required
           autoComplete="new-password"
           fullWidth
           type={showRepeat ? "text" : "password"}
           error={!!errors.repeatPassword}
-          helperText={errors.repeatPassword?.message}
+          helperText={(errors.repeatPassword?.message ? i18n.t(errors.repeatPassword?.message!) : undefined)}
           slotProps={{
             input: {
               endAdornment: (
                 <InputAdornment position="end">
                   <IconButton
-                    aria-label={showRepeat ? "Hide password" : "Show password"}
+                    aria-label={showRepeat ? i18n.t("hidePassword", { ns: "auth" }) : i18n.t("showPassword", { ns: "auth" })}
                     onClick={() => setShowRepeat((v) => !v)}
                     size="small"
                     edge="end"
@@ -103,18 +108,17 @@ export default function PasswordCard() {
           className="btn btn-primary settings-submit"
           disabled={!isValid || saving}
         >
-          Change password
-        </button>
+          {i18n.t("changePassword", { ns: "auth/profile" })}</button>
       </div>
     </form>
     <Dialog open={!!pendingValues} onClose={closeDialog} fullWidth maxWidth="xs">
-      <DialogTitle>Confirm password change</DialogTitle>
+      <DialogTitle>{i18n.t("confirmPasswordChange", { ns: "auth/profile" })}</DialogTitle>
       <form onSubmit={event => { event.preventDefault(); void confirm(); }}>
         <DialogContent>
-          <TextField label="Current password" type="password" autoComplete="current-password" required autoFocus fullWidth value={currentPassword} disabled={saving} onChange={event => setCurrentPassword(event.target.value)} />
-          {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+          <TextField label={i18n.t("currentPassword", { ns: "auth/profile" })} type="password" autoComplete="current-password" required autoFocus fullWidth value={currentPassword} disabled={saving} onChange={event => setCurrentPassword(event.target.value)} />
+          {error && <Alert severity="error" sx={{ mt: 2 }}>{resolveMessage(error)}</Alert>}
         </DialogContent>
-        <DialogActions><Button onClick={closeDialog} disabled={saving}>Cancel</Button><Button type="submit" disabled={!currentPassword || saving}>Confirm</Button></DialogActions>
+        <DialogActions><Button onClick={closeDialog} disabled={saving}>{i18n.t("cancel", { ns: "common" })}</Button><Button type="submit" disabled={!currentPassword || saving}>{i18n.t("confirm", { ns: "common" })}</Button></DialogActions>
       </form>
     </Dialog></>
   );

@@ -1,3 +1,4 @@
+import i18n from "../i18n";
 import {
   AccountBalanceOutlined,
   CloudOutlined,
@@ -60,12 +61,12 @@ export interface TripDetail {
 }
 
 export const PREF_OPTIONS = [
-  { id: "food", label: "Food", icon: RestaurantOutlined },
-  { id: "architecture", label: "Architecture", icon: AccountBalanceOutlined },
-  { id: "culture", label: "Culture", icon: PaletteOutlined },
-  { id: "nature", label: "Nature", icon: LandscapeOutlined },
-  { id: "shopping", label: "Shopping", icon: ShoppingBagOutlined },
-  { id: "nightlife", label: "Nightlife", icon: NightlifeOutlined },
+  { id: "food", get label() { return i18n.t("food", { ns: "trips" }); }, icon: RestaurantOutlined },
+  { id: "architecture", get label() { return i18n.t("architecture", { ns: "trips" }); }, icon: AccountBalanceOutlined },
+  { id: "culture", get label() { return i18n.t("culture", { ns: "trips" }); }, icon: PaletteOutlined },
+  { id: "nature", get label() { return i18n.t("nature", { ns: "trips" }); }, icon: LandscapeOutlined },
+  { id: "shopping", get label() { return i18n.t("shopping", { ns: "trips" }); }, icon: ShoppingBagOutlined },
+  { id: "nightlife", get label() { return i18n.t("nightlife", { ns: "trips" }); }, icon: NightlifeOutlined },
 ];
 
 export const PACE_OPTIONS = ["Relaxed", "Balanced", "Packed"];
@@ -96,7 +97,7 @@ const TRIP_DETAILS: TripDetail[] = [
     image: "/trips/prague.jpg",
     dateLabel: "Jan 18-21",
     stepsKm: 15,
-    weather: { icon: CloudOutlined, temp: 8, label: "cloudy" },
+    weather: { icon: CloudOutlined, temp: 8, get label() { return i18n.t("cloudy", { ns: "trips" }); } },
     center: [50.0755, 14.4378],
     dayRoutes: makeRoutes([50.0755, 14.4378], 3, 3),
     tripDays: [
@@ -126,11 +127,11 @@ const TRIP_DETAILS: TripDetail[] = [
       spent: 402,
       whole: 350,
       breakdown: [
-        { label: "Accommodation", amount: 150, color: "#5d7bd5" },
-        { label: "Food", amount: 100, color: "#f2664b" },
-        { label: "Activities", amount: 70, color: "#43b047" },
-        { label: "Transport", amount: 52, color: "#a05bd5" },
-        { label: "Other", amount: 30, color: "#e0a22e" },
+        { get label() { return i18n.t("accommodation", { ns: "trips" }); }, amount: 150, color: "#5d7bd5" },
+        { get label() { return i18n.t("food", { ns: "trips" }); }, amount: 100, color: "#f2664b" },
+        { get label() { return i18n.t("activities", { ns: "trips" }); }, amount: 70, color: "#43b047" },
+        { get label() { return i18n.t("transport", { ns: "trips" }); }, amount: 52, color: "#a05bd5" },
+        { get label() { return i18n.t("other", { ns: "trips" }); }, amount: 30, color: "#e0a22e" },
       ],
     },
     prefDefaults: { tags: ["food", "architecture"], pace: 1, walking: 1 },
@@ -143,7 +144,7 @@ const TRIP_DETAILS: TripDetail[] = [
     image: "/trips/paris.jpg",
     dateLabel: "Feb 10-13",
     stepsKm: 24,
-    weather: { icon: WbSunnyOutlined, temp: 18, label: "mostly sunny" },
+    weather: { icon: WbSunnyOutlined, temp: 18, get label() { return i18n.t("mostlySunny", { ns: "trips" }); } },
     center: [48.8566, 2.3522],
     dayRoutes: makeRoutes([48.8566, 2.3522], 3, 3),
     tripDays: [
@@ -173,11 +174,11 @@ const TRIP_DETAILS: TripDetail[] = [
       spent: 427,
       whole: 500,
       breakdown: [
-        { label: "Accommodation", amount: 180, color: "#5d7bd5" },
-        { label: "Food", amount: 120, color: "#f2664b" },
-        { label: "Activities", amount: 72, color: "#43b047" },
-        { label: "Transport", amount: 35, color: "#a05bd5" },
-        { label: "Other", amount: 20, color: "#e0a22e" },
+        { get label() { return i18n.t("accommodation", { ns: "trips" }); }, amount: 180, color: "#5d7bd5" },
+        { get label() { return i18n.t("food", { ns: "trips" }); }, amount: 120, color: "#f2664b" },
+        { get label() { return i18n.t("activities", { ns: "trips" }); }, amount: 72, color: "#43b047" },
+        { get label() { return i18n.t("transport", { ns: "trips" }); }, amount: 35, color: "#a05bd5" },
+        { get label() { return i18n.t("other", { ns: "trips" }); }, amount: 20, color: "#e0a22e" },
       ],
     },
     prefDefaults: { tags: ["architecture", "shopping"], pace: 1, walking: 1 },
@@ -190,7 +191,7 @@ const TRIP_DETAILS: TripDetail[] = [
     image: "/trips/rome.jpg",
     dateLabel: "Mar 5-8",
     stepsKm: 18,
-    weather: { icon: WbSunnyOutlined, temp: 21, label: "sunny" },
+    weather: { icon: WbSunnyOutlined, temp: 21, get label() { return i18n.t("sunny", { ns: "trips" }); } },
     center: [41.9028, 12.4964],
     dayRoutes: makeRoutes([41.9028, 12.4964], 3, 3),
     tripDays: [
@@ -220,11 +221,11 @@ const TRIP_DETAILS: TripDetail[] = [
       spent: 312,
       whole: 300,
       breakdown: [
-        { label: "Accommodation", amount: 140, color: "#5d7bd5" },
-        { label: "Food", amount: 80, color: "#f2664b" },
-        { label: "Activities", amount: 55, color: "#43b047" },
-        { label: "Transport", amount: 22, color: "#a05bd5" },
-        { label: "Other", amount: 15, color: "#e0a22e" },
+        { get label() { return i18n.t("accommodation", { ns: "trips" }); }, amount: 140, color: "#5d7bd5" },
+        { get label() { return i18n.t("food", { ns: "trips" }); }, amount: 80, color: "#f2664b" },
+        { get label() { return i18n.t("activities", { ns: "trips" }); }, amount: 55, color: "#43b047" },
+        { get label() { return i18n.t("transport", { ns: "trips" }); }, amount: 22, color: "#a05bd5" },
+        { get label() { return i18n.t("other", { ns: "trips" }); }, amount: 15, color: "#e0a22e" },
       ],
     },
     prefDefaults: { tags: ["culture", "food"], pace: 2, walking: 0 },
@@ -237,7 +238,7 @@ const TRIP_DETAILS: TripDetail[] = [
     image: "/trips/lisbon.jpg",
     dateLabel: "Apr 2-5",
     stepsKm: 21,
-    weather: { icon: CloudOutlined, temp: 19, label: "partly cloudy" },
+    weather: { icon: CloudOutlined, temp: 19, get label() { return i18n.t("partlyCloudy", { ns: "trips" }); } },
     center: [38.7223, -9.1393],
     dayRoutes: makeRoutes([38.7223, -9.1393], 3, 3),
     tripDays: [
@@ -267,11 +268,11 @@ const TRIP_DETAILS: TripDetail[] = [
       spent: 515,
       whole: 560,
       breakdown: [
-        { label: "Accommodation", amount: 200, color: "#5d7bd5" },
-        { label: "Food", amount: 140, color: "#f2664b" },
-        { label: "Activities", amount: 80, color: "#43b047" },
-        { label: "Transport", amount: 60, color: "#a05bd5" },
-        { label: "Other", amount: 35, color: "#e0a22e" },
+        { get label() { return i18n.t("accommodation", { ns: "trips" }); }, amount: 200, color: "#5d7bd5" },
+        { get label() { return i18n.t("food", { ns: "trips" }); }, amount: 140, color: "#f2664b" },
+        { get label() { return i18n.t("activities", { ns: "trips" }); }, amount: 80, color: "#43b047" },
+        { get label() { return i18n.t("transport", { ns: "trips" }); }, amount: 60, color: "#a05bd5" },
+        { get label() { return i18n.t("other", { ns: "trips" }); }, amount: 35, color: "#e0a22e" },
       ],
     },
     prefDefaults: { tags: ["food", "nature"], pace: 0, walking: 2 },
@@ -291,5 +292,5 @@ export function findTripDetailByKey(fixtureKey: string | null): TripDetail | und
 }
 
 export const EMPTY_BUDGET_BREAKDOWN: BudgetSlice[] = [
-  { label: "Remaining", amount: 0, color: "#5d7bd5" },
+  { get label() { return i18n.t("remaining", { ns: "trips" }); }, amount: 0, color: "#5d7bd5" },
 ];

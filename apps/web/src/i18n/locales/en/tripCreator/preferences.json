@@ -1,0 +1,17 @@
+{
+  "interest_food": "Food",
+  "interest_architecture": "Architecture",
+  "interest_beach": "Beach",
+  "interest_nature": "Nature",
+  "interest_culture": "Culture",
+  "interest_shopping": "Shopping",
+  "interest_nightlife": "Nightlife",
+  "pace_relaxed": "Relaxed",
+  "pace_balanced": "Balanced",
+  "pace_packed": "Packed",
+  "paceTitle": "Travel pace",
+  "walkingTitle": "Walking tolerance",
+  "walking_0": "Low",
+  "walking_1": "Medium",
+  "walking_2": "High"
+}

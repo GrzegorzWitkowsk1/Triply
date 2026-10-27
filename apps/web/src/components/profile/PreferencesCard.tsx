@@ -1,3 +1,6 @@
+import { errorMessage as localizedError } from "../../i18n/errors";
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import { useEffect, useState } from "react";
 import { DEFAULT_PROFILE_PREFERENCES, PACE_VALUES, PROFILE_WALKING_LIMITS, type ProfilePreferences } from "@triply/shared";
 import { useAuth } from "../../auth/AuthProvider";
@@ -6,6 +9,7 @@ import { useToast } from "../ToastProvider";
 import PreferenceFields from "../trip/PreferenceFields";
 
 export default function PreferencesCard() {
+  useTranslation();
   const { user, updateUser } = useAuth();
   const toast = useToast();
   const [values, setValues] = useState<ProfilePreferences>(user?.preferences ?? DEFAULT_PROFILE_PREFERENCES);
@@ -14,8 +18,8 @@ export default function PreferencesCard() {
   useEffect(() => { setValues(JSON.parse(savedValues) as ProfilePreferences); }, [user?.id, savedValues]);
   const save = async () => {
     setSaving(true);
-    try { updateUser(await saveProfilePreferences(values)); toast("Preferences saved."); }
-    catch (error) { toast(error instanceof Error ? error.message : "Could not save preferences.", "error"); }
+    try { updateUser(await saveProfilePreferences(values)); toast(() => i18n.t("preferencesSaved", { ns: "auth/profile" })); }
+    catch (error) { toast(() => localizedError(error), "error"); }
     finally { setSaving(false); }
   };
   return <form className="settings-card" onSubmit={event => { event.preventDefault(); void save(); }}>
@@ -23,6 +27,6 @@ export default function PreferencesCard() {
       onToggleTag={id => setValues(current => ({ ...current, interests: current.interests.includes(id as ProfilePreferences["interests"][number]) ? current.interests.filter(tag => tag !== id) : [...current.interests, id as ProfilePreferences["interests"][number]] }))}
       pace={PACE_VALUES.indexOf(values.pace)} onPaceChange={index => setValues(current => ({ ...current, pace: PACE_VALUES[index] }))}
       walking={PROFILE_WALKING_LIMITS.indexOf(values.maxWalkingDistanceKm)} onWalkingChange={index => setValues(current => ({ ...current, maxWalkingDistanceKm: PROFILE_WALKING_LIMITS[index] }))} />
-    <div className="settings-footer"><button type="submit" className="btn btn-primary settings-submit" disabled={saving}>Save</button></div>
+    <div className="settings-footer"><button type="submit" className="btn btn-primary settings-submit" disabled={saving}>{i18n.t("save", { ns: "common" })}</button></div>
   </form>;
 }

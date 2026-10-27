@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import i18n from "../i18n";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { GuestUsage as Usage, IdentitySession, TripDetail, TripSummary } from "@triply/shared";
@@ -55,9 +56,22 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetcher);
   Element.prototype.scrollIntoView = vi.fn();
 });
-afterEach(() => { cleanup(); client?.clear(); vi.unstubAllGlobals(); });
+afterEach(async () => { cleanup(); client?.clear(); vi.unstubAllGlobals(); await i18n.changeLanguage("en"); });
 
 describe("guest trips and limits UI", () => {
+  it("switches exhausted quota copy without consuming any allowance", async () => {
+    usage.tripCount = 6; usage.aiGenerationsRemaining = 0; usage.dayRegenerationsRemaining = 0; usage.maxTripDays = 1;
+    mount(); await screen.findByLabelText("Guest usage");
+    const original = structuredClone(usage);
+    await act(() => i18n.changeLanguage("pl"));
+    const indicator = screen.getByLabelText("Limity gościa");
+    expect(indicator.textContent).toContain("Do 1 dnia kalendarzowego na podróż");
+    expect(indicator.textContent).toContain("Osiągnięto limit podróży gościa");
+    expect(indicator.textContent).toContain("Wykorzystano limit generowania planów");
+    expect(indicator.textContent).toContain("Wykorzystano limit zmian dnia z AI");
+    expect(usage).toEqual(original);
+    expect(fetcher.mock.calls.filter(([, init]) => init?.method && init.method !== "GET")).toHaveLength(0);
+  });
   it("shows server-provided usage, own trip list and separate AI counters", async () => {
     mount();
     const indicator = await screen.findByLabelText("Guest usage");
@@ -103,7 +117,7 @@ describe("guest trips and limits UI", () => {
   });
   it("reports quota status network errors with retry", async () => {
     usageError = true; mount();
-    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Could not load guest usage Retry");
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Something went wrong. Please try again. Retry");
     usageError = false;
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(screen.getByLabelText("Guest usage").textContent).toContain("Trips: 1 / 6"));

@@ -1,3 +1,4 @@
+import i18n from "../i18n";
 import {
   AcUnitOutlined,
   CloudOutlined,
@@ -17,37 +18,37 @@ interface WeatherDisplay {
 }
 
 const WEATHER_DISPLAYS: Record<number, WeatherDisplay> = {
-  0: { icon: WbSunnyOutlined, label: "sunny" },
-  1: { icon: WbSunnyOutlined, label: "mostly sunny" },
-  2: { icon: WbCloudyOutlined, label: "partly cloudy" },
-  3: { icon: CloudOutlined, label: "cloudy" },
-  45: { icon: Foggy, label: "foggy" },
-  48: { icon: Foggy, label: "foggy" },
-  51: { icon: GrainOutlined, label: "drizzle" },
-  53: { icon: GrainOutlined, label: "drizzle" },
-  55: { icon: GrainOutlined, label: "drizzle" },
-  56: { icon: GrainOutlined, label: "drizzle" },
-  57: { icon: GrainOutlined, label: "drizzle" },
-  61: { icon: WaterDropOutlined, label: "rainy" },
-  63: { icon: WaterDropOutlined, label: "rainy" },
-  65: { icon: WaterDropOutlined, label: "rainy" },
-  66: { icon: WaterDropOutlined, label: "rainy" },
-  67: { icon: WaterDropOutlined, label: "rainy" },
-  71: { icon: AcUnitOutlined, label: "snowy" },
-  73: { icon: AcUnitOutlined, label: "snowy" },
-  75: { icon: AcUnitOutlined, label: "snowy" },
-  77: { icon: AcUnitOutlined, label: "snowy" },
-  80: { icon: WaterDropOutlined, label: "rainy" },
-  81: { icon: WaterDropOutlined, label: "rainy" },
-  82: { icon: WaterDropOutlined, label: "rainy" },
-  85: { icon: AcUnitOutlined, label: "snowy" },
-  86: { icon: AcUnitOutlined, label: "snowy" },
-  95: { icon: ThunderstormOutlined, label: "thunderstorm" },
-  96: { icon: ThunderstormOutlined, label: "thunderstorm" },
-  99: { icon: ThunderstormOutlined, label: "thunderstorm" },
+  0: { icon: WbSunnyOutlined, get label() { return i18n.t("sunny", { ns: "trips/weather" }); } },
+  1: { icon: WbSunnyOutlined, get label() { return i18n.t("mostlySunny", { ns: "trips/weather" }); } },
+  2: { icon: WbCloudyOutlined, get label() { return i18n.t("partlyCloudy", { ns: "trips/weather" }); } },
+  3: { icon: CloudOutlined, get label() { return i18n.t("cloudy", { ns: "trips/weather" }); } },
+  45: { icon: Foggy, get label() { return i18n.t("foggy", { ns: "trips/weather" }); } },
+  48: { icon: Foggy, get label() { return i18n.t("foggy", { ns: "trips/weather" }); } },
+  51: { icon: GrainOutlined, get label() { return i18n.t("drizzle", { ns: "trips/weather" }); } },
+  53: { icon: GrainOutlined, get label() { return i18n.t("drizzle", { ns: "trips/weather" }); } },
+  55: { icon: GrainOutlined, get label() { return i18n.t("drizzle", { ns: "trips/weather" }); } },
+  56: { icon: GrainOutlined, get label() { return i18n.t("drizzle", { ns: "trips/weather" }); } },
+  57: { icon: GrainOutlined, get label() { return i18n.t("drizzle", { ns: "trips/weather" }); } },
+  61: { icon: WaterDropOutlined, get label() { return i18n.t("rainy", { ns: "trips/weather" }); } },
+  63: { icon: WaterDropOutlined, get label() { return i18n.t("rainy", { ns: "trips/weather" }); } },
+  65: { icon: WaterDropOutlined, get label() { return i18n.t("rainy", { ns: "trips/weather" }); } },
+  66: { icon: WaterDropOutlined, get label() { return i18n.t("rainy", { ns: "trips/weather" }); } },
+  67: { icon: WaterDropOutlined, get label() { return i18n.t("rainy", { ns: "trips/weather" }); } },
+  71: { icon: AcUnitOutlined, get label() { return i18n.t("snowy", { ns: "trips/weather" }); } },
+  73: { icon: AcUnitOutlined, get label() { return i18n.t("snowy", { ns: "trips/weather" }); } },
+  75: { icon: AcUnitOutlined, get label() { return i18n.t("snowy", { ns: "trips/weather" }); } },
+  77: { icon: AcUnitOutlined, get label() { return i18n.t("snowy", { ns: "trips/weather" }); } },
+  80: { icon: WaterDropOutlined, get label() { return i18n.t("rainy", { ns: "trips/weather" }); } },
+  81: { icon: WaterDropOutlined, get label() { return i18n.t("rainy", { ns: "trips/weather" }); } },
+  82: { icon: WaterDropOutlined, get label() { return i18n.t("rainy", { ns: "trips/weather" }); } },
+  85: { icon: AcUnitOutlined, get label() { return i18n.t("snowy", { ns: "trips/weather" }); } },
+  86: { icon: AcUnitOutlined, get label() { return i18n.t("snowy", { ns: "trips/weather" }); } },
+  95: { icon: ThunderstormOutlined, get label() { return i18n.t("thunderstorm", { ns: "trips/weather" }); } },
+  96: { icon: ThunderstormOutlined, get label() { return i18n.t("thunderstorm", { ns: "trips/weather" }); } },
+  99: { icon: ThunderstormOutlined, get label() { return i18n.t("thunderstorm", { ns: "trips/weather" }); } },
 };
 
-const FALLBACK_DISPLAY: WeatherDisplay = { icon: CloudOutlined, label: "cloudy" };
+const FALLBACK_DISPLAY: WeatherDisplay = { icon: CloudOutlined, get label() { return i18n.t("cloudy", { ns: "trips/weather" }); } };
 
 export function toTripWeather(day: TripDayWeather): TripWeather {
   const display = WEATHER_DISPLAYS[day.weatherCode] ?? FALLBACK_DISPLAY;

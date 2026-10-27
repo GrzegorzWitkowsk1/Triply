@@ -1,3 +1,4 @@
+import { supportedLocaleSchema } from "./locale.js";
 import { z } from "zod";
 import { equipmentCategorySchema, tripEquipmentItemSchema } from "./trip.js";
 
@@ -37,6 +38,7 @@ export function canonicalPackingName(name: string): string {
 }
 
 export const packingGenerationMetadataSchema = z.object({
+  locale: supportedLocaleSchema.optional(),
   generatedAt: z.iso.datetime(),
   contextFingerprint: z.string().length(64),
   suggestionCount: z.number().int().min(0).max(PACKING_SUGGESTION_LIMIT),
@@ -58,9 +60,11 @@ export interface BulkPackingResult { equipment: import("./trip.js").TripEquipmen
 
 // Curated, category-specific synonyms flag uncertainty; they never authorize merging.
 const PACKING_SYNONYMS = [
-  { category: "clothing", names: ["rain jacket", "waterproof jacket"] },
-  { category: "clothing", names: ["walking shoes", "comfortable walking shoes"] },
-  { category: "electronics", names: ["phone charger", "mobile phone charger"] },
+  { category: "clothing", names: ["rain jacket", "waterproof jacket", "kurtka przeciwdeszczowa", "kurtka wodoodporna"] },
+  { category: "clothing", names: ["walking shoes", "comfortable walking shoes", "buty do chodzenia", "wygodne buty", "wygodne buty do chodzenia"] },
+  { category: "electronics", names: ["phone charger", "mobile phone charger", "ładowarka do telefonu", "ładowarka telefonu"] },
+  { category: "documents", names: ["passport", "paszport"] },
+  { category: "clothing", names: ["socks", "everyday socks", "skarpetki", "skarpety"] },
 ] as const;
 export function matchPackingSuggestion(
   suggestion: { name: string; category: string },

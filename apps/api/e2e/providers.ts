@@ -38,7 +38,16 @@ export class ProviderFixtures {
       const json = (body: unknown) => Response.json(body);
       try {
         if (url.hostname === "generativelanguage.googleapis.com" && url.pathname.endsWith(":generateContent")) {
-          const request = JSON.parse(String(init?.body)) as { contents?: { parts?: { text?: string }[] }[]; generationConfig?: { responseSchema?: { properties?: { items?: unknown } } } };
+          const request = JSON.parse(String(init?.body)) as { systemInstruction?: { parts?: { text?: string }[] }; contents?: { parts?: { text?: string }[] }[]; generationConfig?: { responseSchema?: { properties?: { items?: unknown; intent?: unknown; lessWalking?: unknown } } } };
+          const polish = request.systemInstruction?.parts?.some(part => part.text?.includes("natural Polish"));
+          if (request.generationConfig?.responseSchema?.properties?.intent) {
+            await this.boundary("assistant");
+            return json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ intent: "trip_question", question: "count", day: null, targetDay: null, attraction: null, replacement: null, before: null, operation: null, preferences: { lessWalking: false, moreFood: false, relaxedPace: false, preferIndoor: false, surpriseMe: false }, multipleActions: false }) }] } }] });
+          }
+          if (request.generationConfig?.responseSchema?.properties?.lessWalking) {
+            await this.boundary("regeneration");
+            return json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ lessWalking: false, moreFood: false, relaxedPace: true, preferIndoor: false, surpriseMe: false }) }] } }] });
+          }
           if (request.generationConfig?.responseSchema?.properties?.items) {
             await this.boundary("packing");
             if (this.packingFailures > 0) { this.packingFailures--; return Promise.reject(new DOMException("Fixture timeout", "TimeoutError")); }
@@ -50,12 +59,16 @@ export class ProviderFixtures {
               { name: "Passport", category: "documents", count: 1, reason: "Travel identification." },
             ];
             if (this.packingSmart) items.push({ name: "Rain jacket", category: "clothing", count: 1, reason: "A general weather-protective layer for travel; check local conditions." });
+            if (polish) {
+              const names: Record<string, string> = { "Walking shoes": "Wygodne buty", "Phone charger": "Ładowarka do telefonu", "Everyday socks": "Skarpetki", "Passport": "Paszport", "Rain jacket": "Kurtka przeciwdeszczowa" };
+              for (const item of items) { item.name = names[item.name] ?? item.name; item.reason = "Przyda się podczas zaplanowanej podróży."; }
+            }
             return json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ items, warnings: [] }) }] } }] });
           }
           await this.boundary("ai");
           // Deliberately incomplete provider output exercises the real requirements UI.
           const draft = { ...analysis(), destination: null, country: null, location: null, startDate: null,
-            endDate: null, durationDays: null, travelers: null, budget: { amount: null, currency: null, type: null }, interests: [] };
+            endDate: null, durationDays: null, travelers: null, budget: { amount: null, currency: null, type: null }, interests: [], notes: polish ? "Polski opis podróży." : "English trip description." };
           return json({ candidates: [{ content: { parts: [{ text: JSON.stringify(draft) }] } }] });
         }
         if (url.hostname === "geocoding-api.open-meteo.com" && url.pathname === "/v1/search") {

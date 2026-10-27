@@ -1,3 +1,4 @@
+let localeRequests = 0;
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
@@ -39,6 +40,32 @@ async function textFromPdf(bytes: Buffer): Promise<string> {
   finally { await task.destroy(); }
 }
 describe("authorized persisted itinerary PDF endpoints", () => {
+  it.each(["en", "pl", undefined] as const)("exports owner and shared real PDF in %s with legacy data unchanged", async locale => {
+    const ctx = await setup();
+    const before = await TripModel.findById(ctx.trip.id).select("+sharing.tokenHash").lean();
+    for (const [url, cookie] of [[ctx.privateUrl, ctx.cookie], [ctx.publicUrl, undefined]]) {
+      const result = await app.inject({ remoteAddress: `192.0.2.${++localeRequests}`, url: url + (locale ? `?locale=${locale}` : ""), headers: cookie ? { cookie } : {} });
+      expect(result.statusCode).toBe(200);
+      expect(result.headers["content-language"]).toBe(locale ?? "en");
+      const text = await textFromPdf(result.rawPayload);
+      expect(text).toContain(locale === "pl" ? "PLAN PODRÓŻY" : "TRAVEL ITINERARY");
+      expect(text).toContain("Public description"); expect(text).toContain("Łódzkie muzeum");
+      expect(text).toContain("09:15"); expect(text).not.toContain("PRIVATE");
+    }
+    expect(await TripModel.findById(ctx.trip.id).select("+sharing.tokenHash").lean()).toEqual(before);
+  });
+  it("rejects invalid export locales and preserves guest export isolation", async () => {
+    const ctx = await setup();
+    for (const value of ["de", "pl-PL", "en%0Aignore", ""]) for (const url of [ctx.privateUrl, ctx.publicUrl])
+      expect((await app.inject({ remoteAddress: `192.0.2.${++localeRequests}`, url: `${url}?locale=${value}`, headers: { cookie: ctx.cookie } })).statusCode).toBe(400);
+    const guest = await app.inject({ remoteAddress: `192.0.2.${++localeRequests}`, method: "POST", url: "/api/auth/guest", headers: { origin: env.WEB_ORIGIN } });
+    const cookie = guest.cookies.map(c => `${c.name}=${c.value}`).join("; ");
+    expect((await app.inject({ remoteAddress: `192.0.2.${++localeRequests}`, url: `${ctx.privateUrl}?locale=pl`, headers: { cookie } })).statusCode).toBe(404);
+    await TripModel.collection.updateOne({ _id: ctx.trip._id }, { $set: { user: null, guestId: guest.json().guest.id, guestSlot: 0 } });
+    const result = await app.inject({ remoteAddress: `192.0.2.${++localeRequests}`, url: `${ctx.privateUrl}?locale=pl`, headers: { cookie } });
+    expect(result.statusCode).toBe(200); expect(await textFromPdf(result.rawPayload)).toContain("PLAN PODRÓŻY");
+    expect((await app.inject({ remoteAddress: `192.0.2.${++localeRequests}`, url: ctx.privateUrl, headers: { cookie: ctx.cookie } })).statusCode).toBe(404);
+  });
   it("exports owner PDF with proper headers and makes no database changes or provider calls", async () => {
     const ctx = await setup(); const before = await TripModel.findById(ctx.trip.id).select("+sharing.tokenHash").lean();
     const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("External providers forbidden"));

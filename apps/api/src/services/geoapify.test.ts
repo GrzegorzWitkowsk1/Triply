@@ -18,6 +18,16 @@ const feature = (index = 0, raw?: Record<string, unknown>) => ({ type: "Feature"
 const places = (count = 1, raw?: Record<string, unknown>) => ({ type: "FeatureCollection", features: Array.from({ length: count }, (_, i) => feature(i, raw)) });
 const json = (value: unknown, status = 200, headers?: HeadersInit) => new Response(JSON.stringify(value), { status, headers });
 
+it.each(["en", "pl"] as const)("preserves %s through Overpass fallback and Geoapify retry with supplied descriptions", async locale => {
+  const http = vi.fn().mockResolvedValueOnce(json({}, 503))
+    .mockResolvedValueOnce(json({}, 503, { "Retry-After": "0" }))
+    .mockResolvedValueOnce(json(places(1, { "description:pl": "Polska kolekcja" })));
+  vi.stubGlobal("fetch", http);
+  const result = await fetchAttractions(48.85, 2.35, ["culture"], { ...transport, locale });
+  expect(result?.[0]).toMatchObject({ name: "Museum 0", address: "Paris", description: locale === "pl" ? "Polska kolekcja" : "Collection" });
+  expect(http).toHaveBeenCalledTimes(3);
+});
+
 beforeEach(() => {
   env.GEOAPIFY_ENABLED = true;
   env.GEOAPIFY_API_KEY = "test-secret";

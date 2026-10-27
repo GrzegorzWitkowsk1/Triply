@@ -1,3 +1,7 @@
+import { localizedCollection } from "../config/explore";
+import { interestLabel as localizedInterest, paceLabel } from "../i18n/labels";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import {
   Link,
@@ -20,6 +24,7 @@ import DestinationSaveButton from "../components/DestinationSaveButton";
 import { SavedPlaceDetails } from "../components/saved/SavedPlaceCard";
 
 export default function CollectionPage() {
+  useTranslation();
   const { slug } = useParams();
   const location = useLocation();
   const returnTo: unknown = location.state?.exploreReturnTo;
@@ -29,7 +34,7 @@ export default function CollectionPage() {
       ? returnTo
       : "/explore";
   const [params] = useSearchParams();
-  const collection = findCuratedCollection(slug);
+  const collection = localizedCollection(slug);
   const destinations = useCollectionDestinations(slug);
   const saved = useSavedDestinationIds();
   const [detailId, setDetailId] = useState<string>();
@@ -71,14 +76,12 @@ export default function CollectionPage() {
             marginBottom: "16px",
           }}
         >
-          Back to Explore
-        </Button>
+          {i18n.t("backToExplore", { ns: "explore/collections" })}</Button>
         {!collection ? (
           <>
-            <h1>Collection not found</h1>
+            <h1>{i18n.t("collectionNotFound", { ns: "explore/collections" })}</h1>
             <p>
-              This collection is unavailable. Browse the collections on Explore.
-            </p>
+              {i18n.t("thisCollectionIsUnavailableBrowseTheCollectionsOn", { ns: "explore/collections" })}</p>
           </>
         ) : (
           <>
@@ -101,56 +104,48 @@ export default function CollectionPage() {
             </header>
             <section
               className="collection-suggestions"
-              aria-label="Suggested trip preferences"
+              aria-label={i18n.t("suggestedTripPreferences", { ns: "explore/collections" })}
             >
-              <h2>Make this theme your own</h2>
+              <h2>{i18n.t("makeThisThemeYourOwn", { ns: "explore/collections" })}</h2>
               <p>
-                An editorial selection for inspiration. Start planning from a
-                destination to try these preferences, then change them before
-                generating your itinerary.
-              </p>
+                {i18n.t("anEditorialSelectionForInspirationStartPlanningFrom", { ns: "explore/collections" })}</p>
               <div className="explore-filter-chips">
                 {collection.suggestedInterests.map((id) => (
                   <Chip
                     key={id}
                     label={
-                      INTEREST_OPTIONS.find((option) => option.id === id)
-                        ?.label ?? id
+                      localizedInterest(id)
                     }
                   />
                 ))}
                 <Chip
-                  label={`Pace: ${PACE_OPTIONS.find((option) => option.value === collection.suggestedPace)?.label}`}
+                  label={i18n.t("pace", { ns: "explore/collections", value0: paceLabel(collection.suggestedPace) })}
                 />
               </div>
             </section>
-            <h2>Destinations in this collection</h2>
+            <h2>{i18n.t("destinationsInThisCollection", { ns: "explore/collections" })}</h2>
             {destinations.isPending && (
-              <p role="status">Loading collection destinations…</p>
+              <p role="status">{i18n.t("loadingCollectionDestinations", { ns: "explore/collections" })}</p>
             )}
             {destinations.isError && (
               <Alert
                 severity="error"
                 action={
                   <Button onClick={() => void destinations.refetch()}>
-                    Retry collection
-                  </Button>
+                    {i18n.t("retryCollection", { ns: "explore/collections" })}</Button>
                 }
               >
-                Could not load collection destinations. Please try again.
-              </Alert>
+                {i18n.t("couldNotLoadCollectionDestinationsPleaseTryAgain", { ns: "explore/collections" })}</Alert>
             )}
             {saved.isError && (
               <Alert
                 severity="warning"
                 action={
                   <Button onClick={() => void saved.refetch()}>
-                    Retry Saved status
-                  </Button>
+                    {i18n.t("retrySavedStatus", { ns: "explore/collections" })}</Button>
                 }
               >
-                Could not load Saved status. Your collection has not changed.
-              </Alert>
+                {i18n.t("couldNotLoadSavedStatusYourCollectionHas", { ns: "explore/collections" })}</Alert>
             )}
             <div
               className="trend-grid collection-destinations"
@@ -182,8 +177,7 @@ export default function CollectionPage() {
             </div>
             {destinations.isSuccess && !destinations.data.items.length && (
               <p role="status">
-                No destinations are currently available in this collection.
-              </p>
+                {i18n.t("noDestinationsAreCurrentlyAvailableInThisCollection", { ns: "explore/collections" })}</p>
             )}
             <SavedPlaceDetails
               collectionSlug={collection.slug}

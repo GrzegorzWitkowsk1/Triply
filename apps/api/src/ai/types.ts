@@ -24,11 +24,13 @@ export interface AIRequest {
 export type AIProviderName = "gemini" | "openrouter";
 
 export interface AnalyzeTripInput {
+  locale?: import("@triply/shared").SupportedLocale;
   prompt: string;
   badges: string[];
 }
 
 export interface ParseRegenerationInput {
+  locale?: import("@triply/shared").SupportedLocale;
   customInstructions: string;
   selectedPreferences?: RegenerationPreferences;
 }

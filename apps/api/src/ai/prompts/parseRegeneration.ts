@@ -1,3 +1,4 @@
+import { languageInstruction } from "./language.js";
 import { REGENERATION_OPTIONS } from "@triply/shared";
 import {
   nullableSchema,
@@ -78,7 +79,7 @@ export function buildRegenerationPrompt(input: ParseRegenerationInput): string {
 
 export function buildRegenerationRequest(input: ParseRegenerationInput): AIRequest {
   return {
-    systemInstruction: buildRegenerationSystemInstruction(),
+    systemInstruction: `${buildRegenerationSystemInstruction()}\n${languageInstruction(input.locale)}`,
     prompt: buildRegenerationPrompt(input),
     schema: REGENERATION_PREFERENCES_SCHEMA,
   };

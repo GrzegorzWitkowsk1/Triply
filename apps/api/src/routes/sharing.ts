@@ -1,3 +1,4 @@
+import { contentLocale } from "@triply/shared";
 import { createHash, randomBytes } from "node:crypto";
 import { Types } from "mongoose";
 import type { FastifyInstance } from "fastify";
@@ -6,7 +7,7 @@ import { TripModel, type TripRecord } from "../models/Trip.js";
 import { currentTripOwner, ownerFilter } from "../middleware/tripIdentity.js";
 
 export const hashShareToken = (token: string): string => createHash("sha256").update(token).digest("hex");
-export const PUBLIC_TRIP_PROJECTION = "analysis.destination analysis.country analysis.startDate analysis.endDate analysis.durationDays analysis.location weather itinerary attractions";
+export const PUBLIC_TRIP_PROJECTION = "contentLocale analysis.destination analysis.country analysis.startDate analysis.endDate analysis.durationDays analysis.location weather itinerary attractions";
 export async function findPublicTrip(token: string) {
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
   return TripModel.findOne({ "sharing.enabled": true, "sharing.tokenHash": hashShareToken(token) }).select(PUBLIC_TRIP_PROJECTION).exec();
@@ -25,7 +26,7 @@ export function toPublicTrip(trip: TripRecord & { _id: Types.ObjectId }, options
     !(trip.itinerary?.days ?? []).some(day => (item.dayIndex === null || item.dayIndex === day.dayIndex) &&
       day.activities.some(activity => activity.type === "attraction" && activity.placeId && activity.placeId === item.place.placeId)))
     .map(item => `${item.dayIndex}:${item.place.placeId ?? `${item.place.name}:${item.place.lat}:${item.place.lng}`}`));
-  return publicTripSchema.parse({ destination: a.destination, country: a.country, startDate: a.startDate,
+  return publicTripSchema.parse({ contentLocale: contentLocale(trip.contentLocale), destination: a.destination, country: a.country, startDate: a.startDate,
     endDate: a.endDate, durationDays: a.durationDays, location: a.location ? { lat: a.location.lat, lng: a.location.lng } : null,
     weather: trip.weather.map(w => ({ date: w.date, weatherCode: w.weatherCode, temperatureMax: w.temperatureMax })),
     ...(options.calendarMetadata ? { unscheduledCount: unscheduled.size } : {}),

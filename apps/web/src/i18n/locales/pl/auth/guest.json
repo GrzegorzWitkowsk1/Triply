@@ -1,0 +1,20 @@
+{
+  "welcomeToTriply": "Witaj w Triply",
+  "youReBrowsingAsAGuestAccountSettings": "Przeglądasz aplikację jako gość. Ustawienia i powiadomienia wymagają konta.",
+  "youCanPlanAndEditTripsAsA": "Jako gość możesz planować i edytować podróże. Utwórz konto lub zaloguj się, aby korzystać z funkcji konta.",
+  "loading": "Ładowanie limitów gościa…",
+  "usage": "Limity gościa",
+  "mode": "Tryb gościa",
+  "tripsUsed": "Podróże: {{used}} / {{limit}}",
+  "generationsLeft": "Pozostałe generowania AI: {{remaining}} / {{limit}}",
+  "regenerationsLeft": "Pozostałe zmiany dnia z AI: {{remaining}} / {{limit}}",
+  "maxDays_one": "Do {{count, number}} dnia kalendarzowego na podróż",
+  "maxDays_few": "Do {{count, number}} dni kalendarzowych na podróż",
+  "maxDays_many": "Do {{count, number}} dni kalendarzowych na podróż",
+  "maxDays_other": "Do {{count, number}} dni kalendarzowych na podróż",
+  "tripLimit": "Osiągnięto limit podróży gościa ({{count, number}}). Usuń podróż, aby zwolnić miejsce, lub <account>utwórz konto</account>. <trips>Otwórz swoje podróże</trips>.",
+  "generationLimit": "Wykorzystano limit generowania planów na ostatnie 24 godziny ({{count, number}}). Nadal możesz przeglądać i edytować podróże.",
+  "dayLimit": "Wykorzystano limit zmian dnia z AI na ostatnie 24 godziny. Nadal możesz edytować ręcznie i tworzyć podglądy wyłącznie na podstawie preferencji.",
+  "nextAllowance": "Limit odnowi się: {{date}}.",
+  "importHint": "Po zalogowaniu możesz zaimportować podróże z sesji gościa."
+}

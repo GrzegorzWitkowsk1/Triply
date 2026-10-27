@@ -1,4 +1,6 @@
-import { INTEREST_OPTIONS, type AskableField, type BudgetType } from "@triply/shared";
+import { interestLabel } from "../i18n/labels";
+import i18n from "../i18n";
+import { INTEREST_OPTIONS as SHARED_INTEREST_OPTIONS, type AskableField, type BudgetType } from "@triply/shared";
 import { HOME_BADGES } from "./home";
 import { PREF_OPTIONS } from "./trip";
 
@@ -9,41 +11,40 @@ export interface FieldCopy {
 
 export const FIELD_COPY: Record<AskableField, FieldCopy> = {
   destination: {
-    title: "Where are you going?",
-    helper: "A city is perfect — Paris, Kyoto, the Algarve.",
+    get title() { return i18n.t("whereAreYouGoing", { ns: "tripCreator/fields" }); },
+    get helper() { return i18n.t("aCityIsPerfectParisKyotoTheAlgarve", { ns: "tripCreator/fields" }); },
   },
   country: {
-    title: "Which country is that in?",
-    helper: "We use it to keep the weather and currency right.",
+    get title() { return i18n.t("whichCountryIsThatIn", { ns: "tripCreator/fields" }); },
+    get helper() { return i18n.t("weUseItToKeepTheWeatherAnd", { ns: "tripCreator/fields" }); },
   },
   startDate: {
-    title: "When does the trip start?",
-    helper: "Leave the dates empty if you don't know yet — just tell us how many days.",
+    get title() { return i18n.t("whenDoesTheTripStart", { ns: "tripCreator/fields" }); },
+    get helper() { return i18n.t("leaveTheDatesEmptyIfYouDonT", { ns: "tripCreator/fields" }); },
   },
   endDate: {
-    title: "When does the trip end?",
-    helper: "The last day of the trip, counted inclusively.",
+    get title() { return i18n.t("whenDoesTheTripEnd", { ns: "tripCreator/fields" }); },
+    get helper() { return i18n.t("theLastDayOfTheTripCountedInclusively", { ns: "tripCreator/fields" }); },
   },
   durationDays: {
-    title: "How many days do you have?",
-    helper: "Count both the arrival and departure day.",
+    get title() { return i18n.t("howManyDaysDoYouHave", { ns: "tripCreator/fields" }); },
+    get helper() { return i18n.t("countBothTheArrivalAndDepartureDay", { ns: "tripCreator/fields" }); },
   },
   travelers: {
-    title: "How many people will travel?",
-    helper: "Including yourself.",
+    get title() { return i18n.t("howManyPeopleWillTravel", { ns: "tripCreator/fields" }); },
+    get helper() { return i18n.t("includingYourself", { ns: "tripCreator/fields" }); },
   },
   budget: {
-    title: "What's your budget?",
-    helper: "Roughly what the whole trip can cost — you can refine it later.",
+    get title() { return i18n.t("whatSYourBudget", { ns: "tripCreator/fields" }); },
+    get helper() { return i18n.t("roughlyWhatTheWholeTripCanCostYou", { ns: "tripCreator/fields" }); },
   },
   interests: {
-    title: "What are you into?",
-    helper: "Pick as many as you like, or add your own.",
+    get title() { return i18n.t("whatAreYouInto", { ns: "tripCreator/fields" }); },
+    get helper() { return i18n.t("pickAsManyAsYouLikeOrAdd", { ns: "tripCreator/fields" }); },
   },
 };
 
-export const DATE_FIELDS_HINT =
-  "No dates yet? Leave them empty and tell us how many days you're away for.";
+export const DATE_FIELDS_HINT = "tripCreator/fields:dateFieldsHint";
 
 export interface BudgetSuggestion {
   id: string;
@@ -59,12 +60,12 @@ export const BUDGET_SUGGESTIONS: BudgetSuggestion[] = [
   { id: "budget-200-400", label: "€200–400", amount: 400, currency: "EUR" },
   { id: "budget-400-700", label: "€400–700", amount: 700, currency: "EUR" },
   { id: "budget-700-1000", label: "€700–1000", amount: 1000, currency: "EUR" },
-  { id: FLEXIBLE_BUDGET_ID, label: "Flexible", amount: null, currency: null },
+  { id: FLEXIBLE_BUDGET_ID, get label() { return i18n.t("flexible", { ns: "tripCreator/fields" }); }, amount: null, currency: null },
 ];
 
 export const CUSTOM_BUDGET_OPTION: BudgetSuggestion = {
   id: CUSTOM_BUDGET_ID,
-  label: "Something else",
+  get label() { return i18n.t("somethingElse", { ns: "tripCreator/fields" }); },
   amount: null,
   currency: null,
 };
@@ -83,16 +84,15 @@ export const CURRENCY_OPTIONS = [
 ];
 
 export const BUDGET_TYPE_OPTIONS: { value: BudgetType; label: string }[] = [
-  { value: "total", label: "Total" },
-  { value: "per_person", label: "Per person" },
+  { value: "total", get label() { return i18n.t("total", { ns: "tripCreator/fields" }); } },
+  { value: "per_person", get label() { return i18n.t("perPerson", { ns: "tripCreator/fields" }); } },
 ];
 
-export const PACE_TITLE = "How do you like to travel?";
-export const WALKING_TITLE = "Longest daily walk";
-export const WALKING_HELPER = "Optional — leave empty if you're happy to walk any distance.";
-export const NOTES_TITLE = "Any notes?";
-export const NOTES_HELPER =
-  "Must-see places, dietary needs, mobility limits, an early flight — anything that shapes the plan.";
+export const PACE_TITLE = "tripCreator/fields:paceTitle";
+export const WALKING_TITLE = "tripCreator/fields:walkingTitle";
+export const WALKING_HELPER = "tripCreator/fields:walkingHelper";
+export const NOTES_TITLE = "tripCreator/fields:notesTitle";
+export const NOTES_HELPER = "tripCreator/fields:notesHelper";
 
 const INTEREST_ICONS = new Map<string, (typeof PREF_OPTIONS)[number]["icon"]>(
   [...HOME_BADGES, ...PREF_OPTIONS].map((option) => [option.id, option.icon]),
@@ -102,4 +102,4 @@ export function interestIcon(id: string) {
   return INTEREST_ICONS.get(id);
 }
 
-export { INTEREST_OPTIONS };
+export const INTEREST_OPTIONS = SHARED_INTEREST_OPTIONS.map(option => ({ ...option, get label() { return interestLabel(option.id); } }));

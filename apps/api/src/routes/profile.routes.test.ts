@@ -88,7 +88,7 @@ describe("profile API", () => {
     const result = await app.inject({ method: "POST", url: "/api/trips/analyze", headers, payload: { prompt: "Paris" } });
     expect(result.statusCode).toBe(200);
     expect(result.json().analysis).toMatchObject(preferences);
-    expect(mocks.parseTrip).toHaveBeenLastCalledWith({ prompt: "Paris", badges: preferences.interests });
+    expect(mocks.parseTrip).toHaveBeenLastCalledWith({ prompt: "Paris", badges: preferences.interests, locale: "en" });
     mocks.parseTrip.mockResolvedValue({ ...analysis, interests: ["food"], pace: "packed", maxWalkingDistanceKm: 10 });
     const explicit = await app.inject({ method: "POST", url: "/api/trips/analyze", headers, payload: { prompt: "Packed food trip", badges: ["food"] } });
     expect(explicit.json().analysis).toMatchObject({ interests: ["food"], pace: "packed", maxWalkingDistanceKm: 10 });

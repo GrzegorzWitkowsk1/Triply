@@ -1,3 +1,6 @@
+import LanguageSwitcher from "../LanguageSwitcher";
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import {
   LogoutOutlined,
   NotificationsNoneOutlined,
@@ -10,12 +13,13 @@ import Logo from "../Logo";
 import { useState } from "react";
 
 const TABS = [
-  { to: "/trips", label: "My Trips" },
-  { to: "/explore", label: "Explore" },
-  { to: "/saved", label: "Saved" },
+  { to: "/trips", label: "myTrips" },
+  { to: "/explore", label: "explore" },
+  { to: "/saved", label: "saved" },
 ];
 
 export default function Header() {
+  const { t } = useTranslation("navigation", { i18n });
   const { data: notifications } = useNotifications();
   const { user, isGuest, logout, endGuest, isLoggingOut } = useAuth();
   const [exitError, setExitError] = useState(false);
@@ -38,22 +42,22 @@ export default function Header() {
                 `header-tab${isActive ? " is-active" : ""}`
               }
             >
-              {tab.label}
+              {t(tab.label)}
             </NavLink>
           ))}
         </nav>
 
         <div className="header-actions">
-          {!user ? <>{isGuest && <span className="guest-indicator">Guest</span>}<Link className="auth-link" to="/register">Create account</Link><Link className="auth-link" to="/login">Log in</Link></> : <>
+          {!user ? <>{isGuest && <span className="guest-indicator">{i18n.t("guest", { ns: "navigation" })}</span>}<Link className="auth-link" to="/register">{i18n.t("createAccount", { ns: "auth" })}</Link><Link className="auth-link" to="/login">{i18n.t("logIn", { ns: "auth" })}</Link></> : <>
           <Link
             to="/notifications"
             className="header-icon header-notif"
-            aria-label="Notifications"
+            aria-label={i18n.t("notifications", { ns: "navigation" })}
           >
             <NotificationsNoneOutlined />
             {unreadCount > 0 && <span className="header-notif-dot" />}
           </Link>
-          <Link to="/profile" className="user-btn">
+          <Link to="/profile" className="user-btn" aria-label={t("profile")}>
             <span className="user-icon">
               <PersonOutlineOutlined />
             </span>
@@ -63,7 +67,7 @@ export default function Header() {
           {(user || isGuest) && <button
             type="button"
             className="header-icon logout-btn"
-            aria-label={isGuest ? "End guest session" : "Sign out"}
+            aria-label={isGuest ? i18n.t("endGuestSession", { ns: "navigation" }) : i18n.t("signOut", { ns: "navigation" })}
             onClick={() => {
               setExitError(false);
               void (isGuest ? endGuest() : logout()).catch(() => setExitError(true));
@@ -72,7 +76,8 @@ export default function Header() {
           >
             <LogoutOutlined />
           </button>}
-          {exitError && <span role="alert">Could not end session. Try again.</span>}
+          {exitError && <span role="alert">{i18n.t("couldNotEndSessionTryAgain", { ns: "navigation" })}</span>}
+          <LanguageSwitcher />
         </div>
       </div>
     </header>

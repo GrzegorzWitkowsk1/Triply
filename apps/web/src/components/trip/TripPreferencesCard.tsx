@@ -1,3 +1,6 @@
+import { resolveMessage } from "../../i18n/errors";
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import PreferenceFields from "./PreferenceFields";
 
 interface TripPreferencesCardProps {
@@ -23,16 +26,17 @@ export default function TripPreferencesCard({
   walking,
   onWalkingChange,
 }: TripPreferencesCardProps) {
+  useTranslation();
   return (
     <section className="trip-card pref-card">
       <div className="trip-card-head">
-        <h3>Preferences</h3>
+        <h3>{i18n.t("preferences", { ns: "trips/details" })}</h3>
       </div>
       <PreferenceFields disabled={disabled} tags={tags} onToggleTag={onToggleTag} pace={pace} onPaceChange={onPaceChange} walking={walking} onWalkingChange={onWalkingChange} />
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert">{resolveMessage(error)}</p>}
       {dirty && <div className="pref-actions">
-        <button type="button" className="pref-cancel" disabled={disabled} onClick={onCancel}>Cancel</button>
-        <button type="button" className="pref-regenerate" disabled={disabled} onClick={onRegenerate}>Regenerate</button>
+        <button type="button" className="pref-cancel" disabled={disabled} onClick={onCancel}>{i18n.t("cancel", { ns: "common" })}</button>
+        <button type="button" className="pref-regenerate" disabled={disabled} onClick={onRegenerate}>{i18n.t("regenerate", { ns: "trips/details" })}</button>
       </div>}
     </section>
   );

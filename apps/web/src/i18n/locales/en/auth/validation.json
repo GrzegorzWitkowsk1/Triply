@@ -1,0 +1,12 @@
+{
+  "invalidValue": "Check the entered value",
+  "nameMax": "Use no more than 80 characters",
+  "nameCharacters": "Use letters, spaces, apostrophes or hyphens",
+  "repeatPassword": "Repeat your new password",
+  "passwordMismatch": "Passwords do not match",
+  "passwordMin": "Password must be at least 12 characters",
+  "passwordMax": "Password must be at most 128 characters",
+  "passwordUppercase": "Password must contain an uppercase letter",
+  "passwordNumber": "Password must contain a number",
+  "passwordSpecial": "Password must contain a special character"
+}

@@ -1,8 +1,10 @@
+import { supportedLocaleSchema } from "./locale.js";
 import { z } from "zod";
 import type { RegenerateDayPreview } from "./regeneration.js";
 import type { ItineraryDay } from "./trip.js";
 
 export const assistantMessageRequestSchema = z.object({
+  locale: supportedLocaleSchema.optional(),
   message: z.string().trim().min(1).max(2000),
   conversationId: z.string().regex(/^[a-f\d]{24}$/i).optional(),
   selectedDayId: z.string().regex(/^\d{1,3}$/).optional(),

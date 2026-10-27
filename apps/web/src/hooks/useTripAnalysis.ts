@@ -1,3 +1,4 @@
+import { getSelectedLanguage } from "../i18n";
 import { GUEST_USAGE_KEY } from "./useGuestUsage";
 import { TRIPS_KEY } from "./useTrips";
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,7 +14,7 @@ export function useAnalyzeTrip() {
   const queryClient = useQueryClient();
   return useMutation({
     onSettled: () => { void queryClient.invalidateQueries({ queryKey: GUEST_USAGE_KEY }); },
-    mutationFn: (input: AnalyzeTripRequest) => analyzeTrip(input),
+    mutationFn: (input: AnalyzeTripRequest) => analyzeTrip({ ...input, locale: getSelectedLanguage() }),
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: TRIPS_KEY }); },
   });
 }

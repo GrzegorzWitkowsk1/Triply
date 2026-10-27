@@ -1,0 +1,7 @@
+{
+  "zoomIn": "Przybliż",
+  "zoomOut": "Oddal",
+  "mapLabel": "Mapa podróży",
+  "marker": "Miejsce {{count, number}}",
+  "attribution": "&copy; autorzy OpenStreetMap"
+}

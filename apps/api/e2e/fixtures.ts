@@ -75,10 +75,10 @@ export async function openExploreDestination(page: Page, destinationId: string) 
 
 export async function login(page: Page, user: UserFixture): Promise<void> {
   await page.goto("/login");
-  await page.getByLabel("Email address").fill(user.email);
-  await page.getByLabel(/^Password/).fill(user.password);
-  await page.locator("form").getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await page.getByLabel(/^(Email address|Adres e-mail)/).fill(user.email);
+  await page.getByLabel(/^(Password|Hasło)/).fill(user.password);
+  await page.locator("form").getByRole("button", { name: /^(Sign in|Zaloguj się)$/ }).click();
+  await expect(page.getByRole("button", { name: /^(Sign out|Wyloguj się)$/ })).toBeVisible();
 }
 export async function openTrip(page: Page, id: string): Promise<void> {
   await page.goto(`/trips/${id}`);

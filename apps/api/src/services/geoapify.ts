@@ -1,3 +1,4 @@
+import { contentLocale, type SupportedLocale } from "@triply/shared";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { TripAttraction, TripDayWeather } from "@triply/shared";
@@ -21,6 +22,7 @@ const responseSchema = z.object({ type: z.literal("FeatureCollection"), features
 type PlacesResponse = z.infer<typeof responseSchema>;
 
 export interface GeoapifyOptions {
+  locale?: SupportedLocale;
   signal?: AbortSignal;
   timeoutMs?: number;
   limit?: number;
@@ -35,7 +37,7 @@ export function normalizeGeoapifyPlaces(payload: PlacesResponse, lat: number, ln
     const id = `geoapify/${createHash("sha256").update(p.place_id).digest("hex")}`;
     const raw = p.datasource?.raw ?? {};
     const text = (value: unknown, max: number) => typeof value === "string" && value.trim() ? value.trim().slice(0, max) : undefined;
-    metadata.set(id, { sourceId: p.place_id, address: text(p.formatted, 2000), description: text(p.description ?? raw.description, 10000) });
+    metadata.set(id, { sourceId: p.place_id, address: text(p.formatted, 2000), description: text(raw[`description:${contentLocale(options.locale)}`], 10000) ?? text(p.description, 10000) ?? text(raw.description, 10000) });
     return { osmKey: id, lat: feature.geometry.coordinates[1], lng: feature.geometry.coordinates[0],
       tags: { ...geoapifyClassification(p.categories).tags, ...raw, name: p.name ?? raw.name } };
   });

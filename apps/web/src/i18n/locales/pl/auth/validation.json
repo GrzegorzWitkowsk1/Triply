@@ -1,0 +1,12 @@
+{
+  "invalidValue": "Sprawdź wprowadzoną wartość",
+  "nameMax": "Użyj maksymalnie 80 znaków",
+  "nameCharacters": "Użyj liter, spacji, apostrofów lub łączników",
+  "repeatPassword": "Powtórz nowe hasło",
+  "passwordMismatch": "Hasła nie są takie same",
+  "passwordMin": "Hasło musi mieć co najmniej 12 znaków",
+  "passwordMax": "Hasło może mieć maksymalnie 128 znaków",
+  "passwordUppercase": "Hasło musi zawierać wielką literę",
+  "passwordNumber": "Hasło musi zawierać cyfrę",
+  "passwordSpecial": "Hasło musi zawierać znak specjalny"
+}

@@ -22,7 +22,8 @@ test("owner and anonymous visitor export valid calendars, show toast counts and 
   await anonymous.addInitScript(() => localStorage.setItem("triply.language", "en")); const visitor = await anonymous.newPage();
   try {
     await visitor.goto(link); await expect(visitor.getByRole("heading", { level: 1 })).toContainText("Barcelona");
-    await expect(visitor.locator(".trip-hero-actions").getByRole("button")).toHaveCount(2);
+    await expect(visitor.locator(".trip-export-buttons").getByRole("button")).toHaveCount(2);
+    await expect(visitor.getByRole("button", { name: "Language: English" })).toBeVisible();
     await visitor.setViewportSize({ width: 375, height: 812 });
     expect(await visitor.evaluate(() => document.body.scrollWidth)).toBeLessThanOrEqual(375);
     const download = visitor.waitForEvent("download"); await visitor.getByRole("button", { name: "Export to Calendar", exact: true }).click();

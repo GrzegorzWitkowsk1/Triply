@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import { useEffect, useRef, useState } from "react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, useSortable, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
@@ -30,6 +32,7 @@ function EditableAttraction({ entry, selected, onSelect, saving, onAction, tripI
   entry: TimelineAttraction; selected: boolean; onSelect: (index: number) => void;
   saving: boolean; onAction: NonNullable<TripTimelineProps["onAction"]>;
 }) {
+  useTranslation();
   const sortable = useSortable({ id: entry.placeId!, disabled: saving });
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   return <li ref={sortable.setNodeRef} data-stop={entry.stopIndex}
@@ -41,12 +44,12 @@ function EditableAttraction({ entry, selected, onSelect, saving, onAction, tripI
       <div className="itinerary-card-controls">
         {tripId && entry.attractionKey && <AttractionSaveButton tripId={tripId} attractionKey={entry.attractionKey} name={entry.name} />}
         <IconButton ref={sortable.setActivatorNodeRef} {...sortable.attributes} {...sortable.listeners}
-          aria-label={`Reorder ${entry.name}`} disabled={saving} size="small" style={{ touchAction: "none" }}><DragIndicator /></IconButton>
-        <IconButton aria-label={`Edit ${entry.name}`} disabled={saving} size="small" onClick={(event) => setAnchor(event.currentTarget)}><MoreVert /></IconButton>
+          aria-label={i18n.t("reorder", { ns: "itinerary/editor", value0: entry.name })} disabled={saving} size="small" style={{ touchAction: "none" }}><DragIndicator /></IconButton>
+        <IconButton aria-label={i18n.t("edit", { ns: "itinerary/editor", value0: entry.name })} disabled={saving} size="small" onClick={(event) => setAnchor(event.currentTarget)}><MoreVert /></IconButton>
       </div>
       <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
         {(["replace", "move", "remove"] as const).map((action) => <MenuItem key={action} onClick={() => { setAnchor(null); onAction(action, entry.placeId!); }}>
-          {action === "replace" ? "Replace attraction" : action === "move" ? "Move to another day" : "Remove attraction"}
+          {action === "replace" ? i18n.t("replaceAttraction2", { ns: "itinerary/editor" }) : action === "move" ? i18n.t("moveToAnotherDay", { ns: "itinerary/editor" }) : i18n.t("removeAttraction", { ns: "itinerary/editor" })}
         </MenuItem>)}
       </Menu>
     </div>
@@ -62,13 +65,14 @@ export default function TripTimeline({
   onReorder,
   onAction,
 }: TripTimelineProps) {
+  useTranslation();
   const listRef = useRef<HTMLOListElement>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const ids = entries.filter((entry): entry is TimelineAttraction => entry.kind === "attraction" && Boolean(entry.placeId)).map((entry) => entry.placeId!);
   const label = (id: string | number) => entries.find(
     (entry): entry is TimelineAttraction => entry.kind === "attraction" && entry.placeId === String(id),
-  )?.name ?? "Attraction";
+  )?.name ?? i18n.t("category_attraction", { ns: "itinerary/categories" });
 
   useEffect(() => {
     const target = listRef.current?.querySelector<HTMLElement>(
@@ -78,11 +82,11 @@ export default function TripTimeline({
   }, [activeStop, entries]);
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} accessibility={{ announcements: {
-      onDragStart: ({ active }) => `Picked up ${label(active.id)}. Use arrow keys to change its position.`,
-      onDragOver: ({ active, over }) => over ? `${label(active.id)} moved to position ${ids.indexOf(String(over.id)) + 1} of ${ids.length}.` : undefined,
-      onDragEnd: ({ active, over }) => over && active.id !== over.id ? `Dropped ${label(active.id)} at position ${ids.indexOf(String(over.id)) + 1}. Saving itinerary.` : "Order unchanged.",
-      onDragCancel: () => "Reordering cancelled.",
+    <DndContext sensors={sensors} collisionDetection={closestCenter} accessibility={{ screenReaderInstructions: { draggable: i18n.t("dragInstructions", { ns: "itinerary/editor" }) }, announcements: {
+      onDragStart: ({ active }) => i18n.t("pickedUpUseArrowKeysToChangeIts", { ns: "itinerary/editor", value0: label(active.id) }),
+      onDragOver: ({ active, over }) => over ? i18n.t("movedToPositionOf", { ns: "itinerary/editor", value0: label(active.id), value1: ids.indexOf(String(over.id)) + 1, value2: ids.length }) : undefined,
+      onDragEnd: ({ active, over }) => over && active.id !== over.id ? i18n.t("droppedAtPositionSavingItinerary", { ns: "itinerary/editor", value0: label(active.id), value1: ids.indexOf(String(over.id)) + 1 }) : i18n.t("orderUnchanged", { ns: "itinerary/editor" }),
+      onDragCancel: () => i18n.t("reorderingCancelled", { ns: "itinerary/editor" }),
     } }} onDragEnd={({ active, over }) => {
       if (!saving && onReorder && over && active.id !== over.id) {
         const from = ids.indexOf(String(active.id));
@@ -103,8 +107,7 @@ export default function TripTimeline({
               </div>
               <div className="timeline-body">
                 <p className="timeline-walk">
-                  Walk to next stop · estimated {entry.minutes} min
-                </p>
+                  {i18n.t("walkMinutes", { ns: "itinerary/editor", count: entry.minutes })}</p>
               </div>
             </li>
           );

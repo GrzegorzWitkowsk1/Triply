@@ -1,3 +1,5 @@
+import { localizeGeneratedDay, localizeExplanation } from "./contentLanguage.js";
+import { contentLocale } from "@triply/shared";
 import {
   type Coordinates,
   type DayComparisonMetrics,
@@ -440,7 +442,7 @@ export async function regenerateTripDay(
         location.lat,
         location.lng,
         augmentedInterests(trip.analysis.interests, preferences),
-        { weather: trip.weather },
+        { weather: trip.weather, locale: contentLocale(trip.contentLocale) },
       );
 
       if (fetched) {
@@ -610,6 +612,10 @@ export async function createDayRegenerationPreview(
   result.day = repaired.trip.itinerary!.days.find(d => d.dayIndex === input.dayIndex)!;
   result.warnings = [...new Set([...result.warnings, ...quality.issues.map(i => i.message)])];
   result.comparison.proposed = dayMetrics(result.day);
+  const locale = contentLocale(input.trip.contentLocale);
+  result.day = localizeGeneratedDay(result.day, locale);
+  result.warnings = result.warnings.map(warning => localizeExplanation(warning, locale));
+  result.unscheduled = result.unscheduled.map(entry => ({ ...entry, detail: entry.detail ? localizeExplanation(entry.detail, locale) : entry.detail }));
 
   const previewId = randomUUID();
   const expiresAt = new Date(now.getTime() + PREVIEW_TTL_MS);

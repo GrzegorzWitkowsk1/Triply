@@ -1,0 +1,19 @@
+{
+  "networkError": "Check your connection and try again.",
+  "unexpected": "Something went wrong. Please try again.",
+  "unauthorized": "Your session has expired. Sign in or enter Guest Mode again.",
+  "forbidden": "You do not have permission to perform this action.",
+  "notFound": "This item is unavailable or has been removed.",
+  "conflict": "This data changed in another session. Refresh and try again.",
+  "rateLimited": "Too many requests. Please try again later.",
+  "timeout": "The request timed out. Please retry.",
+  "validation": "Check the entered values and try again.",
+  "sessionExpired": "Your guest session has expired. Enter Guest Mode again.",
+  "guestTripLimit": "Your guest trip limit has been reached. Delete a trip or create an account.",
+  "guestAiLimit": "Your itinerary generation allowance is used for the last 24 hours. You can still edit your trip details.",
+  "guestDayLimit": "Your AI day-regeneration allowance is used for the last 24 hours. Clear the instructions to use selected preferences.",
+  "guestDuration": "The trip exceeds the Guest Mode duration limit.",
+  "invalidResponse": "The server returned an invalid response. Please try again.",
+  "invalidTimeZone": "The destination timezone is missing or invalid. Review the trip schedule.",
+  "guestPackingLimit": "Your packing suggestion allowance is used. You can still edit your packing list manually."
+}

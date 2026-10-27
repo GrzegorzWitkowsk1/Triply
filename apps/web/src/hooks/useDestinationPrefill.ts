@@ -1,3 +1,4 @@
+import i18n from "../i18n";
 import { useQuery } from "@tanstack/react-query";
 import { catalogDestinationSchema, destinationIdSchema } from "@triply/shared";
 import { requestWithTimeout as request } from "../api/client";
@@ -7,7 +8,7 @@ export function destinationReference(search: string, legacyState?: unknown): { i
   const legacy = legacyState && typeof legacyState === "object" && "destinationId" in legacyState ? legacyState.destinationId : undefined;
   if (!values.length && legacy === undefined) return {};
   const parsed = destinationIdSchema.safeParse(values.length ? values[0] : legacy);
-  if (values.length > 1 || !parsed.success) return { error: "This destination link is invalid. Enter another destination below." };
+  if (values.length > 1 || !parsed.success) return { error: i18n.t("invalidDestinationLink", { ns: "tripCreator/home" }) };
   return { id: parsed.data };
 }
 export function useDestinationPrefill(search: string, legacyState?: unknown) {

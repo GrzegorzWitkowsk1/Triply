@@ -192,7 +192,7 @@ test.describe("manual editing", () => {
     expect(response.status()).toBe(200);
     const result = await response.json() as ItineraryEditResponse;
     expect(result.warnings.join(" ")).toContain("Schedule unresolved");
-    await expect(page.getByRole("alert").filter({ hasText: "Schedule unresolved" }).first()).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "Review this day's schedule before continuing." }).first()).toBeVisible();
     const after = await harness.trip(user.tripId!);
     expect(after.itinerary!.days[0]!.stops.map(p => p.placeId)).toEqual(["node/1001", "node/1000", "node/1002"]);
     expect(after.itinerary!.days.slice(1)).toEqual(before.itinerary!.days.slice(1));
@@ -203,7 +203,7 @@ test.describe("manual editing", () => {
     await expect(timelineNames(page).nth(0)).toHaveAccessibleName("Reorder Palau de la Musica");
     await expect(timelineNames(page).nth(1)).toHaveAccessibleName("Reorder Barcelona Cathedral");
     await page.getByRole("button", { name: "Next day" }).click();
-    await expect(page.getByText("Schedule unresolved: Roman Walls needs review.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Review this day's schedule before continuing.", { exact: true }).first()).toBeVisible();
     expect((await harness.trip(user.tripId!)).itinerary).toEqual(after.itinerary);
   });
 });
@@ -222,7 +222,7 @@ test.describe("route recalculation", () => {
     await expect(page.getByRole("status").filter({ hasText: "Saving itinerary" })).toBeVisible();
     await harness.command("/release", { provider: "routing" });
     expect((await rerouted).status()).toBe(200);
-    await expect(page.getByRole("alert").filter({ hasText: "Schedule unresolved" }).first()).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "Review this day's schedule before continuing." }).first()).toBeVisible();
     const after = await harness.trip(user.tripId!);
     const day = after.itinerary!.days[0]!;
     expect(day.stops.map(p => p.placeId)).toEqual(before.itinerary!.days[0]!.stops.map(p => p.placeId));

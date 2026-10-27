@@ -1,3 +1,4 @@
+import { contentLocale, type SupportedLocale } from "@triply/shared";
 import type { TripAttraction, TripDayWeather } from "@triply/shared";
 import { retryAfterMilliseconds, classifyExternalFailure } from "./providerReliability.js";
 import { INTEREST_FILTERS, type TagValuesFilter } from "./poiCategories.js";
@@ -23,6 +24,7 @@ const FALLBACK_FILTERS: TagValuesFilter[] = [{ key: "tourism", values: ["attract
 const ELEMENT_TYPES = ["node", "way", "relation"] as const;
 
 export interface FetchAttractionsOptions {
+  locale?: SupportedLocale;
   endpoints?: readonly string[];
   timeoutMs?: number;
   backoffMs?: readonly number[];
@@ -148,8 +150,14 @@ function toAttractions(
   lng: number,
   interests: readonly string[],
   weather: readonly TripDayWeather[] | null,
+  locale: SupportedLocale,
 ): TripAttraction[] {
-  const pois = normalizePois(parseCandidates(payload), { lat, lng, interests });
+  const candidates = parseCandidates(payload);
+  const descriptions = new Map(candidates.map(p => {
+    const translated = p.tags[`description:${locale}`];
+    return [p.osmKey, typeof translated === "string" && translated.trim() ? translated.trim() : p.tags.description];
+  }));
+  const pois = normalizePois(candidates, { lat, lng, interests });
   const scored = scorePois(pois, {
     interests,
     weather,
@@ -157,6 +165,7 @@ function toAttractions(
   });
 
   return scored.slice(0, ATTRACTIONS_RESULT_CAP).map((poi) => ({
+    ...(typeof descriptions.get(poi.osmKey) === "string" ? { description: String(descriptions.get(poi.osmKey)).slice(0, 10000) } : {}),
     name: poi.name,
     category: poi.category,
     lat: poi.lat,
@@ -244,7 +253,7 @@ async function fetchAttractionsFromProviders(
   const notBefore = new Map<string, number>();
   let providerFailed = false;
   const fallback = () => providerFailed
-    ? fetchGeoapifyPlaces(lat, lng, normalized, { weather, radiusMeters: ATTRACTIONS_RADIUS_M, limit: ATTRACTIONS_RESULT_CAP })
+    ? fetchGeoapifyPlaces(lat, lng, normalized, { locale: contentLocale(options.locale), weather, radiusMeters: ATTRACTIONS_RADIUS_M, limit: ATTRACTIONS_RESULT_CAP })
     : Promise.resolve(null);
 
   // Give every provider a chance before retrying any of them.
@@ -285,6 +294,7 @@ async function fetchAttractionsFromProviders(
           lng,
           normalized,
           weather,
+          contentLocale(options.locale),
         );
       }
 
@@ -326,7 +336,7 @@ export function fetchAttractions(
   if (options.endpoints || options.timeoutMs !== undefined || options.backoffMs || options.totalBudgetMs !== undefined) {
     return fetchAttractionsFromProviders(lat, lng, interests, options);
   }
-  const key = JSON.stringify([lat, lng, [...normalizeInterests(interests)].sort(), options.weather ?? null]);
+  const key = JSON.stringify([lat, lng, [...normalizeInterests(interests)].sort(), options.weather ?? null, contentLocale(options.locale)]);
   const cached = recentRequests.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.request;
 

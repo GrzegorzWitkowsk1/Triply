@@ -74,7 +74,8 @@ describe("TripTimeline", () => {
       openingHoursCheck: { status: "closed", reason: "Visit extends beyond closing time.", source: "osm",
         timeZone: "Europe/Paris", intervals: [], warnings: [] } };
     render(<TripTimeline entries={[entry]} activeStop={0} onSelectStop={() => {}} />);
-    expect(screen.getByText("Opening-hours conflict").title).toBe("Visit extends beyond closing time.");
+    expect(screen.getByText("Opening-hours conflict").title).toBe("");
+    expect(entry.openingHoursCheck?.reason).toBe("Visit extends beyond closing time.");
   });
   it("selects a stop when its attraction card is clicked", () => {
     const onSelectStop = vi.fn();

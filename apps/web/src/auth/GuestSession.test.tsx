@@ -100,7 +100,7 @@ describe("guest session UI", () => {
       return normal(url);
     });
     fireEvent.click(button);
-    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Guest service unavailable");
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Something went wrong. Please try again.");
     expect((screen.getByRole("button", { name: "Continue as guest" }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Continue as guest" }));
     expect(await screen.findByText("Guest", { exact: true })).toBeTruthy();

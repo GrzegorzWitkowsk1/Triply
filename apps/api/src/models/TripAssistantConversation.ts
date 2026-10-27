@@ -3,6 +3,7 @@ import type { AssistantMessage, ItineraryDay, ItineraryEditRequest } from "@trip
 import type { AssistantIntent } from "../services/assistantIntent.js";
 
 interface ConversationRecord {
+  responseLocale?: import("@triply/shared").SupportedLocale;
   tripId: Types.ObjectId;
   userId: Types.ObjectId;
   messages: AssistantMessage[];
@@ -13,6 +14,7 @@ interface ConversationRecord {
   revision: number;
 }
 const schema = new Schema<ConversationRecord>({
+  responseLocale: { type: String, enum: ["en", "pl"] },
   tripId: { type: Schema.Types.ObjectId, required: true },
   userId: { type: Schema.Types.ObjectId, required: true },
   messages: { type: [{ id: String, role: { type: String, enum: ["user", "ai"] }, text: String }], default: [] },

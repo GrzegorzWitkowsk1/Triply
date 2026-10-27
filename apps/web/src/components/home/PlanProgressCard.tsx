@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import { CheckOutlined, FlightTakeoffOutlined } from "@mui/icons-material";
 import { PLAN_STAGES, type PlanStageStatus } from "../../config/home";
 
@@ -10,6 +12,7 @@ export default function PlanProgressCard({
   statuses,
   isDone,
 }: PlanProgressCardProps) {
+  useTranslation();
   return (
     <section
       className="plan-card"
@@ -22,8 +25,8 @@ export default function PlanProgressCard({
           <FlightTakeoffOutlined />
         </span>
         <div className="plan-head-text">
-          <p className="plan-title">Planning your trip...</p>
-          <p className="plan-subtitle">Making every day feel effortless</p>
+          <p className="plan-title">{i18n.t("planningYourTrip", { ns: "tripCreator/home" })}</p>
+          <p className="plan-subtitle">{i18n.t("makingEveryDayFeelEffortless", { ns: "tripCreator/home" })}</p>
         </div>
       </div>
 

@@ -1,3 +1,8 @@
+import { formatDate as localizedDate, formatDateRange, formatCurrency, formatNumber } from "../../i18n/format";
+import { interestLabel as localizedInterest, paceLabel } from "../../i18n/labels";
+import { resolveMessage } from "../../i18n/errors";
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import { CheckOutlined, LockOutlined } from "@mui/icons-material";
 import { PACE_OPTIONS, interestLabel, type AskableField, type TripAnalysis } from "@triply/shared";
 
@@ -11,35 +16,19 @@ interface TripPlanSummaryCardProps {
   generateError: string | null;
 }
 
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  EUR: "€",
-  USD: "$",
-  GBP: "£",
-  PLN: "zł",
-  CHF: "CHF ",
-};
-
-const dateFormat = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
-  month: "short",
-  timeZone: "UTC",
-});
-
-function formatDate(isoDate: string): string {
-  return dateFormat.format(new Date(`${isoDate}T00:00:00.000Z`));
-}
+function formatDate(isoDate: string): string { return localizedDate(isoDate, { day: "numeric", month: "short" }); }
 
 function formatRange(analysis: TripAnalysis): string | null {
   if (analysis.startDate && analysis.endDate) {
-    return `${formatDate(analysis.startDate)} – ${formatDate(analysis.endDate)}`;
+    return formatDateRange(analysis.startDate, analysis.endDate);
   }
 
   if (analysis.startDate) {
-    return `from ${formatDate(analysis.startDate)}`;
+    return i18n.t("from", { ns: "tripCreator/home", value0: formatDate(analysis.startDate) });
   }
 
   if (analysis.durationDays) {
-    return `${analysis.durationDays} days`;
+    return i18n.t("days", { ns: "common", count: analysis.durationDays });
   }
 
   return null;
@@ -49,16 +38,14 @@ function formatBudget(analysis: TripAnalysis): string {
   const { amount, currency } = analysis.budget;
 
   if (amount === null) {
-    return "Flexible";
+    return i18n.t("flexible", { ns: "tripCreator/home" });
   }
 
-  const symbol = currency ? CURRENCY_SYMBOLS[currency] ?? `${currency} ` : "";
-
-  return `${symbol}${amount}`;
+  return currency ? formatCurrency(amount, currency, { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : formatNumber(amount);
 }
 
 function formatPace(pace: TripAnalysis["pace"]): string | null {
-  return PACE_OPTIONS.find((option) => option.value === pace)?.label ?? null;
+  return pace ? paceLabel(pace) : null;
 }
 
 export default function TripPlanSummaryCard({
@@ -70,13 +57,14 @@ export default function TripPlanSummaryCard({
   isGenerating,
   generateError,
 }: TripPlanSummaryCardProps) {
+  useTranslation();
   const facts = [
     formatRange(analysis),
-    analysis.travelers ? `${analysis.travelers} travellers` : null,
+    analysis.travelers ? i18n.t("travellers", { ns: "common", count: analysis.travelers }) : null,
     formatBudget(analysis),
     formatPace(analysis.pace),
     analysis.maxWalkingDistanceKm
-      ? `${analysis.maxWalkingDistanceKm} km max walk`
+      ? i18n.t("kmMaxWalk", { ns: "tripCreator/home", value0: analysis.maxWalkingDistanceKm })
       : null,
   ].filter((fact): fact is string => fact !== null);
 
@@ -90,12 +78,12 @@ export default function TripPlanSummaryCard({
           <p className="plan-title">
             {analysis.destination
               ? [analysis.destination, analysis.country].filter(Boolean).join(", ")
-              : "Your trip is taking shape"}
+              : i18n.t("yourTripIsTakingShape", { ns: "tripCreator/home" })}
           </p>
           <p className="plan-subtitle">
             {requirementsComplete
-              ? "Brief ready — the itinerary comes next."
-              : "A few details are still open."}
+              ? i18n.t("briefReadyTheItineraryComesNext", { ns: "tripCreator/home" })
+              : i18n.t("aFewDetailsAreStillOpen", { ns: "tripCreator/home" })}
           </p>
         </div>
       </div>
@@ -110,7 +98,7 @@ export default function TripPlanSummaryCard({
         <div className="plan-summary-tags">
           {analysis.interests.map((interest) => (
             <span key={interest} className="plan-summary-tag">
-              {interestLabel(interest)}
+              {localizedInterest(interest)}
             </span>
           ))}
         </div>
@@ -120,7 +108,7 @@ export default function TripPlanSummaryCard({
 
       <div className="plan-summary-actions">
         <button type="button" className="btn" onClick={onEdit}>
-          {missingFields.length > 0 ? "Fill in details" : "Adjust details"}
+          {missingFields.length > 0 ? i18n.t("fillInDetails", { ns: "tripCreator/home" }) : i18n.t("adjustDetails", { ns: "tripCreator/home" })}
         </button>
         <button
           type="button"
@@ -128,21 +116,19 @@ export default function TripPlanSummaryCard({
           disabled={!requirementsComplete || isGenerating}
           onClick={onGenerate}
         >
-          {isGenerating ? "Creating your trip…" : "Generate my trip"}
+          {isGenerating ? i18n.t("creatingYourTrip", { ns: "tripCreator/home" }) : i18n.t("generateMyTrip", { ns: "tripCreator/home" })}
         </button>
       </div>
 
-      {generateError && <p className="prompt-hint is-error">{generateError}</p>}
+      {generateError && <p className="prompt-hint is-error" role="alert">{resolveMessage(generateError)}</p>}
 
       <p className="plan-summary-block">
         <LockOutlined fontSize="small" />
         {!requirementsComplete
-          ? missingFields.length === 1
-            ? "Answer 1 more question to unlock the next step."
-            : `Answer ${missingFields.length} more questions to unlock the next step.`
+          ? i18n.t("missingQuestions", { ns: "tripCreator/home", count: missingFields.length })
           : isGenerating
-            ? "Building your day-by-day itinerary — this can take a moment."
-            : "We'll build your day-by-day itinerary next."}
+            ? i18n.t("buildingYourDayByDayItineraryThisCan", { ns: "tripCreator/home" })
+            : i18n.t("weLlBuildYourDayByDayItinerary", { ns: "tripCreator/home" })}
       </p>
     </section>
   );

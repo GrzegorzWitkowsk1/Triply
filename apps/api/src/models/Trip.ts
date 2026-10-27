@@ -33,6 +33,7 @@ export interface AttractionsQueryRecord {
   lat: number;
   lng: number;
   interests: string[];
+  locale?: import("@triply/shared").SupportedLocale;
 }
 
 export interface ClusteringRecord {
@@ -71,6 +72,7 @@ export interface TripRegenerationRecord {
 }
 
 export interface TripRecord {
+  contentLocale?: import("@triply/shared").SupportedLocale;
   sharing?: { enabled: boolean; tokenHash?: string | null; createdAt: Date | null; updatedAt: Date | null };
   createdAt: Date;
   updatedAt: Date;
@@ -195,6 +197,7 @@ const attractionSchema = new Schema<TripAttraction>(
 
 const attractionsQuerySchema = new Schema<AttractionsQueryRecord>(
   {
+    locale: { type: String, enum: ["en", "pl"] },
     lat: { type: Number, required: true },
     lng: { type: Number, required: true },
     interests: { type: [String], default: [] },
@@ -446,6 +449,7 @@ const tripSchema = new Schema<TripRecord>(
       enum: TRIP_STATUS_VALUES,
       default: "draft",
     },
+    contentLocale: { type: String, enum: ["en", "pl"] },
     prompt: { type: String, default: "", trim: true },
     badges: { type: [String], default: [] },
     analysis: { type: analysisSchema, required: true },
@@ -453,6 +457,7 @@ const tripSchema = new Schema<TripRecord>(
     missingFields: { type: [String], default: [] },
     equipment: { type: [equipmentItemSchema], default: [] },
     packingGeneration: { type: new Schema({
+      locale: { type: String, enum: ["en", "pl"] },
       generatedAt: { type: String, required: true },
       contextFingerprint: { type: String, required: true, maxlength: 64 },
       suggestionCount: { type: Number, required: true, min: 0, max: 30 },

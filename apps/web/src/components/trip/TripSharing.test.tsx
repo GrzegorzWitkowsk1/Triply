@@ -92,5 +92,5 @@ it("shows creation and clipboard errors", async () => {
   );
   fireEvent.click(screen.getByText("Rotate link"));
   fireEvent.click(screen.getByText("Confirm rotate"));
-  await screen.findByText("Sharing state changed");
+  await screen.findByText("Something went wrong. Please try again.");
 });

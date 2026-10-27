@@ -85,6 +85,17 @@ async function setup() {
 }
 const stopIds = (day: ItineraryDay) => day.stops.map((stop) => stop.placeId);
 
+it.each(["en", "pl"] as const)("keeps editing constraints and unrelated days intact for %s content", async contentLocale => {
+  const { trip, edit } = await setup();
+  trip.contentLocale = contentLocale; await trip.save();
+  const before = trip.toObject().itinerary!;
+  const response = await edit({ type: "remove", dayIndex: 1, attractionId: "node/1" });
+  expect(response.status, response.body).toBe(200);
+  expect(response.body.trip.contentLocale).toBe(contentLocale);
+  expect(response.body.trip.itinerary.days[0].stops.map((p: { placeId: string }) => p.placeId)).toEqual(["node/2"]);
+  expect((await TripModel.findById(trip.id))!.toObject().itinerary!.days.slice(1)).toEqual(before.days.slice(1));
+});
+
 describe("Barcelona manual scheduling recovery", () => {
   async function barcelona() {
     const context = await setup();

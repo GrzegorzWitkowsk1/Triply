@@ -1,0 +1,18 @@
+{
+  "useTheYyyyMmDdFormat": "Użyj formatu RRRR-MM-DD",
+  "theEndDateCanTBeBeforeThe": "Data zakończenia nie może być wcześniejsza niż data rozpoczęcia",
+  "enterTheNumberOfDays": "Podaj liczbę dni",
+  "addTheStartDateOrHowManyDays": "Podaj datę rozpoczęcia lub liczbę dni podróży",
+  "addTheEndDateOrHowManyDays": "Podaj datę zakończenia lub liczbę dni podróży",
+  "addTheTripDatesOrTheNumberOf": "Podaj daty lub liczbę dni podróży",
+  "enterHowManyPeopleAreTravelling": "Podaj liczbę podróżujących osób",
+  "pickARangeOrChooseFlexible": "Wybierz przedział kwoty lub budżet elastyczny",
+  "enterTheBudgetYouHaveInMind": "Podaj planowany budżet",
+  "pickACurrency": "Wybierz walutę",
+  "pickAtLeastOneInterest": "Wybierz co najmniej jedno zainteresowanie",
+  "enterADistanceInKm": "Podaj dystans w kilometrach",
+  "destinationRequired": "Podaj cel podróży",
+  "countryRequired": "Podaj kraj",
+  "fieldTooLong": "Użyj maksymalnie 120 znaków",
+  "notesTooLong": "Użyj maksymalnie 2000 znaków"
+}

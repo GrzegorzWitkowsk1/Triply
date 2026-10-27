@@ -47,6 +47,18 @@ async function seed(guestId: string, count = 1, shared = false) {
   return trips;
 }
 const status = (cookie: string) => call(cookie, "GET", "/api/auth/guest-migration/status");
+
+it.each(["en", "pl"] as const)("guest migration preserves %s trip content language without rewriting content", async contentLocale => {
+  const source = await guest(); const [trip] = await seed(source.id);
+  trip!.contentLocale = contentLocale; await trip!.save();
+  const before = trip!.toObject();
+  const account = await register(source.cookie);
+  expect((await confirm(account.cookie)).statusCode).toBe(200);
+  const migrated = (await TripModel.findById(trip!._id))!;
+  expect(migrated.contentLocale).toBe(contentLocale);
+  expect(migrated.toObject().itinerary).toEqual(before.itinerary);
+  expect(migrated.analysis.notes).toBe(before.analysis.notes);
+});
 const confirm = (cookie: string, body?: Record<string, unknown>) => call(cookie, "POST", "/api/auth/guest-migration/confirm", body);
 async function register(cookie?: string, email = credentials.email) {
   const response = await call(cookie, "POST", "/api/auth/register", { ...credentials, email });

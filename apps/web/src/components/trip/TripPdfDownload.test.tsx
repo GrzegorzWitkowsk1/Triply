@@ -13,7 +13,7 @@ it("downloads an owner PDF and disables duplicate export while loading", async (
 });
 it("uses the public token and provides retryable download errors", async () => {
   vi.mocked(downloadTripPdf).mockRejectedValue(new Error("Shared trip not found")); render(<TripPdfDownload target={{ shareToken: "token" }} />);
-  fireEvent.click(screen.getByText("Download PDF")); await screen.findByText("Shared trip not found");
+  fireEvent.click(screen.getByText("Download PDF")); await screen.findByText("Something went wrong. Please try again.");
   expect(downloadTripPdf).toHaveBeenCalledWith({ shareToken: "token" }, expect.any(AbortSignal));
   vi.mocked(downloadTripPdf).mockResolvedValue(); fireEvent.click(screen.getByText("Download PDF"));
   await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());

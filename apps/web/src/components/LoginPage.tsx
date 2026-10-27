@@ -1,3 +1,9 @@
+import LanguageSwitcher from "./LanguageSwitcher";
+import { ApiError } from "../api/client";
+import { errorKey as localizedErrorKey, resolveMessage } from "../i18n/errors";
+import { errorMessage as localizedError } from "../i18n/errors";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { useEffect, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { IconButton, InputAdornment, TextField } from "@mui/material";
@@ -34,10 +40,11 @@ function Fields({
   setPassword,
   setShowPassword,
 }: FormState & { mode: AuthView }) {
+  useTranslation();
   return (
     <>
       <TextField
-        label="Email address"
+        label={i18n.t("emailAddress", { ns: "auth" })}
         fullWidth
         type="email"
         value={email}
@@ -47,7 +54,7 @@ function Fields({
       />
 
       <TextField
-        label="Password"
+        label={i18n.t("password", { ns: "auth" })}
         fullWidth
         type={showPassword ? "text" : "password"}
         value={password}
@@ -63,7 +70,7 @@ function Fields({
             endAdornment: (
               <InputAdornment position="end">
                 <IconButton
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-label={showPassword ? i18n.t("hidePassword", { ns: "auth" }) : i18n.t("showPassword", { ns: "auth" })}
                   onClick={() => setShowPassword(!showPassword)}
                   size="small"
                 >
@@ -79,6 +86,7 @@ function Fields({
 }
 
 export default function LoginPage({ mode }: LoginPageProps) {
+  const { t } = useTranslation("auth", { i18n });
   const navigate = useNavigate();
   const location = useLocation();
   const { login, register, startGuest, isSubmitting, sessionExpired } = useAuth();
@@ -116,7 +124,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
 
       navigate(getDestination(), { replace: true });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Authentication failed. Try again.");
+      setError(caught instanceof ApiError && caught.status === 401 ? "auth:invalidCredentials" : caught instanceof ApiError && caught.status === 409 ? "auth:accountExists" : localizedErrorKey(caught));
     }
   };
 
@@ -126,25 +134,22 @@ export default function LoginPage({ mode }: LoginPageProps) {
     <div className="login-screen">
       <div className="auth-card">
         <div className="auth-media">
-          <img src="/barcelona.jpg" alt="Barcelona, Spain" />
+          <img src="/barcelona.jpg" alt={i18n.t("heroImage", { ns: "auth" })} />
           <div className="auth-media-fade" />
           <div className="auth-media-body">
             <span className="auth-location">
               <LocationOnOutlined sx={{ color: "var(--color-primary)" }} fontSize="small" />
-              Barcelona, Spain
+              {i18n.t("heroImage", { ns: "auth" })}
             </span>
             <h2 className="auth-tagline">
-              A better trip starts with a plan that feels like you.
-            </h2>
+              {i18n.t("aBetterTripStartsWithAPlanThat", { ns: "auth" })}</h2>
             <ul className="auth-features">
               <li>
                 <CheckCircle sx={{ color: "var(--color-ok)" }} fontSize="small" />
-                Personal itineraries in seconds
-              </li>
+                {i18n.t("personalItinerariesInSeconds", { ns: "auth" })}</li>
               <li>
                 <CheckCircle sx={{ color: "var(--color-ok)" }} fontSize="small" />
-                Realistic routes and budgets
-              </li>
+                {i18n.t("realisticRoutesAndBudgets", { ns: "auth" })}</li>
             </ul>
           </div>
         </div>
@@ -152,69 +157,68 @@ export default function LoginPage({ mode }: LoginPageProps) {
         <div className="auth-panel">
           <div className="auth-brand">
             <Logo />
+            <LanguageSwitcher />
           </div>
 
-          <div className="auth-switch" role="group" aria-label="Auth view">
+          <div className="auth-switch" role="group" aria-label={i18n.t("authView", { ns: "auth" })}>
             <button
               type="button"
               className={`auth-switch-btn${!isRegister ? " is-active" : ""}`}
               onClick={() => navigate("/login", { state: location.state })}
               aria-pressed={!isRegister}
             >
-              Sign in
-            </button>
+              {i18n.t("signIn", { ns: "auth" })}</button>
             <button
               type="button"
               className={`auth-switch-btn${isRegister ? " is-active" : ""}`}
               onClick={() => navigate("/register", { state: location.state })}
               aria-pressed={isRegister}
             >
-              Register
-            </button>
+              {i18n.t("register", { ns: "auth" })}</button>
           </div>
 
-          <form className="auth-form" onSubmit={(event) => void handleSubmit(event)}>
+          <form noValidate className="auth-form" onSubmit={(event) => void handleSubmit(event)}>
             <h3 className="auth-heading">
-              {isRegister ? "Create your account" : "Welcome back"}
+              {t(isRegister ? "createAccountTitle" : "welcomeBack")}
             </h3>
             <p className="auth-subtitle">
               {isRegister
-                ? "Join Triply and keep every thoughtful itinerary in one place."
-                : "Sign in to continue planning your next adventure."}
+                ? i18n.t("joinTriplyAndKeepEveryThoughtfulItineraryIn", { ns: "auth" })
+                : i18n.t("signInToContinuePlanningYourNextAdventure", { ns: "auth" })}
             </p>
 
             {error && (
               <p className="auth-error" role="alert">
-                {error}
+                {resolveMessage(error)}
               </p>
             )}
-            {sessionExpired && <p className="auth-error" role="status">Your guest session has expired. Enter Guest Mode to start a new session. Trips from the expired session will not be reassigned.</p>}
+            {sessionExpired && <p className="auth-error" role="status">{i18n.t("yourGuestSessionHasExpiredEnterGuestMode", { ns: "auth" })}</p>}
 
             <Fields mode={mode} {...formState} />
 
             <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
               {isSubmitting
                 ? isRegister
-                  ? "Creating account..."
-                  : "Signing in..."
+                  ? i18n.t("creatingAccount", { ns: "auth" })
+                  : i18n.t("signingIn", { ns: "auth" })
                 : isRegister
-                  ? "Create account"
-                  : "Sign in"}
+                  ? i18n.t("createAccount", { ns: "auth" })
+                  : i18n.t("signIn", { ns: "auth" })}
             </button>
 
             <button type="button" className="btn" disabled={isSubmitting} onClick={() => {
               setError(null);
               void startGuest().then(() => navigate(getDestination(), { replace: true })).catch((caught: unknown) =>
-                setError(caught instanceof Error ? caught.message : 'Could not start Guest Mode. Try again.'));
-            }}>{isSubmitting ? 'Please wait...' : 'Continue as guest'}</button>
+                setError(localizedErrorKey(caught)));
+            }}>{isSubmitting ? i18n.t("pleaseWait", { ns: "auth" }) : i18n.t("continueAsGuest", { ns: "auth" })}</button>
             <p className="auth-switch-link">
-              {isRegister ? "Already have an account? " : "New to Triply? "}
+              {isRegister ? i18n.t("alreadyHaveAnAccount", { ns: "auth" }) : i18n.t("newToTriply", { ns: "auth" })}
               <button
                 type="button"
                 className="auth-link"
                 onClick={() => navigate(isRegister ? "/login" : "/register", { state: location.state })}
               >
-                {isRegister ? "Sign in" : "Create an account"}
+                {isRegister ? i18n.t("signIn", { ns: "auth" }) : i18n.t("createAnAccount", { ns: "auth" })}
               </button>
             </p>
           </form>

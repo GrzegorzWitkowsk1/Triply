@@ -15,7 +15,7 @@ describe("contextual weather retry", () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-12T12:00:00Z"));
     render(<TripWeatherRetry tripId="rome" availability={{ ...availability, status: "not_yet_available", reason: "future_dates",
       retryAfter: "2026-11-05T11:00:00Z" }} />);
-    expect(screen.getByRole("status").textContent).toContain("5 Nov 2026, 12:00");
+    expect(screen.getByRole("status").textContent).toContain("Nov 5, 2026, 12:00");
     expect(screen.getByRole("button").hasAttribute("disabled")).toBe(true);
   });
   it("retries only weather and shows loading without allowing duplicate clicks", () => {
@@ -46,7 +46,7 @@ describe("contextual weather retry", () => {
 
   it("explains a selected future day in a partial trip", () => {
     render(<TripWeatherRetry tripId="rome" date="2026-11-01" availability={{ ...availability, status: "partial" }} />);
-    expect(screen.getByText("Forecast will be available from 2026-10-17 at 12:00 (Europe/Rome).")).toBeTruthy();
+    expect(screen.getByText("Forecast will be available from October 17, 2026 at 12:00 (Europe/Rome).")).toBeTruthy();
     expect(screen.getByRole("button")).toBeTruthy();
   });
 

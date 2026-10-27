@@ -1,0 +1,17 @@
+{
+  "myTrips": "Moje podróże",
+  "trips": "podróże",
+  "explore": "Odkrywaj",
+  "saved": "Zapisane",
+  "profile": "profil",
+  "languageNames": {
+    "en": "English",
+    "pl": "Polski"
+  },
+  "languageControl": "Język: {{language}}",
+  "guest": "Gość",
+  "notifications": "Powiadomienia",
+  "endGuestSession": "Zakończ sesję gościa",
+  "signOut": "Wyloguj się",
+  "couldNotEndSessionTryAgain": "Nie udało się zakończyć sesji. Spróbuj ponownie."
+}

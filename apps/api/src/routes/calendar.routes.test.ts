@@ -1,3 +1,4 @@
+let localeRequests = 0;
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
@@ -32,6 +33,34 @@ async function setup() {
   return { ...owner, trip, privateUrl: `/api/trips/${trip.id}/export/calendar`, publicUrl: `/api/public/trips/${"a".repeat(43)}/export/calendar` };
 }
 describe("authorized calendar exports", () => {
+  it.each(["en", "pl", undefined] as const)("exports owner and shared real ICS in %s without changing legacy data", async locale => {
+    const ctx = await setup(), before = await TripModel.findById(ctx.trip.id).select("+sharing.tokenHash").lean();
+    const original = new ICAL.Component(ICAL.parse((await app.inject({ remoteAddress: `192.0.2.${++localeRequests}`, url: ctx.privateUrl, headers: { cookie: ctx.cookie } })).body));
+    for (const [url, cookie] of [[ctx.privateUrl, ctx.cookie], [ctx.publicUrl, undefined]]) {
+      const result = await app.inject({ remoteAddress: `192.0.2.${++localeRequests}`, url: url + (locale ? `?locale=${locale}` : ""), headers: cookie ? { cookie } : {} });
+      expect(result.statusCode).toBe(200); expect(result.headers["content-language"]).toBe(locale ?? "en");
+      const parsed = new ICAL.Component(ICAL.parse(result.body));
+      const events = parsed.getAllSubcomponents("vevent").map(c => new ICAL.Event(c));
+      expect(events).toHaveLength(4);
+      expect(events[0].description).toContain(locale === "pl" ? "Czas lokalny miejsca docelowego" : "Destination local time");
+      expect(events[0].description).toContain("Public description"); expect(events[0].summary).toBe("Sagrada Família");
+      expect(events.map(e => [e.uid, e.startDate.toJSDate().toISOString()])).toEqual(original.getAllSubcomponents("vevent").map(c => { const e = new ICAL.Event(c); return [e.uid, e.startDate.toJSDate().toISOString()]; }));
+      expect(result.body).not.toContain("PRIVATE");
+    }
+    expect(await TripModel.findById(ctx.trip.id).select("+sharing.tokenHash").lean()).toEqual(before);
+  });
+  it("rejects invalid locales and preserves guest calendar ownership", async () => {
+    const ctx = await setup();
+    for (const value of ["de", "pl-PL", "en%0Aignore", ""]) for (const url of [ctx.privateUrl, ctx.publicUrl])
+      expect((await app.inject({ remoteAddress: `192.0.2.${++localeRequests}`, url: `${url}?locale=${value}`, headers: { cookie: ctx.cookie } })).statusCode).toBe(400);
+    const guest = await app.inject({ remoteAddress: `192.0.2.${++localeRequests}`, method: "POST", url: "/api/auth/guest", headers: { origin: env.WEB_ORIGIN } });
+    const cookie = guest.cookies.map(c => `${c.name}=${c.value}`).join("; ");
+    expect((await app.inject({ remoteAddress: `192.0.2.${++localeRequests}`, url: `${ctx.privateUrl}?locale=pl`, headers: { cookie } })).statusCode).toBe(404);
+    await TripModel.collection.updateOne({ _id: ctx.trip._id }, { $set: { user: null, guestId: guest.json().guest.id, guestSlot: 0 } });
+    const result = await app.inject({ remoteAddress: `192.0.2.${++localeRequests}`, url: `${ctx.privateUrl}?locale=pl`, headers: { cookie } });
+    expect(result.statusCode).toBe(200); expect(new ICAL.Event(new ICAL.Component(ICAL.parse(result.body)).getFirstSubcomponent("vevent")!).description).toContain("Czas lokalny miejsca docelowego");
+    expect((await app.inject({ remoteAddress: `192.0.2.${++localeRequests}`, url: ctx.privateUrl, headers: { cookie: ctx.cookie } })).statusCode).toBe(404);
+  });
   it("exports persisted owner events with correct headers, no mutations and no provider calls", async () => {
     const ctx = await setup(), before = await TripModel.findById(ctx.trip.id).select("+sharing.tokenHash").lean();
     const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("No providers"));

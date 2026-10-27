@@ -1,0 +1,16 @@
+{
+  "title": "Plan podróży",
+  "duration": "Zapisany czas trwania",
+  "estimatedDuration": "Szacowany czas zwiedzania",
+  "minutes": "{{value}} min.",
+  "hoursClosed": "Konflikt godzin otwarcia: sprawdź je przed wizytą.",
+  "hoursOpen": "Godziny otwarcia dotyczą zapisanego planu; sprawdź je przed wizytą.",
+  "hoursUnknown": "Godziny otwarcia są nieznane; sprawdź je przed wizytą.",
+  "localTime": "Czas lokalny miejsca docelowego: {{start}} — {{end}} ({{zone}}).",
+  "footer": "Triply · {{destination}}. Ręczny eksport kalendarza; bez automatycznej synchronizacji.",
+  "day": "Dzień {{day}} · {{date}}",
+  "locationUnknown": "Lokalizacja niedostępna",
+  "lunch": "Przerwa na obiad",
+  "coffee": "Przerwa na kawę",
+  "dinner": "Przerwa na kolację"
+}

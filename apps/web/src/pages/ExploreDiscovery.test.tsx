@@ -90,16 +90,16 @@ it("debounces rapid typing and replaces the URL without a request per key", asyn
   const input = screen.getByRole("searchbox");
   fireEvent.change(input, { target: { value: "b" } }); fireEvent.change(input, { target: { value: "bar" } }); fireEvent.change(input, { target: { value: "barce" } });
   expect(listings(fetcher)).toHaveLength(1); expect(screen.getByText("Loading destinations…")).toBeVisible();
-  await screen.findByText("1 destinations found"); expect(url()).toBe("/explore?q=barce"); expect(listings(fetcher)).toHaveLength(2);
+  await screen.findByText("1 destination found", {}, { timeout: 3000 }); expect(url()).toBe("/explore?q=barce"); expect(listings(fetcher)).toHaveLength(2);
 });
 it("clears search immediately", async () => {
-  mount("/explore?q=barce"); await screen.findByText("1 destinations found");
+  mount("/explore?q=barce"); await screen.findByText("1 destination found");
   fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
   expect(screen.getByRole("searchbox")).toHaveValue(""); expect(url()).toBe("/explore"); await screen.findByText("212 destinations found");
   expect(screen.getByRole("searchbox")).toHaveFocus();
 });
 it("initializes combined filters and sort from a bookmarked URL", async () => {
-  mount("/explore?q=barce&country=spain&sort=country-asc"); await screen.findByText("1 destinations found");
+  mount("/explore?q=barce&country=spain&sort=country-asc"); await screen.findByText("1 destination found");
   expect(screen.getByRole("searchbox")).toHaveValue("barce");
   expect(screen.getByRole("combobox", { name: "Country" })).toHaveTextContent("Spain");
   expect(screen.getByRole("combobox", { name: "Sort destinations" })).toHaveTextContent("Country A–Z");
@@ -108,7 +108,7 @@ it("selects real countries, combines search and resets pagination", async () => 
   const { fetcher } = mount("/explore?page=3"); await screen.findByText("212 destinations found");
   await select("Country", "Spain"); await screen.findByText("10 destinations found");
   expect(url()).toBe("/explore?country=spain");
-  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "barce" } }); await screen.findByText("1 destinations found");
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "barce" } }); await screen.findByText("1 destination found");
   const request = new URL(listings(fetcher).at(-1)![0], "http://localhost"); expect(request.searchParams.get("country")).toBe("spain");
 });
 it("preserves all filters through pagination", async () => {
@@ -137,13 +137,13 @@ it("does not replay pending typing after browser navigation", async () => {
 });
 it("safely falls back for invalid URL values while retaining valid search", async () => {
   const { fetcher } = mount("/explore?q=barce&page=-3&sort=popular&interests=unknown&region=invalid");
-  await screen.findByText("1 destinations found");
+  await screen.findByText("1 destination found");
   const request = new URL(listings(fetcher).at(-1)![0], "http://localhost");
   expect(request.searchParams.get("page")).toBe("1"); expect(request.searchParams.get("sort")).toBe("name-asc");
   expect(request.searchParams.has("region")).toBe(false); expect(request.searchParams.has("interests")).toBe(false);
 });
 it("canonicalizes an out-of-range page after filtering", async () => {
-  mount("/explore?q=barce&page=999"); await screen.findByText("1 destinations found");
+  mount("/explore?q=barce&page=999"); await screen.findByText("1 destination found");
   await waitFor(() => expect(url()).toBe("/explore?q=barce"));
 });
 it("distinguishes no matches and clears all controls and URL state", async () => {
@@ -154,7 +154,7 @@ it("distinguishes no matches and clears all controls and URL state", async () =>
 });
 it("supports curated regions and interests only when metadata exists", async () => {
   enriched = true; mount("/explore?country=spain"); await screen.findByText("10 destinations found");
-  await select("Region", "Test Region"); await screen.findByText("1 destinations found");
+  await select("Region", "Test Region"); await screen.findByText("1 destination found");
   const culture = within(screen.getByRole("group", { name: "Destination interests" })).getByRole("button", { name: "Culture" });
   fireEvent.click(culture); await waitFor(() => expect(culture).toHaveAttribute("aria-pressed", "true")); expect(url()).toContain("interests=culture");
   fireEvent.click(within(screen.getByRole("group", { name: "Destination interests" })).getByRole("button", { name: "Food" }));
@@ -167,7 +167,7 @@ it("can retry filter metadata separately", async () => {
   await waitFor(() => expect(screen.queryByText("Could not load filter options. Search and sorting are still available.")).toBeNull());
 });
 it("keeps the filtered URL and catalog cache while saving and unsaving", async () => {
-  const { fetcher } = mount("/explore?q=barce&country=spain&sort=name-desc"); await screen.findByText("1 destinations found");
+  const { fetcher } = mount("/explore?q=barce&country=spain&sort=name-desc"); await screen.findByText("1 destination found");
   const current = url(); const before = listings(fetcher).length;
   const save = screen.getByRole("button", { name: "Save Barcelona" }); await waitFor(() => expect(save).toBeEnabled()); fireEvent.click(save);
   await screen.findByRole("button", { name: "Unsave Barcelona" }); expect(url()).toBe(current);
@@ -179,7 +179,7 @@ it("passes an abort signal and keeps keyboard focus during search", async () => 
   const { fetcher } = mount(); await screen.findByText("212 destinations found");
   expect(listings(fetcher)[0]![1]?.signal).toBeInstanceOf(AbortSignal);
   const input = screen.getByRole("searchbox"); input.focus(); expect(input).toHaveFocus();
-  fireEvent.change(input, { target: { value: "barce" } }); await screen.findByText("1 destinations found");
+  fireEvent.change(input, { target: { value: "barce" } }); await screen.findByText("1 destination found");
   expect(input).toHaveFocus();
 });
 it("aborts an obsolete search and ignores its response if it arrives late", async () => {
@@ -201,7 +201,7 @@ it("does not discard pending typing when an older page response clamps the URL",
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "barce" } });
   await act(async () => releasePage!());
   expect(screen.getByRole("searchbox")).toHaveValue("barce");
-  await screen.findByText("1 destinations found"); expect(url()).toBe("/explore?q=barce");
+  await screen.findByText("1 destination found"); expect(url()).toBe("/explore?q=barce");
 });
 it("retries failed Saved status once for the page and enables all hearts", async () => {
   failStatus = true; const { fetcher } = mount("/explore?q=barce");

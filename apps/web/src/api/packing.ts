@@ -1,9 +1,10 @@
+import { getSelectedLanguage } from "../i18n";
 import { applyPackingSuggestionsSchema, packingPreviewSchema, packingContextStatusSchema, type BulkPackingInput, type BulkPackingResult, type ApplyPackingSuggestions, type PackingApplyResult } from "@triply/shared";
 import { request, requestWithTimeout } from "./client";
 
 export async function generatePackingPreview(tripId: string, signal: AbortSignal) {
   const raw = await requestWithTimeout<unknown>(`/api/trips/${tripId}/equipment/generate`, {
-    method: "POST", body: "{}", signal, headers: { "Idempotency-Key": crypto.randomUUID() },
+    method: "POST", body: JSON.stringify({ locale: getSelectedLanguage() }), signal, headers: { "Idempotency-Key": crypto.randomUUID() },
   }, 100_000);
   return packingPreviewSchema.parse(raw);
 }

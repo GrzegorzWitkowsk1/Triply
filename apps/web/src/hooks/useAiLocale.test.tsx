@@ -1,0 +1,48 @@
+import { act, renderHook, waitFor, cleanup } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, expect, it, vi } from "vitest";
+import type { PropsWithChildren } from "react";
+import i18n from "../i18n";
+import { useAnalyzeTrip } from "./useTripAnalysis";
+import { useTripAssistant } from "./useTripAssistant";
+import { usePackingGeneration } from "./usePackingGeneration";
+import { analyzeTrip } from "../api/trips";
+import { request } from "../api/client";
+import { generatePackingPreview } from "../api/packing";
+import { toTripWeather } from "../config/weather";
+
+vi.mock("../api/trips", () => ({ analyzeTrip: vi.fn(), updateTripRequirements: vi.fn() }));
+vi.mock("../api/client", () => ({ request: vi.fn() }));
+vi.mock("../api/packing", () => ({ generatePackingPreview: vi.fn(), getPackingContext: vi.fn() }));
+afterEach(async () => { cleanup(); vi.clearAllMocks(); await i18n.changeLanguage("en"); });
+it("captures new analysis/message requests and does not send AI requests on language changes", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const wrapper = ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  const analysis = renderHook(() => useAnalyzeTrip(), { wrapper });
+  const assistant = renderHook(() => useTripAssistant("trip-1", false), { wrapper });
+  const packing = renderHook(() => usePackingGeneration("trip-1"), { wrapper });
+  let resolve!: () => void;
+  vi.mocked(analyzeTrip).mockImplementationOnce(() => new Promise(done => { resolve = () => done({ draftId: "draft", analysis: {} as never, missingFields: [], requirementsComplete: false }); }));
+  vi.mocked(request).mockResolvedValue({ conversationId: "conversation", messages: [], response: { type: "message", message: "Answer" } });
+  await act(() => i18n.changeLanguage("pl"));
+  expect(analyzeTrip).not.toHaveBeenCalled(); expect(request).not.toHaveBeenCalled(); expect(generatePackingPreview).not.toHaveBeenCalled();
+  act(() => analysis.result.current.mutate({ prompt: "Paris", badges: [] }));
+  await waitFor(() => expect(analyzeTrip).toHaveBeenCalledWith({ prompt: "Paris", badges: [], locale: "pl" }));
+  await act(() => i18n.changeLanguage("en"));
+  expect(analyzeTrip).toHaveBeenCalledTimes(1);
+  act(() => resolve());
+  await waitFor(() => expect(analysis.result.current.isSuccess).toBe(true));
+  await act(() => assistant.result.current.send.mutateAsync({ message: "Hello" }));
+  expect(request).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ body: JSON.stringify({ message: "Hello", locale: "en" }) }));
+  await act(() => i18n.changeLanguage("pl"));
+  expect(request).toHaveBeenCalledTimes(1); expect(generatePackingPreview).not.toHaveBeenCalled();
+  expect(packing.result.current.isIdle).toBe(true);
+  client.clear();
+});
+it("localizes standardized weather codes without changing temperatures or consuming AI", async () => {
+  const day = { date: "2030-06-02", weatherCode: 61, temperatureMax: 18.4 };
+  await i18n.changeLanguage("en"); const en = toTripWeather(day);
+  await i18n.changeLanguage("pl"); const pl = toTripWeather(day);
+  expect(en.label).not.toBe(pl.label); expect(en.temp).toBe(pl.temp);
+  expect(analyzeTrip).not.toHaveBeenCalled(); expect(request).not.toHaveBeenCalled();
+});

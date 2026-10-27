@@ -1,3 +1,4 @@
+import i18n from "../i18n";
 import {
   BUDGET_TYPE_VALUES,
   isIsoDate,
@@ -83,8 +84,8 @@ export function createRequirementsSchema(missingFields: readonly AskableField[])
 
   return z
     .object({
-      destination: z.string().trim().max(120),
-      country: z.string().trim().max(120),
+      destination: z.string().trim().max(120, "tripCreator/validation:fieldTooLong"),
+      country: z.string().trim().max(120, "tripCreator/validation:fieldTooLong"),
       startDate: z.string().trim(),
       endDate: z.string().trim(),
       durationDays: z.string().trim(),
@@ -96,15 +97,15 @@ export function createRequirementsSchema(missingFields: readonly AskableField[])
       interests: z.array(z.string()),
       pace: z.enum(PACE_VALUES),
       maxWalkingDistanceKm: z.string().trim(),
-      notes: z.string().trim().max(2000),
+      notes: z.string().trim().max(2000, "tripCreator/validation:notesTooLong"),
     })
     .superRefine((values, ctx) => {
       if (needs("destination") && values.destination.length === 0) {
-        addIssue(ctx, "destination", "Tell us where you want to go");
+        addIssue(ctx, "destination", "tripCreator/validation:destinationRequired");
       }
 
       if (needs("country") && values.country.length === 0) {
-        addIssue(ctx, "country", "Tell us the country");
+        addIssue(ctx, "country", "tripCreator/validation:countryRequired");
       }
 
       if (needs("startDate") || needs("endDate") || needs("durationDays")) {
@@ -115,60 +116,60 @@ export function createRequirementsSchema(missingFields: readonly AskableField[])
         const durationValid = isPositiveInteger(values.durationDays, MAX_DURATION_DAYS);
 
         if (startProvided && !startValid) {
-          addIssue(ctx, "startDate", "Use the YYYY-MM-DD format");
+          addIssue(ctx, "startDate", "tripCreator/validation:useTheYyyyMmDdFormat");
         }
 
         if (endProvided && !endValid) {
-          addIssue(ctx, "endDate", "Use the YYYY-MM-DD format");
+          addIssue(ctx, "endDate", "tripCreator/validation:useTheYyyyMmDdFormat");
         }
 
         const hasRange = startValid && endValid && values.endDate >= values.startDate;
 
         if (!hasRange && startValid && endValid) {
-          addIssue(ctx, "endDate", "The end date can't be before the start date");
+          addIssue(ctx, "endDate", "tripCreator/validation:theEndDateCanTBeBeforeThe");
         }
 
         if (!hasRange) {
           if (values.durationDays.length > 0 && !durationValid) {
-            addIssue(ctx, "durationDays", "Enter the number of days");
+            addIssue(ctx, "durationDays", "tripCreator/validation:enterTheNumberOfDays");
           }
 
           if (!durationValid) {
             if (needs("startDate") && !startValid) {
-              addIssue(ctx, "startDate", "Add the start date, or how many days you'll be away");
+              addIssue(ctx, "startDate", "tripCreator/validation:addTheStartDateOrHowManyDays");
             }
 
             if (needs("endDate") && !endValid) {
-              addIssue(ctx, "endDate", "Add the end date, or how many days you'll be away");
+              addIssue(ctx, "endDate", "tripCreator/validation:addTheEndDateOrHowManyDays");
             }
 
             if (needs("durationDays")) {
-              addIssue(ctx, "durationDays", "Add the trip dates or the number of days");
+              addIssue(ctx, "durationDays", "tripCreator/validation:addTheTripDatesOrTheNumberOf");
             }
           }
         }
       }
 
       if (needs("travelers") && !isPositiveInteger(values.travelers, MAX_TRAVELERS)) {
-        addIssue(ctx, "travelers", "Enter how many people are travelling");
+        addIssue(ctx, "travelers", "tripCreator/validation:enterHowManyPeopleAreTravelling");
       }
 
       if (needs("budget")) {
         if (values.budgetChoice.length === 0) {
-          addIssue(ctx, "budgetChoice", "Pick a range or choose Flexible");
+          addIssue(ctx, "budgetChoice", "tripCreator/validation:pickARangeOrChooseFlexible");
         } else if (values.budgetChoice === CUSTOM_BUDGET_ID) {
           if (!Number.isFinite(toNumber(values.budgetAmount)) || toNumber(values.budgetAmount) <= 0) {
-            addIssue(ctx, "budgetAmount", "Enter the budget you have in mind");
+            addIssue(ctx, "budgetAmount", "tripCreator/validation:enterTheBudgetYouHaveInMind");
           }
 
           if (values.budgetCurrency.length === 0) {
-            addIssue(ctx, "budgetCurrency", "Pick a currency");
+            addIssue(ctx, "budgetCurrency", "tripCreator/validation:pickACurrency");
           }
         }
       }
 
       if (needs("interests") && values.interests.length === 0) {
-        addIssue(ctx, "interests", "Pick at least one interest");
+        addIssue(ctx, "interests", "tripCreator/validation:pickAtLeastOneInterest");
       }
 
       const walking = values.maxWalkingDistanceKm;
@@ -177,7 +178,7 @@ export function createRequirementsSchema(missingFields: readonly AskableField[])
         walking.length > 0 &&
         (!Number.isFinite(toNumber(walking)) || toNumber(walking) < 0 || toNumber(walking) > MAX_WALKING_KM)
       ) {
-        addIssue(ctx, "maxWalkingDistanceKm", "Enter a distance in km");
+        addIssue(ctx, "maxWalkingDistanceKm", "tripCreator/validation:enterADistanceInKm");
       }
     });
 }

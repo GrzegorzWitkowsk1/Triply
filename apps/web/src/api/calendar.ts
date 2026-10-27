@@ -1,3 +1,4 @@
+import { getSelectedLanguage } from "../i18n";
 import { calendarExportStatsSchema, type CalendarExportStats } from "@triply/shared";
 import type { PdfTarget } from "./pdf";
 import { ApiError, parseResponse } from "./client";
@@ -6,7 +7,7 @@ export async function downloadTripCalendar(target: PdfTarget, signal?: AbortSign
   const isPublic = target.shareToken !== undefined;
   const path = isPublic ? `/api/public/trips/${encodeURIComponent(target.shareToken!)}/export/calendar`
     : `/api/trips/${encodeURIComponent(target.tripId!)}/export/calendar`;
-  const response = await fetch(path, { credentials: isPublic ? "omit" : "include", cache: "no-store", referrerPolicy: "no-referrer", headers: { Accept: "text/calendar" }, signal });
+  const response = await fetch(`${path}?locale=${getSelectedLanguage()}`,  { credentials: isPublic ? "omit" : "include", cache: "no-store", referrerPolicy: "no-referrer", headers: { Accept: "text/calendar" }, signal });
   if (!response.ok) { await parseResponse(response); throw new Error("Calendar request failed"); }
   const invalid = () => new ApiError("Invalid calendar response", 502, { code: "invalid-response" });
   if (!response.headers.get("Content-Type")?.startsWith("text/calendar")) throw invalid();

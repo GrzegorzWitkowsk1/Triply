@@ -1,0 +1,7 @@
+{
+  "zoomIn": "Zoom in",
+  "zoomOut": "Zoom out",
+  "mapLabel": "Trip map",
+  "marker": "Stop {{count, number}}",
+  "attribution": "&copy; OpenStreetMap contributors"
+}

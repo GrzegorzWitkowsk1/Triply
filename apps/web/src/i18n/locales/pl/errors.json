@@ -1,0 +1,19 @@
+{
+  "networkError": "Sprawdź połączenie i spróbuj ponownie.",
+  "unexpected": "Coś poszło nie tak. Spróbuj ponownie.",
+  "unauthorized": "Sesja wygasła. Zaloguj się lub ponownie włącz tryb gościa.",
+  "forbidden": "Nie masz uprawnień do wykonania tej czynności.",
+  "notFound": "Ten element jest niedostępny lub został usunięty.",
+  "conflict": "Dane zmieniły się w innej sesji. Odśwież i spróbuj ponownie.",
+  "rateLimited": "Zbyt wiele żądań. Spróbuj ponownie później.",
+  "timeout": "Przekroczono czas oczekiwania. Spróbuj ponownie.",
+  "validation": "Sprawdź wprowadzone dane i spróbuj ponownie.",
+  "sessionExpired": "Sesja gościa wygasła. Włącz ponownie tryb gościa.",
+  "guestTripLimit": "Osiągnięto limit podróży gościa. Usuń podróż lub utwórz konto.",
+  "guestAiLimit": "Wykorzystano limit generowania planów na ostatnie 24 godziny. Nadal możesz edytować szczegóły podróży.",
+  "guestDayLimit": "Wykorzystano limit zmian dnia z AI na ostatnie 24 godziny. Usuń instrukcje tekstowe, aby użyć wybranych preferencji.",
+  "guestDuration": "Podróż przekracza limit długości w trybie gościa.",
+  "invalidResponse": "Serwer zwrócił nieprawidłową odpowiedź. Spróbuj ponownie.",
+  "invalidTimeZone": "Brakuje strefy czasowej celu podróży lub jest ona nieprawidłowa. Sprawdź harmonogram.",
+  "guestPackingLimit": "Wykorzystano limit sugestii pakowania. Nadal możesz ręcznie edytować listę."
+}

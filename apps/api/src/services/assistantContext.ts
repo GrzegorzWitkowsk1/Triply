@@ -1,3 +1,4 @@
+import { localized, localizeExplanation } from "./contentLanguage.js";
 import type { ItineraryDay } from "@triply/shared";
 import { assessTripQuality } from "./tripQualityService.js";
 import { admissionLabel, formatAdmissionPrice, summarizeAdmission } from "@triply/shared";
@@ -72,10 +73,11 @@ export function buildAssistantContext(trip: TripDocument, selected?: string) {
   };
 }
 
-export function factualAnswer(trip: TripDocument, question: string, day?: ItineraryDay, attractionId?: string, message = ""): string {
+export function factualAnswer(trip: TripDocument, question: string, day?: ItineraryDay, attractionId?: string, message = "", locale: import("@triply/shared").SupportedLocale = "en"): string {
+  const say = localized(locale);
   if (question === "quality") {
     const report = assessTripQuality(trip.toObject(), day ? { dayIndex: day.dayIndex } : {});
-    return `Internal quality indicator: ${report.score ?? "unavailable because some data is unconfirmed"}. This does not guarantee real-world feasibility. ${report.valid ? "No blocking conflicts were detected in available data." : "Confirmed conflicts need attention."}\n${report.issues.map(i => `${i.dayId ? `Day ${i.dayId}: ` : ""}${i.message}`).join("\n")}`;
+    return say`Internal quality indicator: ${report.score ?? say("unavailable because some data is unconfirmed")}. This does not guarantee real-world feasibility. ${report.valid ? say("No blocking conflicts were detected in available data.") : say("Confirmed conflicts need attention.")}\n${report.issues.map(i => `${i.dayId ? say`Day ${i.dayId}: ` : ""}${localizeExplanation(i.message, locale)}`).join("\n")}`;
   }
   const days = day ? [day] : trip.itinerary!.days;
   const activities = days.flatMap(d => d.activities.filter(a => a.type === "attraction"));
@@ -87,8 +89,8 @@ export function factualAnswer(trip: TripDocument, question: string, day?: Itiner
       : /unknown|unavailable/i.test(message) ? selected.filter(p => !p.admission || p.admission.status === "unknown" || (p.admission.status === "paid" && !p.admission.price))
       : /require tickets|paid/i.test(message) ? selected.filter(p => p.admission?.status === "paid") : selected;
     const summary = summarizeAdmission(days, trip.attractions, travelers);
-    const totals = summary.knownAdmissionTotals.map(t => `${formatAdmissionPrice({ ...t, priceType: "general" })} (${t.unit === "per_person" ? `per-person prices${Number.isSafeInteger(travelers) && travelers! > 0 && travelers! <= 50 ? ` for ${travelers} people` : ", traveler count unavailable"}` : t.unit === "per_group" ? "group prices" : "unit unconfirmed; not multiplied"})`).join("; ") || "no confirmed prices";
-    return `${filtered.map(p => `${p.name}: ${admissionLabel(p.admission)}. Source: ${p.admission?.source ?? "unavailable"}${p.admission?.sourceUrl ? `, ${p.admission.sourceUrl}` : ""}.`).join("\n") || "No matching attractions with confirmed pricing information."}\nKnown admission amounts: ${totals}. ${summary.isComplete ? "All scheduled admission fees are accounted for." : "This is partial: some prices, admission statuses or pricing units are unknown."} Admission costs are separate from the entire trip budget. Prices may change; verify with the attraction.`;
+    const totals = summary.knownAdmissionTotals.map(t => `${formatAdmissionPrice({ ...t, priceType: "general" })} (${t.unit === "per_person" ? say`per-person prices${Number.isSafeInteger(travelers) && travelers! > 0 && travelers! <= 50 ? say` for ${travelers} people` : say(", traveler count unavailable")}` : t.unit === "per_group" ? say("group prices") : say("unit unconfirmed; not multiplied")})`).join("; ") || say("no confirmed prices");
+    return say`${filtered.map(p => say`${p.name}: ${localizeExplanation(admissionLabel(p.admission), locale)}. Source: ${p.admission?.source ?? say("unavailable")}${p.admission?.sourceUrl ? `, ${p.admission.sourceUrl}` : ""}.`).join("\n") || say("No matching attractions with confirmed pricing information.")}\nKnown admission amounts: ${totals}. ${summary.isComplete ? say("All scheduled admission fees are accounted for.") : say("This is partial: some prices, admission statuses or pricing units are unknown.")} Admission costs are separate from the entire trip budget. Prices may change; verify with the attraction.`;
   }
   if (question === "opening_hours") {
     const clock = /\b([01]?\d|2[0-3]):([0-5]\d)\b/.exec(message);
@@ -103,33 +105,33 @@ export function factualAnswer(trip: TripDocument, question: string, day?: Itiner
       if (!clock && !activity && result.nextAvailableStart) {
         result = evaluateOpeningHours({ ...input, startMinutes: Number(result.nextAvailableStart.slice(11,13)) * 60 + Number(result.nextAvailableStart.slice(14,16)) });
       }
-      const hours = result.intervals.map(interval => `${interval.start.slice(11,16)}–${interval.end.slice(11,16)}${interval.unknown ? " (uncertain)" : ""}`).join(", ");
-      return { result, text: `${poi.name} (${d.date}, ${result.timeZone ?? "timezone unknown"}): ${result.status} for ${activity || clock ? "the" : "a possible"} ${duration}-minute visit. ${result.reason}${hours ? ` Hours: ${hours}.` : ""}${result.nextAvailableStart && result.status === "closed" ? ` Suggested start: ${result.nextAvailableStart}.` : ""} Source: ${result.source ?? "unavailable"}.` };
+      const hours = result.intervals.map(interval => `${interval.start.slice(11,16)}–${interval.end.slice(11,16)}${interval.unknown ? say(" (uncertain)") : ""}`).join(", ");
+      return { result, text: say`${poi.name} (${d.date}, ${result.timeZone ?? say("timezone unknown")}): ${say(result.status)} for ${activity || clock ? say("the") : say("a possible")} ${duration}-minute visit. ${localizeExplanation(result.reason, locale)}${hours ? say` Hours: ${hours}.` : ""}${result.nextAvailableStart && result.status === "closed" ? say` Suggested start: ${result.nextAvailableStart}.` : ""} Source: ${result.source ?? say("unavailable")}.` };
     }));
     const filtered = /unknown|unavailable/i.test(message) ? lines.filter(line => line.result.status === "unknown")
       : /which.*closed/i.test(message) ? lines.filter(line => line.result.status === "closed" && !line.result.nextAvailableStart && !line.result.intervals.some(interval => interval.unknown)) : lines;
-    return filtered.map(line => line.text).join("\n") || "No matching attractions have that confirmed opening-hours status.";
+    return filtered.map(line => line.text).join("\n") || say("No matching attractions have that confirmed opening-hours status.");
   }
   if (question === "budget") {
     const summary = summarizeBudget(trip.toObject());
-    const money = (amount: number | null) => amount === null || !summary.currency ? "unavailable" : formatMoney(amount, summary.currency);
+    const money = (amount: number | null) => amount === null || !summary.currency ? say("unavailable") : formatMoney(amount, summary.currency, locale);
     const category = /food|drinks/i.test(message) ? "food_drinks" : /shopping/i.test(message) ? "shopping" : /transport|taxi/i.test(message) ? "transport" : /accommodation|hotel/i.test(message) ? "accommodation" : /attractions/i.test(message) ? "attractions" : null;
     const rows = category ? summary.categories.find(c => c.category === category)!.totals : summary.totals;
     const metric = /actual|spent/i.test(message) ? "actualMinor" : "plannedMinor";
     const top = summary.comparisonAvailable ? [...summary.days].filter(d => d.dayId !== null).sort((a,b) => (b.totals.find(t => t.currency === summary.currency)?.[metric] ?? 0) - (a.totals.find(t => t.currency === summary.currency)?.[metric] ?? 0))[0] : undefined;
-    return `Total budget: ${money(summary.totalBudgetMinor)}. Known planned spending: ${money(summary.plannedSpendingMinor)}. Actual spending: ${money(summary.actualSpendingMinor)}. Planned remaining: ${money(summary.plannedRemainingMinor)}. Actual remaining: ${money(summary.actualRemainingMinor)}.\n${category ?? "Currency totals"}: ${rows.map(t => `${t.currency}: planned ${formatMoney(t.plannedMinor,t.currency)}, actual ${formatMoney(t.actualMinor,t.currency)}`).join("; ") || "No recorded spending"}.${top ? ` Most expensive day by ${metric === "actualMinor" ? "actual" : "known planned"} spending: day ${top.dayId}.` : ""}\n${summary.warnings.join(" ")}`;
+    return say`Total budget: ${money(summary.totalBudgetMinor)}. Known planned spending: ${money(summary.plannedSpendingMinor)}. Actual spending: ${money(summary.actualSpendingMinor)}. Planned remaining: ${money(summary.plannedRemainingMinor)}. Actual remaining: ${money(summary.actualRemainingMinor)}.\n${category ?? say("Currency totals")}: ${rows.map(t => say`${t.currency}: planned ${formatMoney(t.plannedMinor,t.currency, locale)}, actual ${formatMoney(t.actualMinor,t.currency, locale)}`).join("; ") || say("No recorded spending")}.${top ? say` Most expensive day by ${metric === "actualMinor" ? "actual" : say("known planned")} spending: day ${top.dayId}.` : ""}\n${summary.warnings.map(warning => localizeExplanation(warning, locale)).join(" ")}`;
   }
-  if (question === "count") return `${activities.length} scheduled attractions across ${days.length} itinerary day(s).`;
+  if (question === "count") return say`${activities.length} scheduled attractions across ${days.length} itinerary day(s).`;
   if (question === "walking") {
     const known = days.filter(d => d.totalDistanceMeters !== null);
-    if (!known.length) return "Route distances are unavailable.";
+    if (!known.length) return say("Route distances are unavailable.");
     const top = [...known].sort((a,b) => b.totalDistanceMeters! - a.totalDistanceMeters!)[0];
-    return `Day ${top.dayIndex} has the longest known route: ${(top.totalDistanceMeters! / 1000).toFixed(1)} km${top.partiallyEstimated ? " (estimated)" : ""}. ${known.length < days.length ? "Some days have unavailable distances." : ""} Route distance represents the configured travel mode; it is not necessarily all walking.`;
+    return say`Day ${top.dayIndex} has the longest known route: ${(top.totalDistanceMeters! / 1000).toFixed(1)} km${top.partiallyEstimated ? say(" (estimated)") : ""}. ${known.length < days.length ? say("Some days have unavailable distances.") : ""} Route distance represents the configured travel mode; it is not necessarily all walking.`;
   }
-  if (question === "busiest") { const top = [...days].sort((a,b) => b.totalVisitMinutes - a.totalVisitMinutes)[0]; return `Day ${top.dayIndex} has the most visiting time: ${top.totalVisitMinutes} minutes. Travel time: ${top.totalTravelMinutes ?? "unavailable"} minutes.`; }
-  if (question === "duration") return `${days.reduce((sum,d) => sum + d.activities.reduce((total,a) => total + a.durationMinutes, 0), 0)} scheduled minutes including travel and breaks; ${days.reduce((sum,d) => sum + d.totalVisitMinutes, 0)} visiting minutes. Estimated durations are not verified visit times.`;
-  if (question === "outdoors") { const names = activities.filter(a => trip.attractions.some(p => p.placeId === a.placeId && p.environment === "outdoor")).map(a => a.title); return `Known outdoor attractions: ${names.join(", ") || "none classified"}. Unclassified places may also be outdoors.`; }
-  if (question === "why") { const place = trip.attractions.find(p => p.placeId === attractionId); return place ? `${place.name} is categorized as ${place.category}, with saved score ${place.score ?? "unavailable"}. Your interests are ${trip.analysis.interests.join(", ")}. The planner balances preferences, proximity and schedule fit; a specific selection explanation was not saved.` : "Which attraction do you mean?"; }
-  if (question === "first" || question === "last") { const all = days.flatMap(d => d.activities); const activity = question === "first" ? all[0] : all.at(-1); return activity ? `${activity.title}: ${activity.startTime} to ${activity.endTime} (destination local time).` : "No activities are scheduled."; }
-  return days.map(d => `Day ${d.dayIndex}${d.date ? ` (${d.date})` : ""}: ${d.activities.filter(a => a.type === "attraction").map(a => `${a.title}, ${a.startTime.slice(11,16)}–${a.endTime.slice(11,16)}`).join("; ") || "no attractions"}.`).join("\n");
+  if (question === "busiest") { const top = [...days].sort((a,b) => b.totalVisitMinutes - a.totalVisitMinutes)[0]; return say`Day ${top.dayIndex} has the most visiting time: ${top.totalVisitMinutes} minutes. Travel time: ${top.totalTravelMinutes ?? say("unavailable")} minutes.`; }
+  if (question === "duration") return say`${days.reduce((sum,d) => sum + d.activities.reduce((total,a) => total + a.durationMinutes, 0), 0)} scheduled minutes including travel and breaks; ${days.reduce((sum,d) => sum + d.totalVisitMinutes, 0)} visiting minutes. Estimated durations are not verified visit times.`;
+  if (question === "outdoors") { const names = activities.filter(a => trip.attractions.some(p => p.placeId === a.placeId && p.environment === "outdoor")).map(a => a.title); return say`Known outdoor attractions: ${names.join(", ") || say("none classified")}. Unclassified places may also be outdoors.`; }
+  if (question === "why") { const place = trip.attractions.find(p => p.placeId === attractionId); return place ? say`${place.name} is categorized as ${place.category}, with saved score ${place.score ?? say("unavailable")}. Your interests are ${trip.analysis.interests.join(", ")}. The planner balances preferences, proximity and schedule fit; a specific selection explanation was not saved.` : say("Which attraction do you mean?"); }
+  if (question === "first" || question === "last") { const all = days.flatMap(d => d.activities); const activity = question === "first" ? all[0] : all.at(-1); return activity ? say`${activity.title}: ${activity.startTime} to ${activity.endTime} (destination local time).` : say("No activities are scheduled."); }
+  return days.map(d => say`Day ${d.dayIndex}${d.date ? ` (${d.date})` : ""}: ${d.activities.filter(a => a.type === "attraction").map(a => `${a.title}, ${a.startTime.slice(11,16)}–${a.endTime.slice(11,16)}`).join("; ") || say("no attractions")}.`).join("\n");
 }

@@ -1,3 +1,5 @@
+import { formatLocalTime } from "../i18n/format";
+import i18n from "../i18n";
 import type { ItineraryDay, ItineraryStop, TripItinerary, OpeningHoursCheck } from "@triply/shared";
 
 export interface TimelineTravel {
@@ -33,9 +35,7 @@ export interface TimelineBreak {
 export type TimelineEntry = TimelineTravel | TimelineAttraction | TimelineBreak;
 
 export function formatClock(iso: string): string {
-  const match = /T(\d{2}):(\d{2})/.exec(iso);
-
-  return match ? `${match[1]}:${match[2]}` : iso;
+  try { return formatLocalTime(iso); } catch { return iso; }
 }
 
 export function formatDuration(minutes: number | null | undefined): string {
@@ -45,8 +45,8 @@ export function formatDuration(minutes: number | null | undefined): string {
 
   const hours = Math.floor(minutes / 60);
   const mins = Math.round(minutes % 60);
-  const hourLabel = hours > 0 ? `${hours} hr${hours > 1 ? "s" : ""}` : "";
-  const minLabel = mins > 0 ? `${mins} min` : "";
+  const hourLabel = hours > 0 ? i18n.t("hours", { ns: "common", count: hours }) : "";
+  const minLabel = mins > 0 ? i18n.t("minutes", { ns: "common", count: mins }) : "";
 
   return [hourLabel, minLabel].filter(Boolean).join(" ") || "—";
 }
@@ -56,7 +56,7 @@ function capitalize(value: string): string {
 }
 
 function breakIcon(title: string): "coffee" | "meal" {
-  return /coffee/i.test(title) ? "coffee" : "meal";
+  return /coffee|kawę/i.test(title) ? "coffee" : "meal";
 }
 
 /** Scheduled stops for a day, in route order — used for map markers. */
@@ -108,9 +108,9 @@ export function buildDayTimeline(day: ItineraryDay): TimelineEntry[] {
         placeId: activity.placeId,
         key,
         stopIndex,
-        time: activity.schedulingStatus === "unresolved" ? "Unresolved" : formatClock(activity.startTime),
+        time: activity.schedulingStatus === "unresolved" ? i18n.t("unresolved", { ns: "itinerary/editor" }) : formatClock(activity.startTime),
         name: activity.title,
-        category: stop ? capitalize(stop.category) : "Sight",
+        category: stop ? capitalize(stop.category) : i18n.t("sight", { ns: "itinerary/editor" }),
         durationMinutes: Math.round(activity.durationMinutes),
         openingHoursCheck: activity.openingHoursCheck,
         admission: stop?.admission,

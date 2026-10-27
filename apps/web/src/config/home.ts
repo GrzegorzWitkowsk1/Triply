@@ -1,3 +1,4 @@
+import i18n from "../i18n";
 import {
   AccountBalanceOutlined,
   AccountBalanceWalletOutlined,
@@ -17,13 +18,13 @@ export interface HomeBadge {
 }
 
 export const HOME_BADGES: HomeBadge[] = [
-  { id: "food", label: "Food trip", icon: RestaurantOutlined, color: "#f2664b" },
-  { id: "architecture", label: "Architecture weekend", icon: AccountBalanceOutlined, color: "#5d7bd5" },
-  { id: "beach", label: "Beach getaway", icon: WavesOutlined, color: "#3aa6d1" },
-  { id: "nature", label: "Nature escape", icon: LandscapeOutlined, color: "#43b047" },
-  { id: "culture", label: "Culture & museums", icon: PaletteOutlined, color: "#a05bd5" },
-  { id: "shopping", label: "Shopping", icon: ShoppingBagOutlined, color: "#e0a22e" },
-  { id: "nightlife", label: "Nightlife", icon: NightlifeOutlined, color: "#a05bd5" },
+  { id: "food", get label() { return i18n.t("foodTrip", { ns: "tripCreator/home" }); }, icon: RestaurantOutlined, color: "#f2664b" },
+  { id: "architecture", get label() { return i18n.t("architectureWeekend", { ns: "tripCreator/home" }); }, icon: AccountBalanceOutlined, color: "#5d7bd5" },
+  { id: "beach", get label() { return i18n.t("beachGetaway", { ns: "tripCreator/home" }); }, icon: WavesOutlined, color: "#3aa6d1" },
+  { id: "nature", get label() { return i18n.t("natureEscape", { ns: "tripCreator/home" }); }, icon: LandscapeOutlined, color: "#43b047" },
+  { id: "culture", get label() { return i18n.t("cultureMuseums", { ns: "tripCreator/home" }); }, icon: PaletteOutlined, color: "#a05bd5" },
+  { id: "shopping", get label() { return i18n.t("shopping", { ns: "tripCreator/home" }); }, icon: ShoppingBagOutlined, color: "#e0a22e" },
+  { id: "nightlife", get label() { return i18n.t("nightlife", { ns: "tripCreator/home" }); }, icon: NightlifeOutlined, color: "#a05bd5" },
 ];
 
 export type PlanStageStatus = "queue" | "active" | "done";
@@ -34,10 +35,10 @@ export interface PlanStage {
 }
 
 export const PLAN_STAGES: PlanStage[] = [
-  { id: "places", label: "Finding places you'll love" },
-  { id: "route", label: "Optimizing your route" },
-  { id: "budget", label: "Balancing your budget" },
-  { id: "itinerary", label: "Building your itinerary" },
+  { id: "places", get label() { return i18n.t("findingPlacesYouLlLove", { ns: "tripCreator/home" }); } },
+  { id: "route", get label() { return i18n.t("optimizingYourRoute", { ns: "tripCreator/home" }); } },
+  { id: "budget", get label() { return i18n.t("balancingYourBudget", { ns: "tripCreator/home" }); } },
+  { id: "itinerary", get label() { return i18n.t("buildingYourItinerary", { ns: "tripCreator/home" }); } },
 ];
 
 export interface Trip {

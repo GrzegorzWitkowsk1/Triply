@@ -68,7 +68,8 @@ describe("buildTripAnalysisRequest", () => {
   it("wires the system instruction, prompt and schema together", () => {
     const request = buildTripAnalysisRequest({ prompt: "trip", badges: [] });
 
-    expect(request.systemInstruction).toBe(buildSystemInstruction());
+    expect(request.systemInstruction).toContain(buildSystemInstruction());
+    expect(request.systemInstruction).toContain("natural English");
     expect(request.schema).toBe(TRIP_ANALYSIS_SCHEMA);
     expect(request.prompt).toContain("Traveller request: trip");
   });

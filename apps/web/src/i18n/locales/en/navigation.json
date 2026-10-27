@@ -1,0 +1,17 @@
+{
+  "myTrips": "My Trips",
+  "trips": "trips",
+  "explore": "Explore",
+  "saved": "Saved",
+  "profile": "profile",
+  "languageNames": {
+    "en": "English",
+    "pl": "Polski"
+  },
+  "languageControl": "Language: {{language}}",
+  "guest": "Guest",
+  "notifications": "Notifications",
+  "endGuestSession": "End guest session",
+  "signOut": "Sign out",
+  "couldNotEndSessionTryAgain": "Could not end session. Try again."
+}

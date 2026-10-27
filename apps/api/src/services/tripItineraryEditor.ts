@@ -1,3 +1,5 @@
+import { contentLocale } from "@triply/shared";
+import { localizeGeneratedDay } from "./contentLanguage.js";
 import { ownerFilter, storedOwner, guestOwnerId } from "../middleware/tripIdentity.js";
 import {
   itineraryEditRequestSchema, tripAttractionSchema,
@@ -300,6 +302,9 @@ export async function editTripItinerary(tripId: string, userId: string, input: I
     const validation = validateItinerary({ ...trip.toObject(), itinerary }, { dayIndex });
     if (validation.issues.some(i => i.severity === "error" && i.code !== "SCHEDULE_UNRESOLVED")) throw new ItineraryEditError("These changes have confirmed conflicts. No changes were saved.", 422, validation.issues.map(i => i.message), [], validation.issues);
   }
+  // Localize only after constraint checks and conflict recovery have finished.
+  itinerary.days = itinerary.days.map(day => affectedDayIndices.includes(day.dayIndex)
+    ? localizeGeneratedDay(day, contentLocale(trip.contentLocale)) : day);
   // Compare after the same Mongoose defaults/casting used by persistence.
   if (JSON.stringify(new TripModel({ itinerary }).toObject().itinerary) === JSON.stringify(trip.toObject().itinerary)) {
     const unchanged = await TripModel.findOne({ _id: trip._id, ...ownerFilter(storedOwner(trip)),

@@ -1,3 +1,6 @@
+import LanguageSwitcher from "../components/LanguageSwitcher";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -12,6 +15,7 @@ import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import { ChevronRightOutlined } from "@mui/icons-material";
 
 export default function SharedTripPage() {
+  useTranslation();
   const { shareToken = "" } = useParams();
   const [activeDay, setActiveDay] = useState(0);
   const [activeStop, setActiveStop] = useState(0);
@@ -27,17 +31,16 @@ export default function SharedTripPage() {
   if (trip.isPending)
     return (
       <main className="trip-page shared-trip-page" role="status">
-        Loading shared itinerary…
-      </main>
+        <LanguageSwitcher />
+        {i18n.t("loadingSharedItinerary", { ns: "sharing" })}</main>
     );
   // Hide cached data on a failed revalidation, including revocation.
   if (trip.isError || !trip.data)
     return (
       <main className="trip-page shared-trip-page">
+        <LanguageSwitcher />
         <p role="alert">
-          This shared trip is unavailable. The link may have been disabled or
-          replaced.
-        </p>
+          {i18n.t("thisSharedTripIsUnavailableTheLinkMay", { ns: "sharing" })}</p>
       </main>
     );
   const data = trip.data;
@@ -58,7 +61,7 @@ export default function SharedTripPage() {
         minutes: a.durationMinutes,
         name: a.title,
         time: formatClock(a.startTime),
-        icon: /coffee/i.test(a.title) ? "coffee" : "meal",
+        icon: /coffee|kawę/i.test(a.title) ? "coffee" : "meal",
       };
     return {
       kind: "attraction",
@@ -68,7 +71,7 @@ export default function SharedTripPage() {
       category: day?.stops[a.stopIndex ?? -1]?.category ?? "Sight",
       time:
         a.schedulingStatus === "unresolved"
-          ? "Unresolved"
+          ? i18n.t("unresolved", { ns: "sharing" })
           : formatClock(a.startTime),
       durationMinutes: a.durationMinutes,
     };
@@ -85,28 +88,28 @@ export default function SharedTripPage() {
       <div className="trip-inner">
         <section className="trip-hero">
           <div className="trip-hero-locale">
-            <p className="trip-eyebrow">Shared itinerary · Read only</p>
+            <p className="trip-eyebrow">{i18n.t("sharedItineraryReadOnly", { ns: "sharing" })}</p>
             <h1>
               {data.destination}
               {data.country ? `, ${data.country}` : ""}
             </h1>
             <p>
               {data.startDate} {data.endDate ? `– ${data.endDate}` : ""}
-              {data.durationDays ? ` · ${data.durationDays} days` : ""}
+              {data.durationDays ? ` · ${i18n.t("days", { ns: "common", count: data.durationDays })}` : ""}
             </p>
           </div>
-          <div className="trip-hero-actions"><TripExportActions key={shareToken} target={{ shareToken }} /></div>
+          <div className="trip-hero-actions"><TripExportActions key={shareToken} target={{ shareToken }} /><LanguageSwitcher /></div>
         </section>
         {day ? (
           <div className="trip-content">
             <div className="trip-left">
               <div className="trip-day-header">
                 <span>
-                  Day {activeDay + 1} of {data.days.length} · {day.date}
+                  {i18n.t("dayPosition", { ns: "common", day: activeDay + 1, total: data.days.length })} · {day.date}
                 </span>
                 <div className="trip-day-nav">
                   <button
-                    aria-label="Previous day"
+                    aria-label={i18n.t("previousDay", { ns: "common" })}
                     disabled={activeDay === 0}
                     onClick={() => {
                       setActiveDay(activeDay - 1);
@@ -116,7 +119,7 @@ export default function SharedTripPage() {
                     <ChevronLeftOutlined />
                   </button>
                   <button
-                    aria-label="Next day"
+                    aria-label={i18n.t("nextDay", { ns: "common" })}
                     disabled={activeDay >= data.days.length - 1}
                     onClick={() => {
                       setActiveDay(activeDay + 1);
@@ -132,7 +135,7 @@ export default function SharedTripPage() {
                   {weather.temp}° · {weather.label}
                 </p>
               )}
-              {day.travelMode && <p>Travel mode: {day.travelMode}</p>}
+              {day.travelMode && <p>{i18n.t("travelMode", { ns: "sharing" })}{i18n.t(`category_${day.travelMode}`, { ns: "itinerary/categories" })}</p>}
               <TripTimeline
                 entries={entries}
                 activeStop={activeStop}
@@ -148,7 +151,7 @@ export default function SharedTripPage() {
                     </section>
                   ),
               )}
-              {!entries.length && <p>No activities scheduled for this day.</p>}
+              {!entries.length && <p>{i18n.t("noActivitiesScheduledForThisDay", { ns: "sharing" })}</p>}
             </div>
             <div className="trip-right">
               {center && (
@@ -166,7 +169,7 @@ export default function SharedTripPage() {
             </div>
           </div>
         ) : (
-          <p>No itinerary is available yet.</p>
+          <p>{i18n.t("noItineraryIsAvailableYet", { ns: "sharing" })}</p>
         )}
       </div>
     </main>

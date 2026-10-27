@@ -1,3 +1,5 @@
+import { localizeGeneratedDay, localizeExplanation } from "./contentLanguage.js";
+import { contentLocale } from "@triply/shared";
 import { ownerFilter, storedOwner } from "../middleware/tripIdentity.js";
 import {
   addDays,
@@ -211,6 +213,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
     trip.attractionsFetchedAt,
     trip.attractionsQuery,
     weather.days,
+    contentLocale(trip.contentLocale),
   );
   console.info({ event: "trip-generation", stage: "attractions", provider: "overpass-or-cache", durationMs: Math.round(performance.now() - stageStarted), status: attractions.query === null ? "unavailable" : "available", count: attractions.attractions.length });
 
@@ -263,7 +266,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
         attractions: attractions.attractions,
         attractionsFetchedAt: attractions.fetchedAt,
         attractionsQuery: attractions.query,
-        itinerary: repaired.trip.itinerary,
+        itinerary: repaired.trip.itinerary ? { ...repaired.trip.itinerary, days: repaired.trip.itinerary.days.map(day => localizeGeneratedDay(day, contentLocale(trip.contentLocale))), unscheduled: repaired.trip.itinerary.unscheduled.map(entry => ({ ...entry, detail: entry.detail ? localizeExplanation(entry.detail, contentLocale(trip.contentLocale)) : entry.detail })) } : null,
         regeneration: null,
         status: "ready",
         "generation.generatedAt": now,

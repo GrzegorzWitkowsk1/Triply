@@ -11,16 +11,3 @@ export const PROFILE_FORM_DEFAULTS: ProfileFormDefaults = {
   surname: "Doe",
   email: "",
 };
-
-export type LanguageCode = "pl" | "en";
-
-export interface LanguageOption {
-  code: LanguageCode;
-  label: string;
-  flag: string;
-}
-
-export const LANGUAGES: LanguageOption[] = [
-  { code: "pl", label: "Polski", flag: "/flags/pl.svg" },
-  { code: "en", label: "English", flag: "/flags/en.svg" },
-];

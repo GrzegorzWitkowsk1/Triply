@@ -1,3 +1,4 @@
+import { localeRequestSchema } from "@triply/shared";
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import { applyPackingSuggestionsSchema, bulkPackingSchema } from "@triply/shared";
 import type { HttpRoute } from "../http/types.js";
@@ -14,14 +15,15 @@ export function registerPackingActions(app: FastifyInstance, aiLimiter: preHandl
     return bulkPackingItems(request.params.id, currentTripOwner(request), input.data);
   });
   app.post<HttpRoute>("/trips/:id/equipment/generate", { preHandler: aiLimiter }, async (request, reply) => {
-    if (request.body !== undefined && request.body !== null && (typeof request.body !== "object" || Array.isArray(request.body) || Object.keys(request.body).length)) {
-      return reply.code(400).send({ error: "Packing context is collected from the saved trip. Send an empty body." });
+    const parsed = localeRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "Send only a supported locale (en or pl); packing context comes from the saved trip." });
     }
     const controller = new AbortController();
     const abort = () => { if (!reply.raw.writableEnded) controller.abort(); };
     reply.raw.once("close", abort);
     try {
-      return await guestOperation(request, "packing", start => generatePacking(request.params.id, currentTripOwner(request), start, controller.signal));
+      return await guestOperation(request, "packing", start => generatePacking(request.params.id, currentTripOwner(request), start, controller.signal, parsed.data.locale));
     } finally { reply.raw.removeListener("close", abort); }
   });
   app.post<HttpRoute>("/trips/:id/equipment/apply", async (request, reply) => {

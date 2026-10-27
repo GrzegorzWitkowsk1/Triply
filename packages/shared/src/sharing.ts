@@ -1,3 +1,4 @@
+import { supportedLocaleSchema } from "./locale.js";
 import { z } from "zod";
 import { tripDayWeatherSchema } from "./trip.js";
 
@@ -7,6 +8,7 @@ export const sharingLinkSchema = sharingStatusSchema.extend({ token: z.string().
 export type SharingLink = z.infer<typeof sharingLinkSchema>;
 const point = z.tuple([z.number(), z.number()]);
 export const publicTripSchema = z.object({
+  contentLocale: supportedLocaleSchema.optional(),
   destination: z.string().nullable(), country: z.string().nullable(),
   startDate: z.string().nullable(), endDate: z.string().nullable(), durationDays: z.number().nullable(),
   location: z.object({ lat: z.number(), lng: z.number() }).nullable(),

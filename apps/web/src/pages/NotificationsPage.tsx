@@ -1,3 +1,6 @@
+import { NOTIFICATIONS } from "../config/notifications";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -24,6 +27,7 @@ interface NotificationIconProps {
 }
 
 function NotificationIcon({ type, isRead }: NotificationIconProps) {
+  useTranslation();
   let icon = null;
   if (type === "rain") icon = <ThunderstormOutlined />;
   if (type === "budget") icon = <PaymentsOutlined />;
@@ -43,7 +47,9 @@ interface NotificationRowProps {
 }
 
 function NotificationRow({ notification, onSelect }: NotificationRowProps) {
+  useTranslation();
   const hasTrip = Boolean(notification.tripId);
+  const copy = NOTIFICATIONS.find(item => item.id === notification.id) ?? notification;
   return (
     <button
       type="button"
@@ -52,10 +58,10 @@ function NotificationRow({ notification, onSelect }: NotificationRowProps) {
     >
       <NotificationIcon type={notification.notificationType} isRead={notification.isRead} />
       <div className="notification-row-body">
-        <span className="notification-row-title">{notification.title}</span>
-        <span className="notification-row-message">{notification.message}</span>
+        <span className="notification-row-title">{copy.title}</span>
+        <span className="notification-row-message">{copy.message}</span>
         {hasTrip && (
-          <span className="notification-row-cta">Review changes →</span>
+          <span className="notification-row-cta">{i18n.t("reviewChanges", { ns: "navigation/notifications" })}</span>
         )}
       </div>
       <span className="notification-row-date">
@@ -66,6 +72,7 @@ function NotificationRow({ notification, onSelect }: NotificationRowProps) {
 }
 
 export default function NotificationsPage() {
+  useTranslation();
   const navigate = useNavigate();
   const { data: notifications } = useNotifications();
   const markRead = useMarkNotificationRead();
@@ -102,13 +109,13 @@ export default function NotificationsPage() {
   return (
     <div className="notifications-page">
       <div className="notifications-inner">
-        <p className="notifications-eyebrow">Stay in the loop</p>
+        <p className="notifications-eyebrow">{i18n.t("stayInTheLoop", { ns: "navigation/notifications" })}</p>
 
         <div className="notifications-head">
           <div className="notifications-head-copy">
-            <h1 className="notifications-title">Notifications</h1>
+            <h1 className="notifications-title">{i18n.t("notifications", { ns: "navigation/notifications" })}</h1>
             <p className="notifications-subtitle">
-              {unread.length} updates need your attention
+              {i18n.t("attentionCount", { ns: "navigation/notifications", count: unread.length })}
             </p>
           </div>
           {totalCount > 0 && (
@@ -119,8 +126,7 @@ export default function NotificationsPage() {
               disabled={unread.length === 0}
             >
               <DoneAllOutlined />
-              Mark all as read
-            </button>
+              {i18n.t("markAllAsRead", { ns: "navigation/notifications" })}</button>
           )}
         </div>
 
@@ -130,28 +136,26 @@ export default function NotificationsPage() {
             className={`notifications-filter${filter === "all" ? " is-active" : ""}`}
             onClick={() => setFilter("all")}
           >
-            All
-          </button>
+            {i18n.t("all", { ns: "navigation/notifications" })}</button>
           <button
             type="button"
             className={`notifications-filter${filter === "unread" ? " is-active" : ""}`}
             onClick={() => setFilter("unread")}
           >
-            Unread
-          </button>
+            {i18n.t("unread", { ns: "navigation/notifications" })}</button>
         </div>
 
         <div className="notifications-divider" />
 
         {notifications === undefined ? (
-          <p className="notifications-empty">Loading notifications…</p>
+          <p className="notifications-empty">{i18n.t("loadingNotifications", { ns: "navigation/notifications" })}</p>
         ) : filtered.length === 0 ? (
-          <p className="notifications-empty">No notifications here.</p>
+          <p className="notifications-empty">{i18n.t("noNotificationsHere", { ns: "navigation/notifications" })}</p>
         ) : (
           <>
             {today.length > 0 && (
               <section className="notifications-section">
-                <h2 className="notifications-section-title">Today</h2>
+                <h2 className="notifications-section-title">{i18n.t("today", { ns: "navigation/notifications" })}</h2>
                 <div className="notifications-card">
                   {today.map((notification) => (
                     <NotificationRow
@@ -165,7 +169,7 @@ export default function NotificationsPage() {
             )}
             {earlier.length > 0 && (
               <section className="notifications-section">
-                <h2 className="notifications-section-title">Earlier</h2>
+                <h2 className="notifications-section-title">{i18n.t("earlier", { ns: "navigation/notifications" })}</h2>
                 <div className="notifications-card">
                   {earlier.map((notification) => (
                     <NotificationRow

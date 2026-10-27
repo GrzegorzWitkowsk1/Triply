@@ -1,3 +1,7 @@
+import { resolveMessage } from "../../i18n/errors";
+import { errorMessage as localizedError } from "../../i18n/errors";
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from "@mui/material";
@@ -5,6 +9,7 @@ import { ShareOutlined } from "@mui/icons-material";
 import { createShareLink, disableSharing, getSharingStatus } from "../../api/sharing";
 
 export default function TripSharing({ tripId, open: controlledOpen, onClose, hideTrigger = false }: { tripId: string; open?: boolean; onClose?: () => void; hideTrigger?: boolean }) {
+  const { t } = useTranslation("sharing", { i18n });
   const [internalOpen, setOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
   const [link, setLink] = useState<string | null>(null);
@@ -30,69 +35,64 @@ export default function TripSharing({ tripId, open: controlledOpen, onClose, hid
         type="button"
         onClick={() => setOpen(true)}
       >
-        <ShareOutlined /> Share
+        <ShareOutlined /> {t("share")}
       </button>}
       <Dialog className="trip-sharing-dialog" open={open} onClose={close} fullWidth maxWidth="sm">
-        <DialogTitle>Share itinerary</DialogTitle>
+        <DialogTitle>{t("itineraryTitle")}</DialogTitle>
         <DialogContent>
           <p>
-            Anyone with the link can view your itinerary and dates. Budget,
-            expenses and private notes stay private.
-          </p>
-          {status.isPending && <p role="status">Loading sharing status…</p>}
+            {i18n.t("anyoneWithTheLinkCanViewYourItinerary", { ns: "sharing" })}</p>
+          {status.isPending && <p role="status">{i18n.t("loadingSharingStatus", { ns: "sharing" })}</p>}
           {status.isError && (
             <Alert severity="error">
-              Could not load sharing status.{" "}
-              <Button onClick={() => void status.refetch()}>Retry</Button>
+              {i18n.t("couldNotLoadSharingStatus", { ns: "sharing" })}{" "}
+              <Button onClick={() => void status.refetch()}>{t("retry", { ns: "common" })}</Button>
             </Alert>
           )}
           {status.data && (
-            <p>Sharing {status.data.enabled ? "enabled" : "disabled"}</p>
+            <p>{i18n.t(status.data.enabled ? "sharingEnabled" : "sharingDisabled", { ns: "sharing" })}</p>
           )}
           {status.data?.enabled && (
             <p>
-              The link is shown only when created. Copy it now; after closing
-              this dialog, rotate the link to get a new one.
-            </p>
+              {i18n.t("theLinkIsShownOnlyWhenCreatedCopy", { ns: "sharing" })}</p>
           )}
           {link && status.data?.enabled && (
             <TextField
               style={{ marginTop: "12px" }}
               fullWidth
-              label="Share link"
+              label={i18n.t("shareLink", { ns: "sharing" })}
               value={link}
               slotProps={{ input: { readOnly: true } }}
             />
           )}
-          {notice && <p role="status">{notice}</p>}
+          {notice && <p role="status">{resolveMessage(notice)}</p>}
           {copyError && (
             <Alert severity="error">
-              Could not copy. Select and copy the link above.
-            </Alert>
+              {i18n.t("couldNotCopySelectAndCopyTheLink", { ns: "sharing" })}</Alert>
           )}
           {action.isError && (
-            <Alert severity="error">{action.error.message}</Alert>
+            <Alert severity="error">{localizedError(action.error)}</Alert>
           )}
           {confirm && (
             <Alert severity="warning">
               {confirm === "rotate"
-                ? "Rotating invalidates the previous link."
-                : "Disabling immediately revokes the link."}
+                ? i18n.t("rotatingInvalidatesThePreviousLink", { ns: "sharing" })
+                : i18n.t("disablingImmediatelyRevokesTheLink", { ns: "sharing" })}
               <Button
                 disabled={action.isPending}
                 onClick={() => action.mutate(confirm)}
               >
-                Confirm {confirm}
+                {i18n.t(confirm === "rotate" ? "confirmRotate" : "confirmDisable", { ns: "sharing" })}
               </Button>
               <Button
                 disabled={action.isPending}
                 onClick={() => setConfirm(null)}
               >
-                Cancel
+                {t("cancel", { ns: "common" })}
               </Button>
             </Alert>
           )}
-          {action.isPending && <p role="status">Updating sharing…</p>}
+          {action.isPending && <p role="status">{i18n.t("updatingSharing", { ns: "sharing" })}</p>}
         </DialogContent>
         <DialogActions>
           {status.data && !status.isError && !status.isFetching && !confirm && (
@@ -102,8 +102,7 @@ export default function TripSharing({ tripId, open: controlledOpen, onClose, hid
                   disabled={action.isPending}
                   onClick={() => action.mutate("enable")}
                 >
-                  Enable sharing
-                </Button>
+                  {i18n.t("enableSharing", { ns: "sharing" })}</Button>
               )}
               {status.data.enabled && (
                 <>
@@ -113,34 +112,31 @@ export default function TripSharing({ tripId, open: controlledOpen, onClose, hid
                       onClick={async () => {
                         try {
                           await navigator.clipboard.writeText(link);
-                          setNotice("Link copied");
+                          setNotice("sharing:linkCopied");
                           setCopyError(false);
                         } catch {
                           setCopyError(true);
                         }
                       }}
                     >
-                      Copy link
-                    </Button>
+                      {i18n.t("copyLink", { ns: "sharing" })}</Button>
                   )}
                   <Button
                     disabled={action.isPending}
                     onClick={() => setConfirm("rotate")}
                   >
-                    Rotate link
-                  </Button>
+                    {i18n.t("rotateLink", { ns: "sharing" })}</Button>
                   <Button
                     disabled={action.isPending}
                     onClick={() => setConfirm("disable")}
                   >
-                    Disable sharing
-                  </Button>
+                    {i18n.t("disableSharing", { ns: "sharing" })}</Button>
                 </>
               )}
             </>
           )}
           <Button disabled={action.isPending} onClick={close}>
-            Close
+            {t("close", { ns: "common" })}
           </Button>
         </DialogActions>
       </Dialog>

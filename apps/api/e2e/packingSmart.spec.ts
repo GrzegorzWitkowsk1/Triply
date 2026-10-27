@@ -19,7 +19,7 @@ async function generate(page: Page) {
   await expect(preview(page).getByText(/^Review every suggestion/)).toBeVisible();
 }
 async function applySelected(page: Page) {
-  await preview(page).getByRole("button", { name: /Add \d+ selected items/ }).click();
+  await preview(page).getByRole("button", { name: /Add selected items \(\d+\)/ }).click();
   await expect(preview(page)).toBeHidden();
 }
 test("smart refresh follows a real itinerary edit and preserves packed manual items", async ({ page, user, harness }) => {
@@ -27,7 +27,7 @@ test("smart refresh follows a real itinerary edit and preserves packed manual it
   await add(page, "Rain jacket"); await page.getByRole("checkbox", { name: "Rain jacket", exact: true }).click();
   await expect(page.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "100");
   await generate(page); await expect(preview(page).getByRole("checkbox", { name: /^Rain jacket,/ })).toBeDisabled();
-  await expect(preview(page).getByText(/5 suggestions found: 4 new items, 1 already on your list, 0 possible duplicates/)).toBeVisible();
+  await expect(preview(page).getByText(/Suggestions: 5. New: 4, already on your list: 1, possible duplicates: 0/)).toBeVisible();
   await applySelected(page); await expect(page.getByRole("checkbox", { name: "Rain jacket", exact: true })).toBeChecked();
   const existing = await api(page, `/api/trips/${user.tripId}`);
   const first = existing.body.itinerary.days[0].stops[0];
@@ -51,7 +51,7 @@ test("possible duplicate review supports skipping and explicit add anyway across
   await add(page, "Waterproof jacket"); await generate(page);
   await expect(preview(page).getByText("Similar to an item already on your list.")).toBeVisible();
   await expect(preview(page).getByRole("checkbox", { name: /^Rain jacket,/ })).not.toBeChecked();
-  await preview(page).getByText("View matching Rain jacket items").click(); await expect(preview(page).getByText(/Waterproof jacket - Clothing, quantity 1, to pack/)).toBeVisible();
+  await preview(page).getByText("View matching Rain jacket items").click(); await expect(preview(page).getByText(/Waterproof jacket - Clothing, quantity 1, To pack/)).toBeVisible();
   for (const width of [320, 375, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     const box = await preview(page).boundingBox(); expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.width).toBeLessThanOrEqual(width);
@@ -59,14 +59,14 @@ test("possible duplicate review supports skipping and explicit add anyway across
     const overflow = await preview(page).evaluate(node => node.scrollWidth <= node.clientWidth); expect(overflow).toBe(true);
   }
   const clothing = preview(page).getByRole("region", { name: "Clothing suggestions" });
-  const toggle = clothing.getByRole("button", { name: /Clothing, \d+ suggestions/ });
+  const toggle = clothing.getByRole("button", { name: /Clothing, suggestions: \d+/ });
   await toggle.focus(); await page.keyboard.press("Enter"); await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await page.keyboard.press("Space"); await expect(toggle).toHaveAttribute("aria-expanded", "true");
   const why = preview(page).getByText("Why Rain jacket?"); await why.focus(); await page.keyboard.press("Enter");
   await expect(preview(page).getByText(/A general weather-protective layer/)).toBeVisible();
   await applySelected(page); await expect(page.getByRole("checkbox", { name: "Rain jacket", exact: true })).toHaveCount(0);
   await generate(page); await preview(page).getByRole("button", { name: "Add Rain jacket anyway" }).click();
-  await expect(preview(page).getByRole("button", { name: "Add 1 selected items" })).toBeEnabled(); await applySelected(page);
+  await expect(preview(page).getByRole("button", { name: "Add selected items (1)" })).toBeEnabled(); await applySelected(page);
   await page.reload(); await expect(page.getByRole("checkbox", { name: "Rain jacket", exact: true })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Waterproof jacket", exact: true })).toBeVisible();
 });

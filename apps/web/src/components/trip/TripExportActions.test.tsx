@@ -1,5 +1,6 @@
+import i18n from "../../i18n";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render as renderBase, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderBase, screen, waitFor } from "@testing-library/react";
 import { ToastProvider } from "../ToastProvider";
 import TripExportActions from "./TripExportActions";
 import { downloadTripCalendar } from "../../api/calendar";
@@ -7,7 +8,7 @@ import { ApiError } from "../../api/client";
 vi.mock("../../api/calendar", () => ({ downloadTripCalendar: vi.fn() }));
 vi.mock("./TripSharing", () => ({ default: ({ open }: { open: boolean }) => open ? <div role="dialog">Sharing controls</div> : null }));
 vi.mock("./TripPdfDownload", () => ({ default: ({ renderTrigger }: { renderTrigger?: (download: () => void, pending: boolean) => React.ReactNode }) => renderTrigger ? renderTrigger(vi.fn(), false) : <button>Download PDF</button> }));
-beforeEach(() => { vi.resetAllMocks(); localStorage.clear(); localStorage.setItem("triply.language", "en"); }); afterEach(cleanup);
+beforeEach(() => { vi.resetAllMocks(); localStorage.clear(); void i18n.changeLanguage("en"); }); afterEach(cleanup);
 const render = (component: React.ReactNode) => renderBase(<ToastProvider>{component}</ToastProvider>);
 it("puts PDF, calendar and owner sharing in one accessible menu", async () => {
   render(<TripExportActions target={{ tripId: "trip" }} />); expect(screen.getByLabelText("More export options").getAttribute("aria-expanded")).toBe("false");
@@ -22,10 +23,13 @@ it("shows two public buttons with no arrow or owner actions", async () => {
   expect(downloadTripCalendar).toHaveBeenCalledWith({ shareToken: "token" }, expect.any(AbortSignal));
   complete({ exported: 4, excluded: 2, unscheduled: 2, invalid: 0 }); await screen.findByText(/4 events exported. 2 items excluded/); expect(screen.getByRole("alert").textContent).toContain("manual export");
 });
-it("uses the requested English calendar label with Polish errors and notices", async () => {
-  localStorage.setItem("triply.language", "pl"); vi.mocked(downloadTripCalendar).mockRejectedValue(new ApiError("internal", 422, { code: "invalid-timezone" }));
-  render(<TripExportActions target={{ shareToken: "token" }} />); fireEvent.click(screen.getByText("Export to Calendar")); await screen.findByText(/Brakuje strefy czasowej/); expect(screen.queryByText("internal")).toBeNull();
-  vi.mocked(downloadTripCalendar).mockResolvedValue({ exported: 1, excluded: 0, invalid: 0, unscheduled: 0 }); fireEvent.click(screen.getByText("Export to Calendar")); await screen.findByText(/Wyeksportowane wydarzenia: 1/);
+it("uses Polish calendar controls, errors and notices", async () => {
+  void i18n.changeLanguage("pl"); vi.mocked(downloadTripCalendar).mockRejectedValue(new ApiError("internal", 422, { code: "invalid-timezone" }));
+  render(<TripExportActions target={{ shareToken: "token" }} />); fireEvent.click(screen.getByText("Eksportuj do kalendarza")); await screen.findByText(/Brakuje strefy czasowej/); expect(screen.queryByText("internal")).toBeNull();
+  await act(() => i18n.changeLanguage("en"));
+  await screen.findByText("The destination timezone is missing or invalid. Review the trip schedule.");
+  await act(() => i18n.changeLanguage("pl"));
+  vi.mocked(downloadTripCalendar).mockResolvedValue({ exported: 1, excluded: 0, invalid: 0, unscheduled: 0 }); fireEvent.click(screen.getByText("Eksportuj do kalendarza")); await screen.findByText(/Wyeksportowane wydarzenia: 1/);
 });
 it("aborts downloads on unmount and reports revoked shares without leaking errors", async () => {
   vi.mocked(downloadTripCalendar).mockRejectedValue(new ApiError("private detail", 404)); const view = render(<TripExportActions target={{ shareToken: "token" }} />);

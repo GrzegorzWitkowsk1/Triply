@@ -1,3 +1,4 @@
+import { supportedLocaleSchema, type SupportedLocale } from "./locale.js";
 import { z } from "zod";
 import { destinationIdSchema } from "./saved.js";
 import { attractionOpeningHoursSchema } from "./openingHours.js";
@@ -196,6 +197,7 @@ export const askableFieldSchema = z.enum(ASKABLE_FIELDS);
 
 export const analyzeTripRequestSchema = z
   .object({
+    locale: supportedLocaleSchema.optional(),
     destinationId: destinationIdSchema.optional(),
     prompt: z.string().trim().max(LIMITS.prompt).default(""),
     badges: z.array(z.string().trim().min(1).max(40)).max(LIMITS.badges).default([]),
@@ -242,6 +244,7 @@ export const updateTripRequirementsSchema = z.object({
 export type UpdateTripRequirements = z.infer<typeof updateTripRequirementsSchema>;
 
 export interface TripAnalysisResult {
+  contentLocale?: SupportedLocale;
   draftId: string;
   analysis: TripAnalysis;
   missingFields: AskableField[];
@@ -302,6 +305,7 @@ export const tripListQuerySchema = z.object({
 export type TripListQuery = z.infer<typeof tripListQuerySchema>;
 
 export interface TripSummary {
+  contentLocale?: SupportedLocale;
   id: string;
   status: TripStatus;
   prompt: string;

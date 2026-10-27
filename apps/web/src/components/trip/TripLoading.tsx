@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 interface TripLoadingProps {
   city?: string;
   isStale?: boolean;
@@ -5,8 +7,9 @@ interface TripLoadingProps {
 }
 
 export default function TripLoading({ city, isStale = false, onRetry }: TripLoadingProps) {
+  useTranslation();
   return (
-    <div className="trip-loading" aria-busy="true" aria-label="Preparing your itinerary">
+    <div className="trip-loading" aria-busy="true" aria-label={i18n.t("preparingYourItinerary", { ns: "trips/details" })}>
       <section className="trip-build-banner" role="status" aria-live="polite">
         <svg className="trip-build-route" viewBox="0 0 120 64" fill="none" aria-hidden="true">
           <path className="trip-build-path" d="M14 46C30 46 24 18 49 18S70 46 106 18" />
@@ -16,14 +19,14 @@ export default function TripLoading({ city, isStale = false, onRetry }: TripLoad
           <circle className="trip-build-traveler" r="4" />
         </svg>
         <div>
-          <p className="trip-build-kicker">A little planning, a great adventure</p>
-          <h2>{city ? `Your ${city} trip is taking shape` : "Getting your trip ready"}</h2>
+          <p className="trip-build-kicker">{i18n.t("aLittlePlanningAGreatAdventure", { ns: "trips/details" })}</p>
+          <h2>{city ? i18n.t("yourTripIsTakingShape", { ns: "trips/details", value0: city }) : i18n.t("gettingYourTripReady", { ns: "trips/details" })}</h2>
           <p>{isStale
-            ? "This is taking longer than usual. You can retry while keeping your trip details."
-            : "Finding places, connecting the dots, and making room for a well-earned break."}</p>
+            ? i18n.t("thisIsTakingLongerThanUsualYouCan", { ns: "trips/details" })
+            : i18n.t("findingPlacesConnectingTheDotsAndMakingRoom", { ns: "trips/details" })}</p>
         </div>
         {isStale && onRetry && (
-          <button className="btn btn-primary" type="button" onClick={onRetry}>Try again</button>
+          <button className="btn btn-primary" type="button" onClick={onRetry}>{i18n.t("tryAgain", { ns: "common" })}</button>
         )}
       </section>
       <div className="trip-content trip-loading-content" aria-hidden="true">

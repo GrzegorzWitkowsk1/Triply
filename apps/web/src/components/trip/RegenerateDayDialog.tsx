@@ -1,3 +1,7 @@
+import { formatDistance } from "../../i18n/format";
+import { resolveMessage } from "../../i18n/errors";
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import { AutoFixHighOutlined, CloseOutlined } from "@mui/icons-material";
 import {
   Button,
@@ -31,7 +35,7 @@ function formatKm(meters: number | null): string {
     return "—";
   }
 
-  return `${(meters / 1000).toFixed(1).replace(/\.0$/, "")} km`;
+  return formatDistance(meters).replace(/([.,])0(?= km$)/, "");
 }
 
 function togglePreference(
@@ -48,6 +52,7 @@ interface MetricRowProps {
 }
 
 function MetricRow({ label, before, after }: MetricRowProps) {
+  useTranslation();
   return (
     <div className="regenerate-metric">
       <span className="regenerate-metric-label">{label}</span>
@@ -87,6 +92,7 @@ export default function RegenerateDayDialog({
   onEditOptions,
   onClose,
 }: RegenerateDayDialogProps) {
+  useTranslation();
   const [preferences, setPreferences] =
     useState<RegenerationPreferences>(EMPTY_PREFERENCES);
   const [customInstructions, setCustomInstructions] = useState("");
@@ -127,9 +133,9 @@ export default function RegenerateDayDialog({
       className="regenerate-dialog"
     >
       <DialogTitle className="regenerate-title">
-        Rework Day {dayNumber}
+        {i18n.t("reworkDayTitle", { ns: "itinerary/generation", day: dayNumber })}
         <IconButton
-          aria-label="Close"
+          aria-label={i18n.t("close", { ns: "common" })}
           onClick={onClose}
           disabled={busy}
           className="regenerate-close"
@@ -139,12 +145,10 @@ export default function RegenerateDayDialog({
       </DialogTitle>
 
       <DialogContent className="regenerate-content">
-        {aiRemaining !== undefined && <p>AI day regenerations remaining: {aiRemaining}. Free-text instructions use AI; preference-only previews do not.</p>}
-        {aiBlocked && <p role="alert">Your AI day-regeneration allowance is used for the last 24 hours. Clear the instructions to use selected preferences.</p>}
+        {aiRemaining !== undefined && <p>{i18n.t("aiAllowance", { ns: "itinerary/generation", count: aiRemaining })}</p>}
+        {aiBlocked && <p role="alert">{i18n.t("yourAiDayRegenerationAllowanceIsUsedFor", { ns: "itinerary/generation" })}</p>}
         <p className="regenerate-lead">
-          Pick how you'd like this day to change. Only this day is rewritten —
-          the rest of your trip stays as it is.
-        </p>
+          {i18n.t("pickHowYouDLikeThisDayTo", { ns: "itinerary/generation" })}</p>
 
         <div className="regenerate-options">
           {REGENERATION_OPTIONS.map((option) => {
@@ -164,10 +168,10 @@ export default function RegenerateDayDialog({
                 }
               >
                 <span className="regenerate-option-title">
-                  <AutoFixHighOutlined /> {option.label}
+                  <AutoFixHighOutlined /> {i18n.t(`${option.id}Label`, { ns: "itinerary/generation" })}
                 </span>
                 <span className="regenerate-option-description">
-                  {option.description}
+                  {i18n.t(`${option.id}Description`, { ns: "itinerary/generation" })}
                 </span>
               </button>
             );
@@ -175,8 +179,8 @@ export default function RegenerateDayDialog({
         </div>
 
         <TextField
-          label="Any other changes (optional)"
-          placeholder="e.g. Focus on museums near the old town and skip the crowded spots."
+          label={i18n.t("anyOtherChangesOptional", { ns: "itinerary/generation" })}
+          placeholder={i18n.t("eGFocusOnMuseumsNearTheOld", { ns: "itinerary/generation" })}
           multiline
           minRows={2}
           fullWidth
@@ -188,38 +192,37 @@ export default function RegenerateDayDialog({
 
         {isGenerating && (
           <p className="regenerate-status">
-            <AutoFixHighOutlined /> Exploring options for this day…
-          </p>
+            <AutoFixHighOutlined /> {i18n.t("exploringOptionsForThisDay", { ns: "itinerary/generation" })}</p>
         )}
 
         {comparison && (
           <div className="regenerate-compare">
-            <p className="regenerate-compare-title">Here's the new day</p>
+            <p className="regenerate-compare-title">{i18n.t("hereSTheNewDay", { ns: "itinerary/generation" })}</p>
 
             <div className="regenerate-compare-rows">
               <div className="regenerate-compare-head">
                 <span />
-                <span>Before</span>
+                <span>{i18n.t("before", { ns: "itinerary/generation" })}</span>
                 <span />
-                <span>After</span>
+                <span>{i18n.t("after", { ns: "itinerary/generation" })}</span>
               </div>
               <MetricRow
-                label="Attractions"
+                label={i18n.t("attractions", { ns: "itinerary/generation" })}
                 before={String(comparison.original.attractionCount)}
                 after={String(comparison.proposed.attractionCount)}
               />
               <MetricRow
-                label="Walking"
+                label={i18n.t("walking", { ns: "itinerary/generation" })}
                 before={formatKm(comparison.original.walkingMeters)}
                 after={formatKm(comparison.proposed.walkingMeters)}
               />
               <MetricRow
-                label="Travel"
+                label={i18n.t("travel", { ns: "itinerary/generation" })}
                 before={formatDuration(comparison.original.travelMinutes)}
                 after={formatDuration(comparison.proposed.travelMinutes)}
               />
               <MetricRow
-                label="Visiting"
+                label={i18n.t("visiting", { ns: "itinerary/generation" })}
                 before={formatDuration(comparison.original.visitMinutes)}
                 after={formatDuration(comparison.proposed.visitMinutes)}
               />
@@ -227,7 +230,7 @@ export default function RegenerateDayDialog({
 
             {comparison.removed.length > 0 && (
               <div className="regenerate-diff">
-                <span className="regenerate-diff-title">Removed</span>
+                <span className="regenerate-diff-title">{i18n.t("removed", { ns: "itinerary/generation" })}</span>
                 {comparison.removed.map((stop) => (
                   <span key={stop.placeId ?? stop.name} className="regenerate-diff-item is-removed">
                     {stop.name}
@@ -238,7 +241,7 @@ export default function RegenerateDayDialog({
 
             {comparison.added.length > 0 && (
               <div className="regenerate-diff">
-                <span className="regenerate-diff-title">Added</span>
+                <span className="regenerate-diff-title">{i18n.t("added", { ns: "itinerary/generation" })}</span>
                 {comparison.added.map((stop) => (
                   <span key={stop.placeId ?? stop.name} className="regenerate-diff-item is-added">
                     {stop.name}
@@ -249,40 +252,35 @@ export default function RegenerateDayDialog({
 
             {preview && preview.warnings.length > 0 && (
               <ul className="regenerate-warnings">
-                {preview.warnings.map((warning) => (
-                  <li key={warning}>{warning}</li>
-                ))}
+                <li>{i18n.t("reviewAlternativeWarning", { ns: "itinerary/generation" })}</li>
               </ul>
             )}
           </div>
         )}
 
-        {error && <p className="regenerate-error">{error}</p>}
+        {error && <p className="regenerate-error">{resolveMessage(error)}</p>}
       </DialogContent>
 
       <DialogActions className="regenerate-actions">
         {comparison ? (
           <>
             <Button type="button" onClick={onClose} disabled={busy}>
-              Cancel
-            </Button>
+              {i18n.t("cancel", { ns: "common" })}</Button>
             <Button type="button" onClick={onEditOptions} disabled={busy}>
-              Try different options
-            </Button>
+              {i18n.t("tryDifferentOptions", { ns: "itinerary/generation" })}</Button>
             <Button
               type="button"
               variant="contained"
               disabled={busy || !preview}
               onClick={onApply}
             >
-              {isApplying ? "Applying…" : "Apply changes"}
+              {isApplying ? i18n.t("applying", { ns: "itinerary/generation" }) : i18n.t("applyChanges", { ns: "common" })}
             </Button>
           </>
         ) : (
           <>
             <Button type="button" onClick={onClose} disabled={busy}>
-              Cancel
-            </Button>
+              {i18n.t("cancel", { ns: "common" })}</Button>
             <Button
               type="button"
               variant="contained"
@@ -290,7 +288,7 @@ export default function RegenerateDayDialog({
               disabled={!maybeSubmit || busy || aiBlocked}
               onClick={handleGenerate}
             >
-              {isGenerating ? "Preparing…" : "Generate alternative"}
+              {isGenerating ? i18n.t("preparing", { ns: "itinerary/generation" }) : i18n.t("generateAlternative", { ns: "itinerary/generation" })}
             </Button>
           </>
         )}

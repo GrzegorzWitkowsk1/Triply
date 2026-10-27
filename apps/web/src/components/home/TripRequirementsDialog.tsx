@@ -1,3 +1,7 @@
+import { resolveMessage } from "../../i18n/errors";
+import { interestLabel as localizedInterest, paceLabel } from "../../i18n/labels";
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AddOutlined, CloseOutlined } from "@mui/icons-material";
 import {
@@ -67,6 +71,7 @@ export default function TripRequirementsDialog({
   onSave,
   onClose,
 }: TripRequirementsDialogProps) {
+  const { t } = useTranslation("tripCreator", { i18n });
   const needs = (field: AskableField): boolean => missingFields.includes(field);
   const needsDates =
     needs("startDate") || needs("endDate") || needs("durationDays");
@@ -179,9 +184,9 @@ export default function TripRequirementsDialog({
     >
       <form onSubmit={submit} className="requirements-form">
         <DialogTitle className="requirements-title">
-          {mode === "edit" ? "Adjust your trip details" : "A few details to make this yours"}
+          {t(mode === "edit" ? "editDetailsTitle" : "detailsTitle")}
           <IconButton
-            aria-label="Close"
+            aria-label={t("close", { ns: "common" })}
             onClick={onClose}
             disabled={isSaving}
             className="requirements-close"
@@ -193,15 +198,15 @@ export default function TripRequirementsDialog({
         <DialogContent className="requirements-content">
           <p className="requirements-lead">
             {mode === "edit"
-              ? "Update your destination, dates, or preferences before trying your itinerary again."
-              : "Your request didn't cover everything — fill in what's missing and we'll do the rest."}
+              ? i18n.t("updateYourDestinationDatesOrPreferencesBeforeTrying", { ns: "tripCreator/fields" })
+              : i18n.t("yourRequestDidnTCoverEverythingFillIn", { ns: "tripCreator/fields" })}
           </p>
 
           {needs("destination") && (
             <TextField
               label={FIELD_COPY.destination.title}
               helperText={
-                errors.destination?.message ?? FIELD_COPY.destination.helper
+                (errors.destination?.message ? i18n.t(errors.destination?.message!) : undefined) ?? FIELD_COPY.destination.helper
               }
               error={!!errors.destination}
               fullWidth
@@ -212,7 +217,7 @@ export default function TripRequirementsDialog({
           {needs("country") && (
             <TextField
               label={FIELD_COPY.country.title}
-              helperText={errors.country?.message ?? FIELD_COPY.country.helper}
+              helperText={(errors.country?.message ? i18n.t(errors.country?.message!) : undefined) ?? FIELD_COPY.country.helper}
               error={!!errors.country}
               fullWidth
               {...register("country")}
@@ -228,7 +233,7 @@ export default function TripRequirementsDialog({
                     type="date"
                     fullWidth
                     error={!!errors.startDate}
-                    helperText={errors.startDate?.message}
+                    helperText={(errors.startDate?.message ? i18n.t(errors.startDate?.message!) : undefined)}
                     slotProps={{ inputLabel: { shrink: true } }}
                     {...register("startDate")}
                   />
@@ -240,7 +245,7 @@ export default function TripRequirementsDialog({
                     type="date"
                     fullWidth
                     error={!!errors.endDate}
-                    helperText={errors.endDate?.message}
+                    helperText={(errors.endDate?.message ? i18n.t(errors.endDate?.message!) : undefined)}
                     slotProps={{ inputLabel: { shrink: true } }}
                     {...register("endDate", {
                       onChange: (event) => {
@@ -261,11 +266,11 @@ export default function TripRequirementsDialog({
                   disabled={hasRange && !endDateAutoFilledRef.current}
                   error={!!errors.durationDays}
                   helperText={
-                    errors.durationDays?.message ??
+                    (errors.durationDays?.message ? i18n.t(errors.durationDays?.message!) : undefined) ??
                     (hasRange
                       ? endDateAutoFilledRef.current
                         ? FIELD_COPY.durationDays.helper
-                        : "Calculated from your dates."
+                        : i18n.t("calculatedFromYourDates", { ns: "tripCreator/fields" })
                       : FIELD_COPY.durationDays.helper)
                   }
                   slotProps={{ htmlInput: { min: 1, max: 365 } }}
@@ -273,8 +278,8 @@ export default function TripRequirementsDialog({
                 />
               )}
 
-              <p className="requirements-hint">{DATE_FIELDS_HINT}{maxTripDays !== undefined && ` Guest trips: up to ${maxTripDays} calendar days.`}</p>
-              {durationTooLong && <p role="alert">Guest trips can contain at most {maxTripDays} calendar days.</p>}
+              <p className="requirements-hint">{i18n.t(DATE_FIELDS_HINT)}{maxTripDays !== undefined && i18n.t("guestDaysHint", { ns: "tripCreator/fields", count: maxTripDays })}</p>
+              {durationTooLong && <p role="alert">{i18n.t("guestDaysError", { ns: "tripCreator/fields", count: maxTripDays })}</p>}
             </div>
           )}
 
@@ -285,7 +290,7 @@ export default function TripRequirementsDialog({
               fullWidth
               error={!!errors.travelers}
               helperText={
-                errors.travelers?.message ?? FIELD_COPY.travelers.helper
+                (errors.travelers?.message ? i18n.t(errors.travelers?.message!) : undefined) ?? FIELD_COPY.travelers.helper
               }
               slotProps={{ htmlInput: { min: 1, max: 50 } }}
               {...register("travelers")}
@@ -322,17 +327,17 @@ export default function TripRequirementsDialog({
 
               {errors.budgetChoice && (
                 <p className="requirements-error">
-                  {errors.budgetChoice.message}
+                  {i18n.t(errors.budgetChoice.message ?? "errors:validation")}
                 </p>
               )}
 
               {watch("budgetChoice") === CUSTOM_BUDGET_ID && (
                 <div className="requirements-budget-custom">
                   <TextField
-                    label="My budget"
+                    label={i18n.t("myBudget", { ns: "tripCreator/fields" })}
                     type="number"
                     error={!!errors.budgetAmount}
-                    helperText={errors.budgetAmount?.message}
+                    helperText={(errors.budgetAmount?.message ? i18n.t(errors.budgetAmount?.message!) : undefined)}
                     slotProps={{ htmlInput: { min: 0 } }}
                     {...register("budgetAmount")}
                   />
@@ -342,10 +347,10 @@ export default function TripRequirementsDialog({
                     name="budgetCurrency"
                     render={({ field }) => (
                       <TextField
-                        label="Currency"
+                        label={i18n.t("currency", { ns: "common" })}
                         select
                         error={!!errors.budgetCurrency}
-                        helperText={errors.budgetCurrency?.message}
+                        helperText={(errors.budgetCurrency?.message ? i18n.t(errors.budgetCurrency?.message!) : undefined)}
                         value={field.value}
                         onChange={field.onChange}
                       >
@@ -363,7 +368,7 @@ export default function TripRequirementsDialog({
                     name="budgetType"
                     render={({ field }) => (
                       <TextField
-                        label="Budget is"
+                        label={i18n.t("budgetIs", { ns: "tripCreator/fields" })}
                         select
                         value={field.value}
                         onChange={field.onChange}
@@ -438,7 +443,7 @@ export default function TripRequirementsDialog({
                               {interest}
                               <button
                                 type="button"
-                                aria-label={`Remove ${interest}`}
+                                aria-label={i18n.t("remove", { ns: "tripCreator/fields", value0: interest })}
                                 onClick={() =>
                                   field.onChange(
                                     field.value.filter((id) => id !== interest),
@@ -458,12 +463,12 @@ export default function TripRequirementsDialog({
 
               <div className="requirements-interest-add">
                 <TextField
-                  label="Add your own"
+                  label={i18n.t("addYourOwn", { ns: "tripCreator/fields" })}
                   size="small"
                   value={interestDraft}
                   error={!!errors.interests}
                   helperText={
-                    errors.interests?.message ?? FIELD_COPY.interests.helper
+                    (errors.interests?.message ? i18n.t(errors.interests?.message!) : undefined) ?? FIELD_COPY.interests.helper
                   }
                   onChange={(event) => setInterestDraft(event.target.value)}
                   onKeyDown={(event) => {
@@ -480,14 +485,13 @@ export default function TripRequirementsDialog({
                   disabled={interestDraft.trim().length === 0}
                   onClick={() => addInterest(interestDraft)}
                 >
-                  Add
-                </Button>
+                  {i18n.t("add", { ns: "common" })}</Button>
               </div>
             </div>
           )}
 
           <div className="requirements-group">
-            <span className="requirements-legend">{PACE_TITLE}</span>
+            <span className="requirements-legend">{i18n.t(PACE_TITLE)}</span>
             <Controller
               control={control}
               name="pace"
@@ -503,7 +507,7 @@ export default function TripRequirementsDialog({
                       aria-pressed={field.value === option.value}
                       onClick={() => field.onChange(option.value)}
                     >
-                      {option.label}
+                      {paceLabel(option.value)}
                     </button>
                   ))}
                 </div>
@@ -512,40 +516,40 @@ export default function TripRequirementsDialog({
           </div>
 
           <TextField
-            label={WALKING_TITLE}
+            label={i18n.t(WALKING_TITLE)}
             type="number"
             fullWidth
             error={!!errors.maxWalkingDistanceKm}
             helperText={
-              errors.maxWalkingDistanceKm?.message ?? WALKING_HELPER
+              (errors.maxWalkingDistanceKm?.message ? i18n.t(errors.maxWalkingDistanceKm?.message!) : undefined) ?? i18n.t(WALKING_HELPER)
             }
             slotProps={{ htmlInput: { min: 0, max: 100 } }}
             {...register("maxWalkingDistanceKm")}
           />
 
           <TextField
-            label={NOTES_TITLE}
+            label={i18n.t(NOTES_TITLE)}
             multiline
             minRows={3}
             fullWidth
             error={!!errors.notes}
-            helperText={errors.notes?.message ?? NOTES_HELPER}
+            helperText={(errors.notes?.message ? i18n.t(errors.notes?.message!) : undefined) ?? i18n.t(NOTES_HELPER)}
             {...register("notes")}
           />
 
-          {error && <p className="requirements-error is-server">{error}</p>}
+          {error && <p className="requirements-error is-server">{resolveMessage(error)}</p>}
         </DialogContent>
 
         <DialogActions className="requirements-actions">
           <Button type="button" onClick={onClose} disabled={isSaving}>
-            Cancel
+            {t("cancel", { ns: "common" })}
           </Button>
           <Button
             type="submit"
             variant="contained"
             disabled={!isValid || isSaving}
           >
-            {isSaving ? "Saving…" : "Continue"}
+            {isSaving ? i18n.t("saving", { ns: "tripCreator/fields" }) : i18n.t("continue", { ns: "tripCreator/fields" })}
           </Button>
         </DialogActions>
       </form>

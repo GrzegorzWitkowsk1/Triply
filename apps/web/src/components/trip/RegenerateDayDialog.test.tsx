@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import i18n from "../../i18n";
 import type { RegenerateDayPreview } from "@triply/shared";
 import RegenerateDayDialog from "./RegenerateDayDialog";
 
-afterEach(cleanup);
+afterEach(async () => { cleanup(); await i18n.changeLanguage("en"); });
 
 const PREVIEW: RegenerateDayPreview = {
   previewId: "preview-1",
@@ -74,6 +75,14 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof RegenerateD
 }
 
 describe("RegenerateDayDialog", () => {
+  it("localizes preview warnings and actions without regenerating the day", async () => {
+    const { onGenerate, onApply } = renderDialog({ preview: PREVIEW });
+    await act(() => i18n.changeLanguage("pl"));
+    expect(screen.getByText(/Nie udało się potwierdzić wszystkich szczegółów tej propozycji/)).toBeTruthy();
+    expect(screen.queryByText("Walking distance couldn't be compared reliably for this alternative.")).toBeNull();
+    expect(screen.getByRole("button", { name: /Zastosuj zmiany/ })).toBeTruthy();
+    expect(onGenerate).not.toHaveBeenCalled(); expect(onApply).not.toHaveBeenCalled();
+  });
   it("disables submission until a preference or instruction is chosen", () => {
     renderDialog();
 
@@ -109,7 +118,7 @@ describe("RegenerateDayDialog", () => {
     expect(screen.getByText("Park")).toBeTruthy();
     expect(screen.getByText("Museum")).toBeTruthy();
     expect(
-      screen.getByText("Walking distance couldn't be compared reliably for this alternative."),
+      screen.getByText("Some details of this alternative could not be verified. Review the schedule, opening hours, route and costs before applying."),
     ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Apply changes/ }));

@@ -1,3 +1,5 @@
+import { formatDate } from "../i18n/format";
+import i18n from "../i18n";
 export type NotificationType = "rain" | "budget" | "trip";
 
 export interface Notification {
@@ -26,9 +28,8 @@ function daysAgo(days: number): string {
 export const NOTIFICATIONS: Notification[] = [
   {
     id: "notif-1",
-    title: "Rain expected in Prague tomorrow",
-    message:
-      "We refined the Day 2 route around the rain forecast. Your 3 stops stay within a 10-minute walk.",
+    get title() { return i18n.t("rainExpectedInPragueTomorrow", { ns: "navigation/notifications" }); },
+    get message() { return i18n.t("weRefinedTheDay2RouteAroundThe", { ns: "navigation/notifications" }); },
     createdAt: minutesAgo(12),
     city: "Prague",
     tripId: "prague",
@@ -37,9 +38,8 @@ export const NOTIFICATIONS: Notification[] = [
   },
   {
     id: "notif-2",
-    title: "Your Prague itinerary is ready",
-    message:
-      "Day 1 is confirmed: Old Town square, the Astronomical Clock and a spot of Czech food. Enjoy!",
+    get title() { return i18n.t("yourPragueItineraryIsReady", { ns: "navigation/notifications" }); },
+    get message() { return i18n.t("day1IsConfirmedOldTownSquareThe", { ns: "navigation/notifications" }); },
     createdAt: hoursAgo(2),
     city: "Prague",
     tripId: "prague",
@@ -48,9 +48,8 @@ export const NOTIFICATIONS: Notification[] = [
   },
   {
     id: "notif-3",
-    title: "You're close to your Rome budget",
-    message:
-      "Spending is 12% over the daily plan. Swapping two meals to market snacks keeps you on track.",
+    get title() { return i18n.t("youReCloseToYourRomeBudget", { ns: "navigation/notifications" }); },
+    get message() { return i18n.t("spendingIs12OverTheDailyPlanSwapping", { ns: "navigation/notifications" }); },
     createdAt: hoursAgo(5),
     city: "Rome",
     tripId: "rome",
@@ -59,9 +58,8 @@ export const NOTIFICATIONS: Notification[] = [
   },
   {
     id: "notif-4",
-    title: "Price drop on your Paris flight",
-    message:
-      "Round-trip tickets for your Feb trip dropped by €24. The new fare is available until tomorrow.",
+    get title() { return i18n.t("priceDropOnYourParisFlight", { ns: "navigation/notifications" }); },
+    get message() { return i18n.t("roundTripTicketsForYourFebTripDropped", { ns: "navigation/notifications" }); },
     createdAt: daysAgo(1),
     city: "Paris",
     tripId: "paris",
@@ -70,9 +68,8 @@ export const NOTIFICATIONS: Notification[] = [
   },
   {
     id: "notif-5",
-    title: "New walking-friendly route for Lisbon",
-    message:
-      "We found a shorter path between Belém and LX Factory that saves about 20 minutes of walking.",
+    get title() { return i18n.t("newWalkingFriendlyRouteForLisbon", { ns: "navigation/notifications" }); },
+    get message() { return i18n.t("weFoundAShorterPathBetweenBelM", { ns: "navigation/notifications" }); },
     createdAt: daysAgo(8),
     city: "Lisbon",
     tripId: "lisbon",
@@ -81,9 +78,8 @@ export const NOTIFICATIONS: Notification[] = [
   },
   {
     id: "notif-6",
-    title: "Welcome to Triply",
-    message:
-      "Plan a trip in seconds — describe your dream day and we'll build a walkable itinerary for you.",
+    get title() { return i18n.t("welcomeToTriply", { ns: "navigation/notifications" }); },
+    get message() { return i18n.t("welcomeMessage", { ns: "navigation/notifications" }); },
     createdAt: daysAgo(23),
     notificationType: "trip",
     isRead: true,
@@ -112,19 +108,17 @@ export function formatNotificationDate(createdAt: string): string {
 
   if (isSameDay(date, now)) {
     if (diffMinutes < 60) {
-      return diffMinutes <= 1 ? "1 min ago" : `${diffMinutes} min ago`;
+      return new Intl.RelativeTimeFormat(i18n.resolvedLanguage, { numeric: "always", style: "short" }).format(-Math.max(1, diffMinutes), "minute");
     }
     const diffHours = Math.floor(diffMinutes / 60);
-    return diffHours === 1 ? "1 hr ago" : `${diffHours} hrs ago`;
+    return new Intl.RelativeTimeFormat(i18n.resolvedLanguage, { numeric: "always", style: "short" }).format(-diffHours, "hour");
   }
 
   if (isYesterday(date)) {
-    return "Yesterday";
+    return i18n.t("yesterday", { ns: "navigation/notifications" });
   }
 
-  return `${date.getDate()} ${date.toLocaleString("en-GB", {
-    month: "short",
-  })}, ${date.getFullYear()}`;
+  return formatDate(date, { year: "numeric", month: "short", day: "numeric" });
 }
 
 export function groupNotificationDate(createdAt: string): "today" | "earlier" {

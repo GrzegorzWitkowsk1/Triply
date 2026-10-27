@@ -24,7 +24,7 @@ test("AI preview adds only selected items and preserves packed manual items acro
   await generate(page); await dialog(page).getByText("Why Walking shoes?").click(); await expect(dialog(page).getByText(/Comfort for your planned visit/)).toBeVisible();
   await expect(dialog(page).getByRole("checkbox", { name: /Passport/ })).toBeDisabled();
   await dialog(page).getByRole("checkbox", { name: /Phone charger/ }).uncheck();
-  await dialog(page).getByRole("button", { name: "Add 2 selected items" }).click();
+  await dialog(page).getByRole("button", { name: "Add selected items (2)" }).click();
   await expect(dialog(page)).toBeHidden();
   await expect(page.getByRole("checkbox", { name: "Walking shoes", exact: true })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Phone charger", exact: true })).toHaveCount(0);
@@ -36,7 +36,7 @@ test("AI preview adds only selected items and preserves packed manual items acro
 test("provider timeout preserves manual items and offers a working retry", async ({ page, user, harness }) => {
   await login(page, user); await page.goto(`/trips/${user.tripId}/equipment`); await add(page, "Passport");
   await harness.command("/packing-provider-timeout"); await page.getByRole("button", { name: /Generate packing list|Refresh suggestions/ }).click();
-  await expect(dialog(page).getByRole("alert")).toContainText("too long");
+  await expect(dialog(page).getByRole("alert")).toContainText("Something went wrong. Please try again.");
   expect((await harness.trip(user.tripId!)).equipment.map(item => item.name)).toEqual(["Passport"]);
   await dialog(page).getByRole("button", { name: "Try again" }).click();
   await expect(dialog(page).getByRole("checkbox", { name: /Walking shoes/ })).toBeVisible();
@@ -53,7 +53,7 @@ test("two same-identity contexts preserve concurrent manual additions and dedupl
   try {
     const other = await secondContext.newPage(); await other.goto(`http://127.0.0.1:5174/trips/${user.tripId}/equipment`);
     await add(other, "Phone charger"); await add(other, "Manual hat");
-    await dialog(page).getByRole("button", { name: "Add 4 selected items" }).click(); await expect(dialog(page)).toBeHidden();
+    await dialog(page).getByRole("button", { name: "Add selected items (4)" }).click(); await expect(dialog(page)).toBeHidden();
     await page.reload();
     await expect(page.getByRole("checkbox", { name: "Manual hat", exact: true })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "Phone charger", exact: true })).toHaveCount(1);
@@ -66,10 +66,10 @@ test("guest packing uses its own quota and survives import to an account", async
   const session = await api(page, "/api/auth/session?identity=1"); const guestId = session.body.guest.id as string;
   const { tripId } = await harness.command<{ tripId: string }>("/guest-attraction-trip", { guestId });
   await page.goto(`/trips/${tripId}/equipment`); await generate(page);
-  await dialog(page).getByRole("button", { name: "Add 4 selected items" }).click(); await expect(dialog(page)).toBeHidden();
+  await dialog(page).getByRole("button", { name: "Add selected items (4)" }).click(); await expect(dialog(page)).toBeHidden();
   await page.reload(); await expect(page.getByRole("checkbox", { name: "Walking shoes", exact: true })).toBeVisible();
   for (let i = 1; i < 3; i++) { await generate(page); await dialog(page).getByRole("button", { name: "Cancel" }).click(); await expect(dialog(page)).toBeHidden(); }
-  await page.getByRole("button", { name: /Generate packing list|Refresh suggestions/ }).click(); await expect(dialog(page).getByRole("alert")).toContainText("packing generations");
+  await page.getByRole("button", { name: /Generate packing list|Refresh suggestions/ }).click(); await expect(dialog(page).getByRole("alert")).toContainText("Your packing suggestion allowance is used.");
   await dialog(page).getByRole("button", { name: "Close" }).click();
   expect((await api(page, "/api/guest/usage")).body).toMatchObject({ aiGenerationsRemaining: 2, dayRegenerationsRemaining: 2 });
   const outsider = await browser.newContext();

@@ -1,3 +1,6 @@
+import { errorMessage as localizedError } from "../i18n/errors";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import {
   AccountBalanceWalletOutlined,
   Add,
@@ -20,6 +23,7 @@ const FILTER_STATUS: Record<TripFilter, TripStatus | undefined> = {
 };
 
 export default function MyTripsPage() {
+  const { t } = useTranslation("trips", { i18n });
   const usage = useGuestUsage();
   const storageBlocked = usage.isGuest && (!usage.data || usage.data.tripCount >= usage.data.tripLimit);
   const deletion = useDeleteTrip();
@@ -32,7 +36,7 @@ export default function MyTripsPage() {
 
   const trips = useMemo(
     () => buildTripCards(tripsQuery.data ?? []),
-    [tripsQuery.data],
+    [tripsQuery.data, i18n.resolvedLanguage],
   );
 
   const spendTotal = trips.reduce(
@@ -43,14 +47,13 @@ export default function MyTripsPage() {
   return (
     <div className="my-trips-page">
       <div className="my-trips-inner">
-        <p className="my-trips-eyebrow">Your adventures</p>
+        <p className="my-trips-eyebrow">{t("eyebrow")}</p>
 
         <div className="my-trips-head">
           <div>
-            <h1 className="my-trips-title">My trips</h1>
+            <h1 className="my-trips-title">{t("title")}</h1>
             <p className="my-trips-subtitle">
-              Pick up where you left off, or start something new.
-            </p>
+              {i18n.t("pickUpWhereYouLeftOffOrStart", { ns: "trips" })}</p>
           </div>
           <button
             type="button"
@@ -59,7 +62,7 @@ export default function MyTripsPage() {
             onClick={() => navigate("/home", { state: { focusPrompt: true } })}
           >
             <Add fontSize="small" />
-            Plan a new trip
+            {t("planNew")}
           </button>
         </div>
 
@@ -77,18 +80,18 @@ export default function MyTripsPage() {
         </div>
 
         <div className="my-trips-grid">
-          {tripsQuery.isPending && <p className="my-trips-subtitle">Loading trips…</p>}
+          {tripsQuery.isPending && <p className="my-trips-subtitle">{i18n.t("loadingTrips", { ns: "trips" })}</p>}
 
           {tripsQuery.isError && (
-            <p className="my-trips-subtitle">{tripsQuery.error.message}</p>
+            <p className="my-trips-subtitle">{localizedError(tripsQuery.error)}</p>
           )}
           {tripsQuery.isFetching && !tripsQuery.isPending && (
-            <p className="my-trips-subtitle">Refreshing…</p>
+            <p className="my-trips-subtitle">{i18n.t("refreshing", { ns: "trips" })}</p>
           )}
 
           {trips.map((trip, i) => (
             <div key={trip.id}><MyTripCard trip={trip} isFirst={i === 0} />
-              <button type="button" className="auth-link" onClick={() => { deletion.reset(); setDeleteId(trip.id); }} aria-label={`Delete trip ${trip.city}`}>Delete trip</button>
+              <button type="button" className="auth-link" onClick={() => { deletion.reset(); setDeleteId(trip.id); }} aria-label={i18n.t("deleteTrip2", { ns: "trips", value0: trip.city })}>{i18n.t("deleteTrip", { ns: "trips" })}</button>
             </div>
           ))}
 
@@ -101,10 +104,9 @@ export default function MyTripsPage() {
             <span className="empty-trip-icon">
               <Add />
             </span>
-            <span className="empty-trip-title">Plan a new trip</span>
+            <span className="empty-trip-title">{t("planNew")}</span>
             <span className="empty-trip-desc">
-              Describe where you're going and Triply builds the whole itinerary.
-            </span>
+              {i18n.t("describeWhereYouReGoingAndTriplyBuilds", { ns: "trips" })}</span>
           </button>
         </div>
 
@@ -114,9 +116,9 @@ export default function MyTripsPage() {
               <AccountBalanceWalletOutlined />
             </span>
             <div className="spend-copy">
-              <span className="spend-title">Total planned spend</span>
+              <span className="spend-title">{i18n.t("totalPlannedSpend", { ns: "trips" })}</span>
               <span className="spend-sub">
-                Across {trips.length} upcoming trips
+                {i18n.t("upcomingCount", { ns: "trips", count: trips.length })}
               </span>
             </div>
           </div>
@@ -126,12 +128,11 @@ export default function MyTripsPage() {
         </div>
       </div>
       <Dialog open={deleteId !== null} onClose={() => { if (!deletion.isPending) setDeleteId(null); }} aria-labelledby="delete-trip-title">
-        <DialogTitle id="delete-trip-title">Delete this trip?</DialogTitle>
-        <DialogContent>This permanently deletes the trip and its public share link. Deletion does not restore AI quota.
-          {deletion.error && <p role="alert">{deletion.error.message}</p>}
+        <DialogTitle id="delete-trip-title">{i18n.t("deleteThisTrip", { ns: "trips" })}</DialogTitle>
+        <DialogContent>{i18n.t("thisPermanentlyDeletesTheTripAndItsPublic", { ns: "trips" })}{deletion.error && <p role="alert">{localizedError(deletion.error)}</p>}
         </DialogContent>
-        <DialogActions><Button disabled={deletion.isPending} onClick={() => setDeleteId(null)}>Cancel</Button>
-          <Button color="error" disabled={deletion.isPending} onClick={() => { if (deleteId) deletion.mutate(deleteId, { onSuccess: () => setDeleteId(null) }); }}>{deletion.isPending ? "Deleting…" : "Delete trip"}</Button>
+        <DialogActions><Button disabled={deletion.isPending} onClick={() => setDeleteId(null)}>{t("cancel", { ns: "common" })}</Button>
+          <Button color="error" disabled={deletion.isPending} onClick={() => { if (deleteId) deletion.mutate(deleteId, { onSuccess: () => setDeleteId(null) }); }}>{deletion.isPending ? i18n.t("deleting", { ns: "trips" }) : i18n.t("deleteTrip", { ns: "trips" })}</Button>
         </DialogActions>
       </Dialog>
     </div>

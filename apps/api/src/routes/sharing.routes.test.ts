@@ -74,7 +74,7 @@ describe("secure public sharing", () => {
     const { enable, read, trip } = await setup(); const created = await enable();
     const result = await read(created.body.token); expect(result.status).toBe(200);
     expect(result.headers["cache-control"]).toBe("no-store"); expect(result.headers["referrer-policy"]).toBe("no-referrer");
-    expect(Object.keys(result.body).sort()).toEqual(["destination", "country", "startDate", "endDate", "durationDays", "location", "weather", "days"].sort());
+    expect(Object.keys(result.body).sort()).toEqual(["contentLocale", "destination", "country", "startDate", "endDate", "durationDays", "location", "weather", "days"].sort());
     expect(result.body.days[0].activities[0]).toMatchObject({ title: "Museum", stopIndex: 0, startTime: "2030-06-01T09:00" });
     expect(result.body.days[0].stops[0]).toMatchObject({ description: "Public museum description", address: "Public address" });
     expect(result.body.days[0].warnings).toEqual(["opening-hours-unknown"]);

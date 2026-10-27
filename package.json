@@ -17,7 +17,9 @@
     "test:e2e": "bun run --cwd packages/shared build && playwright test",
     "test:e2e:headed": "bun run test:e2e --headed",
     "test:e2e:report": "playwright show-report",
-    "typecheck:e2e": "bun run --cwd apps/api typecheck:e2e"
+    "typecheck:e2e": "bun run --cwd apps/api typecheck:e2e",
+    "validate:translations": "bun run --cwd apps/web validate:translations",
+    "audit:translations": "bun run --cwd apps/web audit:translations"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

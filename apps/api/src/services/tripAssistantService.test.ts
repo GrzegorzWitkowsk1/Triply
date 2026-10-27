@@ -164,3 +164,17 @@ describe("assistant orchestration", () => {
     await expect(interpretAssistantIntent({ generate: async () => ({ ...baseIntent, operation: "drop" }) },{})).rejects.toThrow();
   });
 });
+
+it("uses each message's UI locale without changing history or trip content language", async () => {
+  trip.contentLocale = "en";
+  const original = trip.toObject();
+  const pl = await sendAssistantMessage(tripId, userId, { message: "Ile jest atrakcji?", locale: "pl" });
+  expect(pl.response.message).toContain("Liczba zaplanowanych atrakcji: 3");
+  expect(mocks.generate.mock.calls[0][0].systemInstruction).toContain("natural Polish");
+  const en = await sendAssistantMessage(tripId, userId, { message: "How many attractions?", locale: "en" });
+  expect(en.response.message).toContain("3 scheduled attractions");
+  expect(en.messages.map(message => message.text)).toEqual(expect.arrayContaining(pl.messages.map(message => message.text)));
+  expect(trip.toObject()).toEqual(original);
+  const explicit = await sendAssistantMessage(tripId, userId, { message: "Please respond in English: how many?", locale: "pl" });
+  expect(explicit.response.message).toContain("3 scheduled attractions");
+});

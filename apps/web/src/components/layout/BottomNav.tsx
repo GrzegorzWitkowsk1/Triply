@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import {
   ExploreOutlined,
   FavoriteBorderOutlined,
@@ -15,6 +17,7 @@ const ITEMS = [
 ];
 
 export default function BottomNav() {
+  const { t } = useTranslation("navigation", { i18n });
   const { isGuest } = useAuth();
   return (
     <nav className="bottom-nav">
@@ -29,7 +32,7 @@ export default function BottomNav() {
             }
           >
             <Icon />
-            <span>{item.label}</span>
+            <span>{t(item.label)}</span>
           </NavLink>
         );
       })}

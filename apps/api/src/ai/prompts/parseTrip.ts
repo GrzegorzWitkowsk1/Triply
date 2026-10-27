@@ -1,3 +1,4 @@
+import { languageInstruction } from "./language.js";
 import { BUDGET_TYPE_VALUES, interestLabel, PACE_VALUES } from "@triply/shared";
 import { nullableSchema, type AIRequest, type AISchema, type AnalyzeTripInput } from "../types.js";
 
@@ -99,6 +100,7 @@ export function buildSystemInstruction(): string {
     "You are precise and never invent details the traveller did not give or clearly imply.",
     "Rules:",
     "- Use null for anything unknown. An empty guess is worse than null because the app asks the traveller to fill gaps.",
+    "- destination and country are canonical geocoding inputs, not prose: use established English place and country names regardless of content locale (for example Rome, Italy or Paris, France). This field-specific canonicalization takes priority over preserving verbatim input. Preserve official venue names in notes.",
     "- Resolve relative dates such as \"next Friday\" or \"in two weeks\" against today's date, and always return YYYY-MM-DD.",
     "- When both startDate and endDate are known, set durationDays to the inclusive day count.",
     "- Interpret \"€500\", \"500 euros\" and \"$1,200\" style amounts. Never set amount to null just because the currency word is not English — extract the number regardless.",
@@ -129,7 +131,7 @@ export function buildPrompt(prompt: string, badges: string[]): string {
 
 export function buildTripAnalysisRequest(input: AnalyzeTripInput): AIRequest {
   return {
-    systemInstruction: buildSystemInstruction(),
+    systemInstruction: `${buildSystemInstruction()}\n${languageInstruction(input.locale)}`,
     prompt: buildPrompt(input.prompt, input.badges),
     schema: TRIP_ANALYSIS_SCHEMA,
   };

@@ -287,3 +287,29 @@ it("allows guest bulk/status without consuming quota and denies cross-guest item
   expect(await mongoose.connection.db!.collection("guest_usage").countDocuments()).toBe(0);
   expect(aiService.generatePacking).not.toHaveBeenCalled();
 });
+
+it.each(["en", "pl"] as const)("packing API captures %s and signs a consistent preview for apply", async locale => {
+  const a = await guest(); const trip = await seed(a.owner);
+  trip.contentLocale = locale === "pl" ? "en" : "pl"; await trip.save();
+  vi.mocked(aiService.generatePacking).mockResolvedValueOnce({ items: [{ name: locale === "pl" ? "Ładowarka do telefonu" : "Phone charger", category: "electronics", count: 1, reason: locale === "pl" ? "Przyda się w podróży." : "Useful during travel." }], warnings: [] });
+  const result = await post(a.cookie, "/api/trips/" + trip.id + "/equipment/generate", { locale }, "same-request");
+  expect(result.statusCode, result.body).toBe(200);
+  expect(aiService.generatePacking).toHaveBeenCalledWith(expect.objectContaining({ locale }), expect.any(AbortSignal));
+  const preview = result.json() as PackingPreview;
+  expect(preview.contextVersion).toBe(packingContextVersion(trip, locale));
+  expect((await post(a.cookie, "/api/trips/" + trip.id + "/equipment/generate", { locale: locale === "pl" ? "en" : "pl" }, "same-request")).statusCode).toBe(409);
+  const applied = await post(a.cookie, "/api/trips/" + trip.id + "/equipment/apply", { token: preview.token, selectedIds: [preview.suggestions[0]!.id] });
+  expect(applied.statusCode, applied.body).toBe(200);
+  expect(applied.json().added[0].name).toBe(preview.suggestions[0]!.name);
+  expect((await TripModel.findById(trip.id))?.contentLocale).toBe(trip.contentLocale);
+  expect((await packingContextStatus(trip.id, a.owner)).outdated).toBe(false);
+});
+it("validates packing locale before calling AI and preserves it across bounded retries", async () => {
+  const a = await guest(); const trip = await seed(a.owner);
+  expect((await post(a.cookie, "/api/trips/" + trip.id + "/equipment/generate", { locale: "de" })).statusCode).toBe(400);
+  expect(aiService.generatePacking).not.toHaveBeenCalled();
+  vi.mocked(aiService.generatePacking).mockRejectedValueOnce(new AiError("unavailable", 503, { code: "unavailable" })).mockResolvedValueOnce(output());
+  await generatePacking(trip.id, a.owner, async () => {}, undefined, "pl");
+  expect(aiService.generatePacking).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(aiService.generatePacking).mock.calls.map(call => call[0].locale)).toEqual(["pl", "pl"]);
+});

@@ -1,3 +1,4 @@
+import { contentLocale } from "@triply/shared";
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import type { HttpRoute, HttpRequest } from "../http/types.js";
 import { Types } from "mongoose";
@@ -167,7 +168,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       const effectivePrompt = selectedDestination
         ? `The selected destination is ${selectedDestination.city}, ${selectedDestination.country}. This selection overrides any other destination in the request. Other trip preferences: ${request.prompt}`
         : request.prompt;
-      const parsedAnalysis = await aiService.parseTrip({ prompt: effectivePrompt, badges });
+      const parsedAnalysis = await aiService.parseTrip({ prompt: effectivePrompt, badges, locale: contentLocale(request.locale) });
       const analysis = applyProfilePreferences(parsedAnalysis, {
         ...preferences, pace: request.pace ?? preferences.pace,
         maxWalkingDistanceKm: request.maxWalkingDistanceKm ?? preferences.maxWalkingDistanceKm,
@@ -184,6 +185,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       }
 
       const draft = await upsertTripDraft({
+        locale: contentLocale(request.locale),
         userId: owner,
         ...(reservation ? { draftId: reservation.id } : selectedDestination ? { draftId: new Types.ObjectId().toHexString() } : {}),
         prompt: effectivePrompt,
@@ -591,7 +593,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
           let customInstructionWarning: string | null = null;
           if (customInstructions) {
             await start();
-            try { preferences = mergePreferences(preferences, await aiService.parseRegeneration({ customInstructions, selectedPreferences: preferences })); }
+            try { preferences = mergePreferences(preferences, await aiService.parseRegeneration({ locale: contentLocale(trip.contentLocale), customInstructions, selectedPreferences: preferences })); }
             catch { customInstructionWarning = "We couldn't interpret your custom instructions, so we used your selected preferences."; }
           }
           return createDayRegenerationPreview({ trip, dayIndex, preferences, customInstructions,
@@ -613,6 +615,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       if (customInstructions.length > 0) {
         try {
           const interpreted = await aiService.parseRegeneration({
+            locale: contentLocale(trip.contentLocale),
             customInstructions,
             selectedPreferences: parsed.data.preferences,
           });

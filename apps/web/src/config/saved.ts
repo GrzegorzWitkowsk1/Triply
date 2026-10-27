@@ -1,4 +1,4 @@
-import type { SavedAttraction, SavedDestination } from "@triply/shared";
+import type { SavedAttraction, SavedDestination, SupportedLocale } from "@triply/shared";
 
 export const SAVED_TYPES = ["all", "destinations", "attractions"] as const;
 export type SavedType = typeof SAVED_TYPES[number];
@@ -28,9 +28,9 @@ export function savedCollection(destinations: readonly SavedDestination[], attra
     ...attractions.map(row => [`attraction:${row.attractionKey}`, { type: "attractions", key: `attraction:${row.attractionKey}`, row }] as const),
   ]).values()];
 }
-const collator = new Intl.Collator("en", { sensitivity: "base", numeric: true });
 const savedTime = (item: SavedItem) => Date.parse(item.row.createdAt) || 0;
-export function filterSaved(items: readonly SavedItem[], type: SavedType, query: string, sort: SavedSort): SavedItem[] {
+export function filterSaved(items: readonly SavedItem[], type: SavedType, query: string, sort: SavedSort, locale: SupportedLocale = "en"): SavedItem[] {
+  const collator = new Intl.Collator(locale, { sensitivity: "base", numeric: true });
   const words = normalizeSavedSearch(query).split(" ").filter(Boolean);
   return items.filter(item => {
     if (type !== "all" && item.type !== type) return false;

@@ -1,3 +1,4 @@
+import { contentLocale, type SupportedLocale } from "@triply/shared";
 import { ownerFilter, storedOwner, guestOwnerId } from "../middleware/tripIdentity.js";
 import { savedAttractionIdentity, savedAttractionPlace } from "./savedAttractionIdentity.js";
 import { validateGuestDuration } from "./guestLimits.js";
@@ -207,6 +208,7 @@ export function mergeConfirmedFields(
 }
 
 export interface UpsertTripDraftInput {
+  locale?: SupportedLocale;
   userId: string;
   draftId?: string;
   prompt: string;
@@ -284,6 +286,7 @@ function sameAttractionsQuery(
   }
 
   return (
+    contentLocale(a.locale) === contentLocale(b.locale) &&
     a.lat === b.lat &&
     a.lng === b.lng &&
     a.interests.length === b.interests.length &&
@@ -339,8 +342,10 @@ export async function ensureAttractions(
   fetchedAt: Date | null,
   query: AttractionsQueryRecord | null,
   weather: readonly TripDayWeather[],
+  locale: SupportedLocale = "en",
 ): Promise<AttractionsState> {
-  const nextQuery = buildAttractionsQuery(analysis);
+  const baseQuery = buildAttractionsQuery(analysis);
+  const nextQuery = baseQuery ? { ...baseQuery, locale: contentLocale(locale) } : null;
 
   if (!nextQuery) {
     return { attractions: [], fetchedAt: null, query: null };
@@ -354,7 +359,7 @@ export async function ensureAttractions(
   }
 
   const fresh = await fetchAttractions(nextQuery.lat, nextQuery.lng, nextQuery.interests, {
-    weather,
+    weather, locale,
   });
 
   if (fresh) {
@@ -384,6 +389,7 @@ export async function backfillTripAttractions(trip: TripDocument): Promise<void>
     trip.attractionsFetchedAt,
     trip.attractionsQuery,
     trip.weather,
+    contentLocale(trip.contentLocale),
   );
 
   const attractionsUnchanged =
@@ -440,6 +446,7 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
     existing?.attractionsFetchedAt ?? null,
     existing?.attractionsQuery ?? null,
     weather.days,
+    contentLocale(input.locale),
   );
 
   const draft = await TripModel.findOneAndUpdate(
@@ -447,6 +454,7 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
       ...(existing ? { _id: existing._id, updatedAt: existing.updatedAt } : input.draftId ? { _id: input.draftId } : {}) },
     {
       $set: {
+        contentLocale: contentLocale(input.locale),
         prompt: input.prompt,
         badges: input.badges,
         analysis: analysis,
@@ -561,6 +569,7 @@ export function toTripAnalysisResult(draft: TripDocument): TripAnalysisResult {
   const gaps = missingFields(analysis, draft.confirmedFields);
 
   return {
+    contentLocale: contentLocale(draft.contentLocale),
     draftId: draft._id.toString(),
     analysis,
     missingFields: gaps,
@@ -584,6 +593,7 @@ export function toTripSummary(trip: TripDocument): TripSummary {
   const analysis = trip.analysis;
 
   return {
+    contentLocale: contentLocale(trip.contentLocale),
     id: trip._id.toString(),
     status: trip.status,
     prompt: trip.prompt,

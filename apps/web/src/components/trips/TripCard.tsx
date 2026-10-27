@@ -1,3 +1,6 @@
+import { formatCurrency, formatNumber } from "../../i18n/format";
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import { AccountBalanceWalletOutlined, ArrowForwardOutlined, RouteOutlined } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { findCityPhoto } from "../../config/cityPhotos";
@@ -12,11 +15,12 @@ interface TripCardProps {
   isFirst: boolean;
 }
 
-function formatBudget(n: number): string {
-  return `€${n}`;
+function formatBudget(n: number, currency?: string | null): string {
+  return currency ? formatCurrency(n, currency, { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : formatNumber(n);
 }
 
 export default function TripCard({ trip, isFirst }: TripCardProps) {
+  useTranslation();
   const navigate = useNavigate();
   const photo = findCityPhoto(trip.city, trip.country);
   const destination = findDestinationByCity(trip.city, trip.country);
@@ -47,7 +51,7 @@ export default function TripCard({ trip, isFirst }: TripCardProps) {
         <div className="trip-card-locale">
           <span className="trip-city">{trip.city}</span>
           <span className="trip-locale-sub">
-            {trip.country} · {trip.days} days
+            {trip.country} · {i18n.t("days", { ns: "common", count: trip.days })}
           </span>
         </div>
       </div>
@@ -57,8 +61,8 @@ export default function TripCard({ trip, isFirst }: TripCardProps) {
           <span className="trip-date">{trip.dateLabel}</span>
           {trip.budgetUsed !== null && (
             <span className="trip-budget">
-              {formatBudget(trip.budgetUsed)}
-              {hasBudgetRatio && `/${formatBudget(trip.budgetExpected as number)}`}
+              {formatBudget(trip.budgetUsed, trip.currency)}
+              {hasBudgetRatio && `/${formatBudget(trip.budgetExpected as number, trip.currency)}`}
             </span>
           )}
         </div>
@@ -68,7 +72,7 @@ export default function TripCard({ trip, isFirst }: TripCardProps) {
             {hasProgress && (
               <span className="trip-activities">
                 <RouteOutlined className="trip-route" fontSize="small" />
-                {trip.activities} activities
+                {i18n.t("activityCount", { ns: "trips", count: trip.activities })}
               </span>
             )}
             {hasBudgetRatio && (
@@ -77,7 +81,7 @@ export default function TripCard({ trip, isFirst }: TripCardProps) {
                   fontSize="small"
                   sx={{ color: overBudget ? "#e5484d" : "#43b047" }}
                 />
-                {overBudget ? "over budget" : "On budget"}
+                {overBudget ? i18n.t("overBudget", { ns: "trips" }) : i18n.t("onBudget", { ns: "trips" })}
               </span>
             )}
           </div>
@@ -94,8 +98,7 @@ export default function TripCard({ trip, isFirst }: TripCardProps) {
           type="button"
           className={`trip-btn${isFirst ? " is-contained" : ""}`}
         >
-          View trip
-          <ArrowForwardOutlined fontSize="small" />
+          {i18n.t("viewTrip", { ns: "trips" })}<ArrowForwardOutlined fontSize="small" />
         </button>
       </div>
     </article>

@@ -23,7 +23,7 @@ test("owner and anonymous visitor download valid PDFs; revocation prevents furth
     await page.getByRole("button", { name: "Disable sharing", exact: true }).click(); await page.getByRole("button", { name: "Confirm disable", exact: true }).click();
     await expect(page.getByText("Sharing disabled", { exact: true })).toBeVisible();
     // A visitor with stale displayed data must still fail at the server.
-    await visitor.getByRole("button", { name: "Download PDF", exact: true }).click(); await expect(visitor.getByRole("alert")).toContainText("Shared trip not found");
+    await visitor.getByRole("button", { name: "Download PDF", exact: true }).click(); await expect(visitor.getByRole("alert")).toContainText("This item is unavailable or has been removed.");
     await visitor.reload(); await expect(visitor.getByRole("alert")).toContainText("unavailable"); await expect(visitor.getByRole("button", { name: "Download PDF" })).toHaveCount(0);
   } finally { await anonymous.close(); }
 });

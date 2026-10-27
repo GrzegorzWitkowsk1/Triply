@@ -1,0 +1,9 @@
+{
+  "conditional": "Conditional admission fee",
+  "free": "Free admission",
+  "paidUnknown": "Paid admission — price unavailable",
+  "unknown": "Admission price unavailable",
+  "price_per_person": "{{amount}} admission per person",
+  "price_per_group": "{{amount}} admission per group",
+  "price_unknown": "{{amount}} admission (unit unconfirmed)"
+}

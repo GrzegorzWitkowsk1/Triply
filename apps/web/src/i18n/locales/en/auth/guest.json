@@ -1,0 +1,20 @@
+{
+  "welcomeToTriply": "Welcome to Triply",
+  "youReBrowsingAsAGuestAccountSettings": "You’re browsing as a guest. Account settings and notifications require an account.",
+  "youCanPlanAndEditTripsAsA": "You can plan and edit trips as a guest. Create an account or log in to access account features.",
+  "loading": "Loading guest limits…",
+  "usage": "Guest usage",
+  "mode": "Guest Mode",
+  "tripsUsed": "Trips: {{used}} / {{limit}}",
+  "generationsLeft": "AI generations remaining: {{remaining}} / {{limit}}",
+  "regenerationsLeft": "AI day regenerations remaining: {{remaining}} / {{limit}}",
+  "maxDays_one": "Up to {{count, number}} calendar day per trip",
+  "maxDays_few": "Up to {{count, number}} calendar days per trip",
+  "maxDays_many": "Up to {{count, number}} calendar days per trip",
+  "maxDays_other": "Up to {{count, number}} calendar days per trip",
+  "tripLimit": "You've reached the {{count, number}}-trip guest limit. Delete an existing trip to free a slot, or <account>create an account</account>. <trips>Open your trips</trips>.",
+  "generationLimit": "You've used your {{count, number}} itinerary generations for the last 24 hours. You can still view and edit your trips.",
+  "dayLimit": "Your AI day-regeneration allowance is used for the last 24 hours. Manual edits and preference-only previews remain available.",
+  "nextAllowance": "Next allowance: {{date}}.",
+  "importHint": "After signing in, you can choose to import your guest trips."
+}

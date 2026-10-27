@@ -1,3 +1,5 @@
+import { contentLocale } from "@triply/shared";
+import { localized, assistantResponseLocale, localizeGeneratedDay } from "./contentLanguage.js";
 import { randomUUID } from "node:crypto";
 import { interpretBudgetRequest } from "./assistantBudget.js";
 import { mutateExpense } from "./expenses.js";
@@ -29,12 +31,14 @@ export async function getAssistantConversation(tripId: string, userId: string, c
 }
 
 export async function sendAssistantMessage(tripId: string, userId: string, input: AssistantMessageRequest): Promise<AssistantMessageResult> {
+  const locale = assistantResponseLocale(input.message, contentLocale(input.locale));
+  const say = localized(locale);
   const trip = await loadEditableTrip(tripId, userId);
   const stored = await conversation(tripId, userId, input.conversationId);
   const revision = stored.revision;
   let response: AssistantResponse;
   try {
-    const budgetIntent = interpretBudgetRequest(trip, input.message, input.selectedDayId);
+    const budgetIntent = interpretBudgetRequest(trip, input.message, input.selectedDayId, locale);
     if (budgetIntent) {
       stored.pending = null;
       stored.prepared = null;
@@ -46,13 +50,13 @@ export async function sendAssistantMessage(tripId: string, userId: string, input
         response = { type: "action_preview", actionType: "regenerate_day", message: budgetIntent.message, preview: await createDayRegenerationPreview({ trip, dayIndex: budgetIntent.cheaperDay, cheaper: true, preferences: { lessWalking: false, moreFood: false, relaxedPace: false, preferIndoor: false, surpriseMe: true } }) };
       } else response = { type: "message", message: budgetIntent.message };
     } else {
-    if (input.candidate && (!stored.pending || !["add", "replace"].includes(stored.pending.operation ?? ""))) throw new ItineraryEditError("There is no pending attraction selection.");
+    if (input.candidate && (!stored.pending || !["add", "replace"].includes(stored.pending.operation ?? ""))) throw new ItineraryEditError(say("There is no pending attraction selection."));
     const interpreted = input.candidate && stored.pending
       ? { ...stored.pending, ...(stored.pending.operation === "add" ? { attraction: input.candidate.attractionId } : { replacement: input.candidate.attractionId }) }
       : await interpretAssistantIntent(createAIProvider(), {
       currentDate: new Date().toISOString(), context: buildAssistantContext(trip, input.selectedDayId),
       history: stored.messages.slice(-12).map(message => ({ ...message, text: message.text.slice(0,2000) })), pending: stored.pending, lastDay: stored.lastDay, lastAttraction: stored.lastAttraction, message: input.message,
-    });
+    }, locale);
     // The pending operation is authoritative; a clarification cannot replace it.
     const intent = stored.pending && stored.pending.intent !== "clarification" && !stored.pending.multipleActions
       ? { ...interpreted, intent: stored.pending.intent, question: stored.pending.question, operation: stored.pending.operation,
@@ -69,23 +73,23 @@ export async function sendAssistantMessage(tripId: string, userId: string, input
     const attractions = resolveAttraction(trip, intent.attraction, intent.day ? day : undefined, stored.lastAttraction, false, intent.question === "opening_hours");
     const attraction = attractions.length === 1 ? attractions[0] : undefined;
     stored.prepared = null;
-    if (intent.multipleActions) response = clarify("I can prepare these changes sequentially, with confirmation for each. Which change should we handle first? Please restate that change.");
-    else if (intent.intent === "unsupported") response = { type: "message", message: "I can answer questions about this itinerary and prepare day regeneration or attraction edits. That request is outside those capabilities." };
-    else if (intent.intent === "clarification") response = clarify("Please specify the trip question or itinerary change you want.");
-    else if ((intent.day && !day) || ((intent.intent === "regenerate_day" || intent.operation === "add") && !day)) response = clarify(`Which itinerary day do you mean? Available days: ${trip.itinerary!.days.map(d => `${d.dayIndex}${d.date ? ` (${d.date})` : ""}`).join(", ")}.`);
+    if (intent.multipleActions) response = clarify(say("I can prepare these changes sequentially, with confirmation for each. Which change should we handle first? Please restate that change."));
+    else if (intent.intent === "unsupported") response = { type: "message", message: say("I can answer questions about this itinerary and prepare day regeneration or attraction edits. That request is outside those capabilities.") };
+    else if (intent.intent === "clarification") response = clarify(say("Please specify the trip question or itinerary change you want."));
+    else if ((intent.day && !day) || ((intent.intent === "regenerate_day" || intent.operation === "add") && !day)) response = clarify(say`Which itinerary day do you mean? Available days: ${trip.itinerary!.days.map(d => `${d.dayIndex}${d.date ? ` (${d.date})` : ""}`).join(", ")}.`);
     else if (intent.intent === "trip_question") {
-      if ((intent.question === "why" || (["opening_hours", "admission"].includes(intent.question) && intent.attraction)) && !attraction) response = clarify(`Which attraction do you mean? ${attractions.map(a => a.name).join(", ")}`);
-      else response = { type: "message", message: factualAnswer(trip, intent.question, intent.day || (stored.lastDay && ["schedule", "first", "last", "duration"].includes(intent.question)) ? day : undefined, attraction?.id ?? undefined, input.message) };
+      if ((intent.question === "why" || (["opening_hours", "admission"].includes(intent.question) && intent.attraction)) && !attraction) response = clarify(say`Which attraction do you mean? ${attractions.map(a => a.name).join(", ")}`);
+      else response = { type: "message", message: factualAnswer(trip, intent.question, intent.day || (stored.lastDay && ["schedule", "first", "last", "duration"].includes(intent.question)) ? day : undefined, attraction?.id ?? undefined, input.message, locale) };
     } else if (intent.intent === "regenerate_day" && day) {
-      if (!Object.values(intent.preferences).some(Boolean)) response = clarify("How should this day change: less walking, more food, relaxed pace, indoor attractions, or a different plan?");
-      else response = { type: "action_preview", actionType: "regenerate_day", message: `Review the proposed day ${day.dayIndex}. Your itinerary changes only when you apply the preview.`, preview: await createDayRegenerationPreview({ trip, dayIndex: day.dayIndex, preferences: intent.preferences }) };
+      if (!Object.values(intent.preferences).some(Boolean)) response = clarify(say("How should this day change: less walking, more food, relaxed pace, indoor attractions, or a different plan?"));
+      else response = { type: "action_preview", actionType: "regenerate_day", message: say`Review the proposed day ${day.dayIndex}. Your itinerary changes only when you apply the preview.`, preview: await createDayRegenerationPreview({ trip, dayIndex: day.dayIndex, preferences: intent.preferences }) };
     } else {
       let operation: ItineraryEditOperation | undefined;
       const target = resolveDay(trip.itinerary!.days, intent.targetDay, null);
       const newPlaces = resolveAttraction(trip, intent.operation === "add" ? intent.attraction : intent.replacement, undefined, null, true);
       if (intent.operation === "add" || intent.operation === "replace") {
         if (newPlaces.length !== 1 || !newPlaces[0].id) {
-          response = clarify(`Choose an unscheduled attraction using the existing picker, or tell me its exact name.${newPlaces.length ? ` Matches: ${newPlaces.map(p => p.name).join(", ")}.` : ""}`);
+          response = clarify(say`Choose an unscheduled attraction using the existing picker, or tell me its exact name.${newPlaces.length ? say` Matches: ${newPlaces.map(p => p.name).join(", ")}.` : ""}`);
           const pickerDay = intent.operation === "add" ? day : attraction ? trip.itinerary!.days.find(d => d.dayIndex === attraction.dayIndex) : undefined;
           if (pickerDay && response.type === "clarification") response.picker = { dayIndex: pickerDay.dayIndex, replace: intent.operation === "replace", stopCount: pickerDay.activities.filter(a => a.type === "attraction").length };
         }
@@ -104,23 +108,23 @@ export async function sendAssistantMessage(tripId: string, userId: string, input
           }
         }
       }
-      if (!operation) response ??= clarify(`Please specify ${!attraction && intent.operation !== "add" ? `the exact attraction${attractions.length ? ` (${attractions.map(a => a.name).join(", ")})` : ""}` : "the destination day or attraction to place it before"}.`);
+      if (!operation) response ??= clarify(say`Please specify ${!attraction && intent.operation !== "add" ? say`the exact attraction${attractions.length ? ` (${attractions.map(a => a.name).join(", ")})` : ""}` : say("the destination day or attraction to place it before")}.`);
       else {
         const request = itineraryEditRequestSchema.parse({ operation, expectedVersion: trip.itineraryVersion });
         const proposed = trip.toObject().itinerary!.days;
         const affected = applyItineraryOperation(proposed, trip.attractions, request);
         const provider = createRoutingProvider();
         const previewDays = [];
-        for (const index of affected) previewDays.push(await recalculateEditedDay(trip, proposed.find(d => d.dayIndex === index)!, provider));
+        for (const index of affected) previewDays.push(localizeGeneratedDay(await recalculateEditedDay(trip, proposed.find(d => d.dayIndex === index)!, provider), contentLocale(trip.contentLocale)));
         const warnings = previewDays.flatMap(d => d.warnings);
         const id = randomUUID();
         stored.prepared = { id, expiresAt: new Date(Date.now() + 30 * 60_000), request, days: previewDays, warnings };
-        const description = operation.type === "move" ? `Move ${attraction!.name} from day ${operation.sourceDayIndex} to day ${operation.targetDayIndex}`
-          : operation.type === "remove" ? `Remove ${attraction!.name} from day ${operation.dayIndex}`
-          : operation.type === "add" ? `Add ${newPlaces[0].name} to day ${operation.dayIndex}`
-          : operation.type === "replace" ? `Replace ${attraction!.name} with ${newPlaces[0].name} on day ${operation.dayIndex}`
-          : `Reorder day ${"dayIndex" in operation ? operation.dayIndex : ""}: place ${attraction!.name} before ${intent.before}`;
-        response = { type: "action_preview", actionType: "edit_itinerary", previewId: id, days: previewDays, warnings, message: `${description}. Review the proposed schedule before applying it.` };
+        const description = operation.type === "move" ? say`Move ${attraction!.name} from day ${operation.sourceDayIndex} to day ${operation.targetDayIndex}`
+          : operation.type === "remove" ? say`Remove ${attraction!.name} from day ${operation.dayIndex}`
+          : operation.type === "add" ? say`Add ${newPlaces[0].name} to day ${operation.dayIndex}`
+          : operation.type === "replace" ? say`Replace ${attraction!.name} with ${newPlaces[0].name} on day ${operation.dayIndex}`
+          : say`Reorder day ${"dayIndex" in operation ? operation.dayIndex : ""}: place ${attraction!.name} before ${intent.before}`;
+        response = { type: "action_preview", actionType: "edit_itinerary", previewId: id, days: previewDays, warnings, message: say`${description}. Review the proposed schedule before applying it.` };
       }
     }
     if (day) stored.lastDay = day.dayIndex;
@@ -128,17 +132,18 @@ export async function sendAssistantMessage(tripId: string, userId: string, input
     if (response!.type !== "clarification") stored.pending = null;
     }
   } catch (error) {
-    response = { type: "error", retryable: true, message: error instanceof ItineraryEditError ? error.message : "I couldn't prepare a reliable response. Please try again or clarify your request." };
+    response = { type: "error", retryable: true, message: error instanceof ItineraryEditError ? error.message : say("I couldn't prepare a reliable response. Please try again or clarify your request.") };
   }
-  if (response!.message.length > 12000) response!.message = `${response!.message.slice(0,11900)}\nThis answer is shortened. Ask about a specific day for its full schedule.`;
+  if (response!.message.length > 12000) response!.message = say`${response!.message.slice(0,11900)}\nThis answer is shortened. Ask about a specific day for its full schedule.`;
   const messages = [...stored.messages, { id: randomUUID(), role: "user" as const, text: input.message }, { id: randomUUID(), role: "ai" as const, text: response!.message }].slice(-40);
-  const saved = await TripAssistantConversationModel.findOneAndUpdate({ _id: stored._id, revision }, { $set: { messages, pending: stored.pending, prepared: stored.prepared, lastDay: stored.lastDay, lastAttraction: stored.lastAttraction }, $inc: { revision: 1 } }, { new: true });
+  const saved = await TripAssistantConversationModel.findOneAndUpdate({ _id: stored._id, revision }, { $set: { messages, responseLocale: locale, pending: stored.pending, prepared: stored.prepared, lastDay: stored.lastDay, lastAttraction: stored.lastAttraction }, $inc: { revision: 1 } }, { new: true });
   if (!saved) throw new ItineraryEditError("Another message is being processed. Please retry.", 409);
   return { conversationId: saved.id as string, messages, response: response! };
 }
 
 export async function confirmAssistantEdit(tripId: string, userId: string, previewId: string) {
   const stored = await conversation(tripId, userId);
+  const say = localized(contentLocale(stored.responseLocale));
   const prepared = stored.prepared;
   if (!prepared || prepared.id !== previewId || prepared.expiresAt.getTime() <= Date.now()) throw new ItineraryEditError("This preview expired or was already applied. Prepare a new one.", 410);
   // Claim once, atomically with cancellation; failed applies require a new preview.
@@ -148,7 +153,7 @@ export async function confirmAssistantEdit(tripId: string, userId: string, previ
   const result = prepared.expenseOperation
     ? { trip: await mutateExpense(tripId, userId, prepared.expenseOperation, prepared.budgetRevision!), warnings: [], affectedDayIndices: [] }
     : await editTripItinerary(tripId, userId, prepared.request!);
-  await TripAssistantConversationModel.updateOne({ _id: stored._id }, { $push: { messages: { $each: [{ id: randomUUID(), role: "ai", text: prepared.expenseOperation ? "Confirmed: your expenses were updated." : "Confirmed: your itinerary was updated." }], $slice: -40 } }, $inc: { revision: 1 } }).catch(() => { console.warn("[assistant] Applied change; conversation confirmation could not be saved."); });
+  await TripAssistantConversationModel.updateOne({ _id: stored._id }, { $push: { messages: { $each: [{ id: randomUUID(), role: "ai", text: say(prepared.expenseOperation ? "Confirmed: your expenses were updated." : "Confirmed: your itinerary was updated.") }], $slice: -40 } }, $inc: { revision: 1 } }).catch(() => { console.warn("[assistant] Applied change; conversation confirmation could not be saved."); });
   return result;
 }
 
@@ -159,7 +164,9 @@ export async function cancelAssistantAction(tripId: string, userId: string, prev
 }
 
 export async function recordAssistantRegeneration(tripId: string, userId: string) {
+  const stored = await TripAssistantConversationModel.findOne({ tripId: new Types.ObjectId(tripId), userId: new Types.ObjectId(userId) });
+  const say = localized(contentLocale(stored?.responseLocale));
   await TripAssistantConversationModel.updateOne({ tripId: new Types.ObjectId(tripId), userId: new Types.ObjectId(userId) }, {
-    $push: { messages: { $each: [{ id: randomUUID(), role: "ai", text: "Confirmed: your itinerary was updated." }], $slice: -40 } }, $inc: { revision: 1 },
+    $push: { messages: { $each: [{ id: randomUUID(), role: "ai", text: say("Confirmed: your itinerary was updated.") }], $slice: -40 } }, $inc: { revision: 1 },
   });
 }

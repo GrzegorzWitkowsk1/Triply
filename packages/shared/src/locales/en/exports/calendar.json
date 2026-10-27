@@ -1,0 +1,16 @@
+{
+  "title": "Travel itinerary",
+  "duration": "Saved duration",
+  "estimatedDuration": "Estimated visit duration",
+  "minutes": "{{value}} minutes.",
+  "hoursClosed": "Opening-hours conflict: verify before visiting.",
+  "hoursOpen": "Opening-hours check applies to the saved schedule; verify before visiting.",
+  "hoursUnknown": "Opening hours are unknown; verify before visiting.",
+  "localTime": "Destination local time: {{start}} — {{end}} ({{zone}}).",
+  "footer": "Triply · {{destination}}. Manual calendar export; no automatic synchronization.",
+  "day": "Day {{day}} · {{date}}",
+  "locationUnknown": "Location unavailable",
+  "lunch": "Lunch break",
+  "coffee": "Coffee break",
+  "dinner": "Dinner break"
+}

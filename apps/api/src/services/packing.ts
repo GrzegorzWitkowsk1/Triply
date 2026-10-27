@@ -1,3 +1,5 @@
+import { localizeExplanation } from "./contentLanguage.js";
+import { contentLocale, supportedLocaleSchema, type SupportedLocale } from "@triply/shared";
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import mongoose, { Types } from "mongoose";
 import { z } from "zod";
@@ -77,13 +79,14 @@ export function packingContext(trip: TripDocument, now = new Date()): PackingGen
     existingPackingItems: trip.equipment.slice(0, LIMITS.equipment).map(item => ({ name: text(item.name, 120), category: item.category ?? "other", count: item.count })),
   };
 }
-export function packingContextVersion(trip: TripDocument): string {
+export function packingContextVersion(trip: TripDocument, locale: SupportedLocale = "en"): string {
   const { existingPackingItems: _inventory, ...context } = packingContext(trip);
   context.trip.interests = [...context.trip.interests].sort();
-  return createHash("sha256").update(JSON.stringify([context, trip.analysis.location ?? null, trip.itineraryVersion, trip.weatherFetchedAt])).digest("hex");
+  return createHash("sha256").update(JSON.stringify([contentLocale(locale), context, trip.analysis.location ?? null, trip.itineraryVersion, trip.weatherFetchedAt])).digest("hex");
 }
 const envelopeSchema = z.object({
   version: z.literal(1), tripId: z.string(), owner: z.string(), expiresAt: z.number(), generatedAt: z.string(),
+  locale: supportedLocaleSchema.optional(),
   contextVersion: z.string(), suggestions: z.array(packingSuggestionSchema).max(PACKING_SUGGESTION_LIMIT),
 });
 function sign(body: string): Buffer { return createHmac("sha256", env.SESSION_SECRET).update(`packing:v1:${body}`).digest(); }
@@ -124,7 +127,7 @@ export function normalizePackingOutput(raw: unknown, existingNames: string[], re
 }
 
 /** Database lease protects across tabs and API processes, independently of guest accounting. */
-export async function generatePacking(tripId: string, owner: string, start: () => Promise<void>, signal?: AbortSignal): Promise<PackingPreview> {
+export async function generatePacking(tripId: string, owner: string, start: () => Promise<void>, signal?: AbortSignal, locale: SupportedLocale = "en"): Promise<PackingPreview> {
   const trip = await ownedTrip(tripId, owner);
   if (!trip.analysis.destination?.trim()) throw new PackingError("Set a destination before generating packing suggestions.", 400);
   const claim = randomUUID();
@@ -139,7 +142,7 @@ export async function generatePacking(tripId: string, owner: string, start: () =
   try {
     const budget = AbortSignal.timeout(GENERATION_BUDGET_MS);
     const combined = signal ? AbortSignal.any([signal, budget]) : budget;
-    const context = packingContext(trip);
+    const context = { ...packingContext(trip), locale: contentLocale(locale) };
     combined.throwIfAborted();
     await start();
     let raw: unknown;
@@ -154,18 +157,18 @@ export async function generatePacking(tripId: string, owner: string, start: () =
     const output = normalizePackingOutput(raw, current.equipment.map(item => item.name), true);
     const generatedAt = new Date().toISOString();
     const expiresAt = Date.now() + PREVIEW_TTL_MS;
-    const contextVersion = packingContextVersion(trip);
+    const contextVersion = packingContextVersion(trip, context.locale);
     const warnings = [...output.warnings];
     if (!context.weather.available) warnings.push("No reliable saved forecast is available. Suggestions use general trip and activity context.");
     else if (context.weather.status === "partial_forecast") warnings.push("Saved forecasts cover some trip days only; weather for other days is unknown.");
-    if (contextVersion !== packingContextVersion(current)) warnings.push("Your trip or packing list changed during generation. Review these suggestions carefully.");
+    if (contextVersion !== packingContextVersion(current, context.locale)) warnings.push("Your trip or packing list changed during generation. Review these suggestions carefully.");
     warnings.push("Suggestions are per traveler. Review quantities and any seasonal guidance before adding items.");
     const saved = await TripModel.updateOne({ _id: trip._id, ...ownerFilter(owner) }, { $set: {
-      packingGeneration: { generatedAt, contextFingerprint: contextVersion, suggestionCount: output.suggestions.length },
+      packingGeneration: { locale: context.locale, generatedAt, contextFingerprint: contextVersion, suggestionCount: output.suggestions.length },
     } }).exec();
     if (!saved.matchedCount) throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
-    return { ...output, warnings, generatedAt, expiresAt: new Date(expiresAt).toISOString(), contextVersion,
-      token: previewToken({ version: 1, tripId, owner, expiresAt, generatedAt, contextVersion, suggestions: output.suggestions }) };
+    return { ...output, warnings: warnings.map(warning => localizeExplanation(warning, context.locale)), generatedAt, expiresAt: new Date(expiresAt).toISOString(), contextVersion,
+      token: previewToken({ version: 1, tripId, owner, expiresAt, generatedAt, locale: context.locale, contextVersion, suggestions: output.suggestions }) };
   } finally { await leases().deleteOne({ _id: tripId, claim }); }
 }
 
@@ -183,7 +186,7 @@ export async function applyPacking(tripId: string, owner: string, input: ApplyPa
     const skipped = selected.filter(item => names.has(canonicalPackingName(item.name))).map(item => item.id);
     const additions = selected.filter(item => !names.has(canonicalPackingName(item.name))).map(item => ({ _id: new Types.ObjectId(), name: item.name, category: item.category, count: item.count, packed: false, source: "ai" as const, reason: item.reason }));
     if (current.equipment.length + additions.length > LIMITS.equipment) throw new PackingError(`These items would exceed the ${LIMITS.equipment}-item packing limit. Select fewer items or remove an existing item.`, 400);
-    const stale = preview.contextVersion !== packingContextVersion(TripModel.hydrate(current));
+    const stale = preview.contextVersion !== packingContextVersion(TripModel.hydrate(current), preview.locale);
     if (stale && !input.allowStale) throw new PackingError("Your trip has changed since these suggestions were generated. Refresh suggestions or confirm that you want to use this outdated preview.");
     if (!additions.length) return { added: [], skipped, stale };
     const result = await trips().updateOne({ _id: current._id, ...ownerFilter(owner), equipment: current.equipment, updatedAt: current.updatedAt },
@@ -196,8 +199,8 @@ export async function applyPacking(tripId: string, owner: string, input: ApplyPa
 /** Read-only status: no AI, weather lookup, quota reservation or trip mutation. */
 export async function packingContextStatus(tripId: string, owner: string): Promise<PackingContextStatus> {
   const trip = await ownedTrip(tripId, owner);
-  const contextFingerprint = packingContextVersion(trip);
+  const contextFingerprint = packingContextVersion(trip, trip.packingGeneration?.locale);
   const stored = trip.packingGeneration;
-  const generation = stored ? { generatedAt: stored.generatedAt, contextFingerprint: stored.contextFingerprint, suggestionCount: stored.suggestionCount } : null;
+  const generation = stored ? { locale: stored.locale, generatedAt: stored.generatedAt, contextFingerprint: stored.contextFingerprint, suggestionCount: stored.suggestionCount } : null;
   return { contextFingerprint, generation, outdated: !!generation && generation.contextFingerprint !== contextFingerprint };
 }

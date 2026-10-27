@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import {
   AutoFixHighOutlined,
   LanguageOutlined,
@@ -12,39 +14,38 @@ import ProfileSettingsCard from "../components/profile/ProfileSettingsCard";
 const SECTIONS = [
   {
     id: "profile",
-    title: "Profile settings",
+    get title() { return i18n.t("profileSettings", { ns: "auth/profile" }); },
     icon: PersonOutlineOutlined,
     body: <ProfileSettingsCard />,
   },
   {
     id: "password",
-    title: "Password",
+    get title() { return i18n.t("password", { ns: "auth" }); },
     icon: LockOutlined,
     body: <PasswordCard />,
   },
   {
     id: "preferences",
-    title: "Preferences",
+    get title() { return i18n.t("preferences", { ns: "auth/profile" }); },
     icon: AutoFixHighOutlined,
     body: <PreferencesCard />,
   },
   {
     id: "application",
-    title: "Application settings",
+    get title() { return i18n.t("applicationSettings", { ns: "auth/profile" }); },
     icon: LanguageOutlined,
     body: <AppLanguageCard />,
   },
 ];
 
 export default function ProfilePage() {
+  useTranslation();
   return (
     <div className="settings-page">
       <div className="settings-inner">
-        <h1 className="settings-page-title">Settings</h1>
+        <h1 className="settings-page-title">{i18n.t("settings", { ns: "auth/profile" })}</h1>
         <p className="settings-page-subtitle">
-          Adjust your profile, update your password, and pick your language so
-          Triply feels just right for you.
-        </p>
+          {i18n.t("adjustYourProfileUpdateYourPasswordAndPick", { ns: "auth/profile" })}</p>
 
         {SECTIONS.map((section) => {
           const Icon = section.icon;
