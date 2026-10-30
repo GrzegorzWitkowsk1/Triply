@@ -7,13 +7,14 @@ export default defineConfig({
   testDir: "./apps/api/e2e",
   testMatch: "**/*.spec.ts",
   globalTeardown: "./apps/api/e2e/teardown.ts",
-  fullyParallel: false,
+  // Shard individual independent tests; each shard still owns one serial worker.
+  fullyParallel: true,
   workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
   timeout: 60_000,
   expect: { timeout: 10_000 },
-  reporter: [["list"], ["html", { open: "never" }]],
+  reporter: [["list"], ["html", { open: "never" }], ["json", { outputFile: "test-results/results.json" }]],
   use: {
     baseURL: "http://127.0.0.1:5174",
     headless: true,

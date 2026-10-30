@@ -12,7 +12,9 @@ import { hashShareToken } from "./sharing.js";
 let db: MongoMemoryServer;
 let app: FastifyInstance;
 beforeAll(async () => { db = await MongoMemoryServer.create(); await mongoose.connect(db.getUri());
-  app = await (await import("../app.js")).createApp(); await TripModel.init(); }, 120_000);
+  app = await (await import("../app.js")).createApp();
+  await app.listen({ host: "127.0.0.1", port: 0 });
+  await TripModel.init(); }, 120_000);
 afterEach(async () => { for (const collection of Object.values(mongoose.connection.collections)) await collection.deleteMany({}); });
 afterAll(async () => { await app?.close(); await mongoose.disconnect(); await db?.stop(); });
 async function setup() {

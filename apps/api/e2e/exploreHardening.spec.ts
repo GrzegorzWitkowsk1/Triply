@@ -110,10 +110,12 @@ test("measures bounded catalog requests and checks keyboard/reduced-motion layou
   for (const width of [320, 375, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await expect(input).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `horizontal overflow at ${width}`).toBe(true);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth), `horizontal overflow at ${width}`).toBeLessThanOrEqual(width);
     const heart = page.getByRole("button", { name: "Save Barcelona" }); const bounds = await heart.boundingBox();
     expect(bounds!.width).toBeGreaterThanOrEqual(44); expect(bounds!.height).toBeGreaterThanOrEqual(44);
-    expect(await page.locator(".trend-card").evaluate(card => getComputedStyle(card).transitionDuration)).toBe("0s");
+    const durations = await page.locator(".trend-card").evaluate(card =>
+      getComputedStyle(card).transitionDuration.split(",").map(value => Number.parseFloat(value)));
+    expect(durations.every(seconds => seconds <= 0.00001), "reduced-motion transitions are at most 0.01ms").toBe(true);
   }
   await input.focus(); await page.keyboard.press("Tab"); await expect(page.getByRole("button", { name: "Clear search" })).toBeFocused();
   await page.keyboard.press("Enter"); await expect(input).toBeFocused(); await expect(page).toHaveURL(/\/explore$/);

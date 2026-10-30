@@ -1,60 +1,75 @@
 # Triply CI
 
 `workflows/ci.yml` validates pull requests targeting `main` and pushes to `main`.
-The validation job on Ubuntu 24.04 runs these commands in order:
+Both jobs use the Bun version in `package.json` and Node 24. Superseded runs
+are cancelled; the workflow has read-only repository permissions and no secrets
+or deployment steps.
+
+## Monorepo validation
+
+The validation job runs translation validation/audit, workspace typechecks,
+API and frontend Vitest suites, production builds and repository integrity checks.
+Turbo builds `shared/dist` before dependent tasks. Vitest runs directly so
+Turbo's strict environment filtering does not discard CI test settings.
+
+API global setup resolves/downloads the MongoDB binary once before creating
+workers. Each worker receives its absolute path as `MONGOMS_SYSTEM_BINARY` and
+`MONGOMS_RUNTIME_DOWNLOAD=false`. Test files retain independent databases and
+own their shutdown; standalone and replica-set migration tests remain separate.
+A failed preparation fails the run before test execution. Unhandled errors are
+not ignored. Both Vitest suites allow at most four workers.
+
+Frontend Vitest prebundles MUI entry points and their used subpaths together.
+The separate `apps/web/vitest.config.ts` leaves the development and production
+Vite optimizer configuration unchanged. Keeping subpaths on the same graph
+avoids duplicate Emotion instances.
+
+The API uses test-only configuration and empty provider keys. Tests mock
+application providers; no production database or paid API is required.
+JSON Vitest reports are uploaded even on failure and retained for seven days.
+
+## Browser tests
+
+The complete Chromium suite is divided across four GitHub-hosted runners using
+`--shard=1/4` through `--shard=4/4`. Each runner has its own Fastify/Vite servers,
+token-protected control service and disposable MongoDB replica set. Each shard
+retains one Playwright worker because its fixtures reset shared server state.
+`fullyParallel: true` enables sharding individual tests instead of whole files;
+it does not make a shard concurrent while `workers: 1` is set.
+Do not raise `workers` without isolating that state first.
+
+No scenarios are excluded or retried. `fail-fast: false` lets every shard finish
+and report failures. Each shard has a 25-minute job timeout. Sharding reduces
+elapsed time at the cost of four runner setups; actual hosted speedup must
+be measured in GitHub Actions.
+
+Playwright uploads HTML/JSON results and failure screenshots/traces after every
+run, using unique artifact names for each shard. Retention is seven days.
+`test-results/results.json` contains per-test durations and final status.
+
+## Caches and local execution
+
+Both jobs cache Bun downloads by OS, architecture, Bun version and lockfile.
+MongoDB binaries are cached separately by OS, architecture, Ubuntu release and
+lockfile. An empty binary cache is safe: API global setup prepares it before
+workers start; the E2E server starts its sole replica set before browser tests.
+Database contents, `node_modules` and Turbo outputs are not cached by Actions.
+Chromium/system dependencies are installed with Playwright in every browser job.
 
 ```sh
-bun install --frozen-lockfile
 bun run typecheck
 bun run --cwd apps/api test
 bun run --cwd apps/web test
 bun run build
-git diff --check HEAD
-git diff --exit-code HEAD -- bun.lock package.json apps/api/package.json apps/web/package.json packages/shared/package.json
+bun run typecheck:e2e
+bun run test:e2e
+bun run test:e2e --shard=1/4
 ```
 
-`setup-bun` reads the exact Bun version from root `package.json`'s
-`packageManager` field (currently `bun@1.3.14`). Update that field deliberately
-when upgrading Bun. Actions use maintained major versions.
+For an individual API file, use `bun run --cwd apps/api vitest run <file>`.
+Appending a file to the API `test` script retains its existing `src` filter;
+Vitest combines these filters and still runs the full source suite.
 
-Only `~/.bun/install/cache` is cached, keyed by runner OS, architecture, Bun
-version, and `bun.lock` hash. Installation always runs, even on a cache hit.
-Neither `node_modules`, Turbo outputs, nor MongoDB databases are cached.
-
-Typechecking covers the API, web app, and shared package. The existing Turbo
-dependency graph builds `shared/dist` before app checks; builds reuse that local
-result. Both test scripts run Vitest without watch mode. Tests run directly to
-preserve their environment variables without changing Turbo configuration.
-
-API tests use `NODE_ENV=test`, a public test-only session secret, empty provider
-keys, and an unused loopback database URI. Existing integration tests explicitly
-connect to `MongoMemoryServer.getUri()` and clean up their databases. Existing
-provider tests mock AI, Geoapify, routing, weather, and other HTTP calls. No
-production database or external API credentials are needed. The MongoDB binary
-may be downloaded by mongodb-memory-server on a fresh runner; package and binary
-downloads require network access, but application services are mocked. No MongoDB
-service container is required. Compilation needs no runtime secrets and leaves
-production session-secret validation unchanged.
-
-The token has only `contents: read`; checkout does not persist credentials.
-Superseded runs for the same PR or branch are cancelled. There are no deployments,
-secret references, write operations to GitHub, or `pull_request_target` triggers.
-Each check has a named step and preserves normal failure output and exit codes.
-There is no existing report-file configuration, so diagnostics remain in job logs.
-
-Linting is a separate follow-up: the repository currently has no lint script or
-ESLint configuration. The first GitHub-hosted run must confirm Linux MongoDB binary
-download/startup and the workflow's runner/action integration.
-
-The existing separate Chromium E2E job runs `bun run test:e2e` (all specs),
-including Explore discovery, destination planning, Saved and Explore hardening.
-Its timeout is 25 minutes. These tests use browser-to-Fastify-to-MongoDB
-communication with deterministic external provider fixtures, without production
-credentials. Hardening coverage includes real server failures and recovery,
-image fallback, identity isolation, generation, keyboard controls, request counts
-and widths 320/375/768/1024/1440. Fault injection is confined to the existing
-guarded E2E server and its token-protected loopback control service.
-
-`collections.spec.ts` adds editorial collection navigation, editable wizard
-suggestions through generation, Saved synchronization, guest import and missing
-destination recovery to the same automatically discovered E2E suite.
+The local audit and consolidation recommendations are in
+[`docs/testing-audit.md`](../docs/testing-audit.md). Local Windows verification
+does not replace a fresh-cache Ubuntu/GitHub-hosted workflow run.

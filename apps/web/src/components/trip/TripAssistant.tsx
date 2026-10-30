@@ -222,6 +222,6 @@ export default function TripAssistant({ city, tripId, selectedDayId, itineraryVe
         <DialogActions><Button disabled={busy} onClick={cancelProposal}>{i18n.t("cancel", { ns: "common" })}</Button><Button disabled={busy} onClick={() => void confirm()}>{i18n.t("applyChanges", { ns: "common" })}</Button></DialogActions>
       </Dialog>
       {triggerHost ? createPortal(trigger, triggerHost) : trigger}
-      {open && (narrow ? <Modal open sx={{ zIndex: 1500 }} onClose={() => { if (!proposal && !picker) setOpen(false); }} slotProps={{ backdrop: { className: "assistant-overlay" } }}>{panel}</Modal> : panel)}
+      {open && (narrow ? <Modal open disableScrollLock sx={{ zIndex: 1500 }} onClose={() => { if (!proposal && !picker) setOpen(false); }} slotProps={{ backdrop: { className: "assistant-overlay" } }}>{panel}</Modal> : panel)}
     </>;
 }

@@ -59,6 +59,9 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
   app = await (await import("../app.js")).createApp();
+  // Concurrent Supertest requests must share one listener instead of racing
+  // to start/stop the server and accumulating lifecycle event handlers.
+  await app.listen({ host: "127.0.0.1", port: 0 });
 }, 120_000);
 beforeEach(() => { vi.clearAllMocks(); vi.mocked(fetchAttractions).mockResolvedValue(null); });
 afterEach(async () => { for (const collection of Object.values(mongoose.connection.collections)) await collection.deleteMany({}); });

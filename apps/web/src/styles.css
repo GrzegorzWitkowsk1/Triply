@@ -3723,6 +3723,12 @@ button, input, textarea, select { font-family: inherit; }
   animation: assistant-fade 0.2s ease;
 }
 
+/* MUI's scrollbar compensation can use a stale mobile layout viewport during
+   desktop-to-mobile resizing. Lock the background without adding body padding. */
+body:has(.assistant-panel[aria-modal="true"]) {
+  overflow: hidden;
+}
+
 .assistant-panel {
   position: fixed;
   top: 0;

@@ -182,12 +182,13 @@ test("Polish guest wizard validates and preserves its draft across language swit
 
 test("Polish Explore search, collection save and Saved preserve destination ownership", async ({ page, harness }) => {
   await page.goto("/login"); await page.getByRole("button", { name: "Continue as guest" }).click();
+  await expect(page).toHaveURL(/\/home$/);
   await page.goto("/explore"); await language(page, "pl");
   await page.getByRole("searchbox", { name: "Szukaj miejsc" }).fill("barce");
   await expect(page.locator("[data-destination-id]")).toHaveCount(1);
   await page.getByRole("combobox", { name: "Kraj", exact: true }).click();
   await page.getByRole("option", { name: "Spain", exact: true }).click();
-  await page.getByRole("link", { name: "Kulinarne weekendy", exact: true }).click();
+  await page.getByRole("link", { name: /^Kulinarne weekendy/ }).click();
   await page.getByRole("button", { name: "Zapisz: Barcelona", exact: true }).click();
   await expect(page.getByRole("button", { name: "Usuń z zapisanych: Barcelona", exact: true })).toBeVisible();
   await page.goto("/saved"); await expect(page.getByRole("heading", { name: "Zapisane miejsca", exact: true })).toBeVisible();

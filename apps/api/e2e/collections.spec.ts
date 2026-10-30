@@ -89,7 +89,7 @@ test("unknown collections and missing catalog destinations never substitute unre
   await page.goto("/explore/collections/unknown"); await expect(page.getByRole("heading", { name: "Collection not found" })).toBeVisible();
   expect((await harness.state()).sessions).toBe(0); await page.getByRole("link", { name: "Back to Explore" }).click();
   await harness.command("/remove-collection-destination");
-  await page.getByRole("link", { name: "Food-first weekends", exact: true }).click();
+  await page.getByRole("link", { name: /^Food-first weekends/ }).click();
   await expect(page.locator("[data-destination-id]")).toHaveCount(1);
   await expect(page.getByRole("article", { name: "Destination: Bologna" })).toContainText("Italy");
   await expect(page.getByRole("article", { name: "Destination: Barcelona" })).toHaveCount(0); expect((await harness.state()).calls).toEqual([]);

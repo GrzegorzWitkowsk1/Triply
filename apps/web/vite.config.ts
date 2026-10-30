@@ -11,5 +11,7 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // MUI + jsdom in a process per CPU costs more than a bounded worker pool.
+    maxWorkers: 4,
   },
 });

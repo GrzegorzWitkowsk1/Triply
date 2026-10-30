@@ -18,6 +18,13 @@ bun run test:e2e:report
 bun run typecheck:e2e
 ```
 
+CI runs all scenarios in four independent shards (`--shard=1/4` through
+`--shard=4/4`), with one worker and separate servers per runner. Individual
+tests can be sharded because fixtures reset state for each test. The October 30
+audit, current counts and consolidation recommendations are in
+[`docs/testing-audit.md`](../../../docs/testing-audit.md); the validation counts
+at the end of this document describe the original October 14 smoke suite.
+
 On Linux CI, use `bunx playwright install --with-deps chromium`. The first
 MongoMemoryReplSet invocation may download its MongoDB binary. No manually
 configured MongoDB, application secrets, or paid provider keys are needed.

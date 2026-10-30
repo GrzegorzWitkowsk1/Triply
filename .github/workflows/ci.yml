@@ -38,8 +38,19 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-${{ runner.arch }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('bun.lock') }}
 
+      - name: Set up Node for Vitest
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Cache MongoDB binaries
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: ${{ runner.os }}-${{ runner.arch }}-ubuntu2404-mongodb-${{ hashFiles('bun.lock') }}
 
       - name: Validate translation resources and audit UI strings
         run: |
@@ -53,7 +64,7 @@ jobs:
       # Run tests directly so Turbo's strict environment filtering cannot drop
       # the test-only configuration below.
       - name: API tests
-        run: bun run --cwd apps/api test
+        run: bun run --cwd apps/api test --reporter=default --reporter=json --outputFile.json=../../test-results/api-vitest.json
         env:
           NODE_ENV: test
           MONGODB_URI: mongodb://127.0.0.1:27017/triply_ci_unused
@@ -63,7 +74,7 @@ jobs:
           GEOAPIFY_API_KEY: ""
 
       - name: Frontend tests
-        run: bun run --cwd apps/web test
+        run: bun run --cwd apps/web test --reporter=default --reporter=json --outputFile.json=../../test-results/web-vitest.json
         env:
           NODE_ENV: test
 
@@ -75,10 +86,23 @@ jobs:
           git diff --check HEAD
           git diff --exit-code HEAD -- bun.lock package.json apps/api/package.json apps/web/package.json packages/shared/package.json
 
+      - name: Upload Vitest results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vitest-${{ github.run_attempt }}
+          path: test-results/*-vitest.json
+          retention-days: 7
+          if-no-files-found: ignore
+
   e2e:
-    name: Playwright Chromium, Explore, Saved and Guest Mode
+    name: Playwright Chromium (${{ matrix.shard }}/4)
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     env:
       CI: "true"
     steps:
@@ -88,6 +112,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Bun
+        id: bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
@@ -97,8 +122,20 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Cache Bun package downloads
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-${{ runner.arch }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('bun.lock') }}
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Cache MongoDB binaries
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: ${{ runner.os }}-${{ runner.arch }}-ubuntu2404-mongodb-${{ hashFiles('bun.lock') }}
 
       - name: Install Chromium and system dependencies
         run: bunx playwright install --with-deps chromium
@@ -110,14 +147,14 @@ jobs:
 
       # Playwright starts and probes both servers. The API executable owns a
       # disposable MongoDB process and stops it with Fastify on termination.
-      - name: Run all isolated browser specs (including Explore hardening)
-        run: bun run test:e2e
+      - name: Run isolated browser specs
+        run: bun run test:e2e --shard=${{ matrix.shard }}/4
 
-      - name: Upload failure reports, screenshots and traces
-        if: failure()
+      - name: Upload browser results, screenshots and traces
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-failure-${{ github.run_attempt }}
+          name: playwright-${{ matrix.shard }}-${{ github.run_attempt }}
           path: |
             playwright-report/
             test-results/
