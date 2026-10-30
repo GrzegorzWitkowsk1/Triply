@@ -104,6 +104,22 @@ async function openAction(action: string) {
 }
 
 describe("TripPage manual editing", () => {
+  it("preserves selection, the map node and expense drafts across mobile Plan/Map switching", async () => {
+    vi.stubGlobal("matchMedia", vi.fn((media: string) => ({ matches: media === "(max-width: 1023px)", media, addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn() })));
+    const view = renderPage();
+    const selected = await screen.findByRole("button", { name: /Park.*Nature/ });
+    fireEvent.click(selected);
+    fireEvent.change(screen.getByRole("textbox", { name: "Expense name" }), { target: { value: "Keep my draft" } });
+    const map = screen.getByTestId("map");
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+    expect(view.container.querySelector<HTMLElement>(".trip-left")?.hidden).toBe(true);
+    expect(screen.getByTestId("map")).toBe(map);
+    expect(JSON.parse(map.textContent!).active).toBe(1);
+    fireEvent.click(screen.getByRole("button", { name: "Plan" }));
+    expect(screen.getByRole("textbox", { name: "Expense name" }).getAttribute("value")).toBe("Keep my draft");
+    expect(selected.getAttribute("aria-pressed")).toBe("true");
+    expect(edits).toHaveLength(0);
+  });
   it("keeps removal available for an unresolved visit and refreshes with remaining warnings", async () => {
     trip.itinerary!.days[0].activities[0] = { ...trip.itinerary!.days[0].activities[0], startTime: "", endTime: "", schedulingStatus: "unresolved" };
     trip.itinerary!.days[0].warnings = ["Schedule unresolved."];

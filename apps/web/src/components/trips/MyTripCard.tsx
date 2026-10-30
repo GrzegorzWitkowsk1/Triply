@@ -9,7 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { findCityPhoto } from "../../config/cityPhotos";
 import type { TripCardModel } from "../../config/tripCards";
 import MediaFallback from "./MediaFallback";
-import PhotoAttribution from "./PhotoAttribution";
+import DestinationImage from "../DestinationImage";
 
 interface MyTripCardProps {
   trip: TripCardModel;
@@ -25,10 +25,7 @@ export default function MyTripCard({ trip, isFirst }: MyTripCardProps) {
     <article className="my-trip-card">
       <div className="my-trip-media">
         {photo ? (
-          <>
-            <img src={photo.imageUrl} alt={`${trip.city}, ${trip.country}`} />
-            <PhotoAttribution photo={photo} />
-          </>
+          <DestinationImage photo={photo} />
         ) : (
           <MediaFallback alt={`${trip.city}, ${trip.country}`} />
         )}

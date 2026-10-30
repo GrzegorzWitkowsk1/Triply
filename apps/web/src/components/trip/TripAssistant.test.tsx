@@ -72,7 +72,30 @@ describe("existing Ask Triply integration", () => {
     await waitFor(() => expect(mocks.apply).toHaveBeenCalledWith("stored"));
   });
   it("preserves Escape dismissal", () => {
-    open(); fireEvent.keyDown(window, { key: "Escape" });
+    open(); fireEvent.keyDown(screen.getByRole("complementary"), { key: "Escape" });
     expect(screen.queryByRole("complementary")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Ask Triply" }));
+  });
+  it("preserves a failed message draft and prevents simultaneous sends", async () => {
+    let reject!: (error: Error) => void;
+    mocks.send.mockImplementation(() => new Promise((_resolve, fail) => { reject = fail; }));
+    open(); send("Keep this draft");
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Message Triply" }), { key: "Enter" });
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    await act(async () => reject(new Error("offline")));
+    expect(screen.getByRole("alert").textContent).toContain("Could not send");
+    expect((screen.getByRole("textbox", { name: "Message Triply" }) as HTMLInputElement).value).toBe("Keep this draft");
+    mocks.send.mockResolvedValue({ messages: [{ id: "ok", role: "ai", text: "Recovered" }], response: { type: "message" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await screen.findByText("Recovered");
+    expect((screen.getByRole("textbox", { name: "Message Triply" }) as HTMLInputElement).value).toBe("");
+  });
+  it("does not discard a newer draft when an earlier message succeeds", async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.send.mockImplementation(() => new Promise(done => { resolve = done; }));
+    open(); send("First message");
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Triply" }), { target: { value: "Next question" } });
+    await act(async () => resolve({ messages: [], response: { type: "message" } }));
+    expect((screen.getByRole("textbox", { name: "Message Triply" }) as HTMLInputElement).value).toBe("Next question");
   });
 });

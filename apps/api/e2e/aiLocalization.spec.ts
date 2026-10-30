@@ -9,7 +9,7 @@ const words = (locale: string, namespace: string): Record<string, string> => JSO
 async function language(page: Page, locale: "en" | "pl") {
   const selected = await page.locator("html").getAttribute("lang");
   if (selected === locale) return;
-  await page.getByRole("button", { name: selected === "pl" ? "Język: Polski" : "Language: English", exact: true }).click();
+  await page.getByRole("button", { name: selected === "pl" ? "Język: Polski — PL" : "Language: English — EN", exact: true }).click();
   await page.getByRole("menuitemradio", { name: locale === "pl" ? "Polski" : "English", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", locale);
 }

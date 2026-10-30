@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { findCityPhoto } from "../../config/cityPhotos";
 import type { HomeTripCardModel } from "../../config/tripCards";
 import MediaFallback from "./MediaFallback";
-import PhotoAttribution from "./PhotoAttribution";
+import DestinationImage from "../DestinationImage";
 import { findDestinationByCity } from "@triply/shared";
 import DestinationSaveButton from "../DestinationSaveButton";
 
@@ -41,10 +41,7 @@ export default function TripCard({ trip, isFirst }: TripCardProps) {
       <div className="trip-card-media">
         {destination && <DestinationSaveButton destinationId={destination.id} name={destination.city} />}
         {photo ? (
-          <>
-            <img src={photo.imageUrl} alt={`${trip.city}, ${trip.country}`} />
-            <PhotoAttribution photo={photo} />
-          </>
+          <DestinationImage photo={photo} />
         ) : (
           <MediaFallback alt={`${trip.city}, ${trip.country}`} />
         )}

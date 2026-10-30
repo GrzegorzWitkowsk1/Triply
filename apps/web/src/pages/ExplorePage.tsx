@@ -35,10 +35,11 @@ export default function ExplorePage() {
     if (destinations.data && destinations.data.page !== page) canonicalizePage(destinations.data.page);
   }, [destinations.data, page, draft]);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const selected = destinations.data?.items.find(item => item.id === detailId);
 
   return (
-    <div className="explore-page">
+    <div className="explore-page" data-filters-expanded={filtersExpanded}>
       <div className="explore-inner">
         <AutoAwesomeOutlined className="explore-spark" />
 
@@ -47,7 +48,8 @@ export default function ExplorePage() {
         <p className="explore-subtitle">
           {i18n.t("browseDestinationsThenLetTriplyShapeOneInto", { ns: "explore" })}</p>
 
-        <div className="explore-toolbar" role="group" aria-label={i18n.t("destinationDiscovery", { ns: "explore" })}>
+        <button type="button" className="explore-mobile-filter-toggle trip-action" aria-expanded={filtersExpanded} aria-controls="explore-discovery-controls explore-interest-controls" onClick={() => setFiltersExpanded(value => !value)}>{i18n.t("filtersAndSorting", { ns: "explore" })}</button>
+        <div className="explore-toolbar" id="explore-discovery-controls" role="group" aria-label={i18n.t("destinationDiscovery", { ns: "explore" })}>
           <TextField label={i18n.t("searchDestinations", { ns: "explore" })} inputRef={searchRef} value={draft} onChange={event => search(event.target.value)} fullWidth
             slotProps={{ htmlInput: { role: "searchbox", maxLength: 120 }, input: {
               startAdornment: <InputAdornment position="start"><SearchOutlined /></InputAdornment>,
@@ -69,11 +71,11 @@ export default function ExplorePage() {
           </TextField>}
         </div>
         {filters.isError && <Alert severity="warning" action={<Button onClick={() => void filters.refetch()}>{i18n.t("retryFilters", { ns: "explore" })}</Button>}>{i18n.t("couldNotLoadFilterOptionsSearchAndSorting", { ns: "explore" })}</Alert>}
-        {!!filters.data?.interests.length && <div className="explore-filter-chips" role="group" aria-label={i18n.t("destinationInterests", { ns: "explore" })}>
+        {!!filters.data?.interests.length && <div className="explore-filter-chips" id="explore-interest-controls" role="group" aria-label={i18n.t("destinationInterests", { ns: "explore" })}>
           {filters.data.interests.map(interest => <Chip key={interest.id} label={interestLabel(interest.id)} component="button" clickable aria-pressed={query.interests.includes(interest.id)}
             color={query.interests.includes(interest.id) ? "primary" : "default"} onClick={() => update({ interests: (query.interests.includes(interest.id) ? query.interests.filter(id => id !== interest.id) : [...query.interests, interest.id]).sort() })} />)}
         </div>}
-        <div className="explore-filter-chips" aria-label={i18n.t("activeDestinationFilters", { ns: "explore" })}>
+        <div className="explore-filter-chips" role="group" aria-label={i18n.t("activeDestinationFilters", { ns: "explore" })}>
           {query.q && <Chip label={i18n.t("search", { ns: "explore", value0: query.q })} onDelete={() => search("")} />}
           {query.country && <Chip label={i18n.t("country2", { ns: "explore", value0: filters.data?.countries.find(country => country.id === query.country)?.name ?? query.country })} onDelete={() => update({ country: "" })} />}
           {query.region && <Chip label={i18n.t("region2", { ns: "explore", value0: regions.find(region => region.id === query.region)?.name ?? query.region })} onDelete={() => update({ region: "" })} />}
@@ -100,7 +102,7 @@ export default function ExplorePage() {
             const Icon = collection.icon;
             return (
               <article key={collection.slug} className="collection-card">
-                <Link to={`/explore/collections/${collection.slug}`} state={{ exploreReturnTo: `${location.pathname}${location.search}` }} className="collection-main" aria-label={collection.title}>
+                <Link to={`/explore/collections/${collection.slug}`} state={{ exploreReturnTo: `${location.pathname}${location.search}` }} className="collection-main">
                 <span
                   className="collection-icon"
                   style={{

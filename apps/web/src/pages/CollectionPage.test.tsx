@@ -43,7 +43,7 @@ afterEach(() => { cleanup(); client?.clear(); vi.unstubAllGlobals(); failure = e
 it("keeps all four editorial titles and descriptions and actionable destination links", async () => {
   mount("/explore?q=barce&country=spain&sort=name-desc&page=2");
   for (const collection of CURATED_COLLECTIONS) {
-    expect(screen.getByRole("link", { name: collection.title })).toHaveAttribute("href", `/explore/collections/${collection.slug}`);
+    expect(screen.getByRole("heading", { name: collection.title }).closest("a")).toHaveAttribute("href", `/explore/collections/${collection.slug}`);
     expect(screen.getByText(collection.description)).toBeVisible();
   }
   const chip = screen.getByRole("link", { name: "Explore Barcelona in Food-first weekends" });

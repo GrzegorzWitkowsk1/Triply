@@ -41,6 +41,14 @@ const entries: TimelineEntry[] = [
 ];
 
 describe("TripTimeline", () => {
+  it("distinguishes routed driving, estimated travel and unavailable timing", () => {
+    const view = render(<TripTimeline entries={[{ kind: "travel", key: "drive", minutes: 12, toName: "Museum", mode: "driving", estimated: false }]} activeStop={-1} onSelectStop={() => {}} />);
+    expect(screen.getByText(/Drive to next stop/)).toBeTruthy();
+    expect(screen.queryByText("Estimated travel")).toBeNull();
+    view.rerender(<TripTimeline entries={[{ kind: "travel", key: "unknown", minutes: 0, toName: "Museum", unavailable: true, estimated: true }]} activeStop={-1} onSelectStop={() => {}} />);
+    expect(screen.getByText("Travel time unavailable — verify the route")).toBeTruthy();
+    expect(screen.queryByText(/0 min/)).toBeNull();
+  });
   it.each([
     ["free", null, "Free admission"],
     ["paid", null, "Paid admission — price unavailable"],

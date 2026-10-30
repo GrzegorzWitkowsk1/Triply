@@ -22,6 +22,7 @@
     "audit:translations": "bun run --cwd apps/web audit:translations"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "1.63.0",
     "turbo": "^2.11.6"
   }

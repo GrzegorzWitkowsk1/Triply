@@ -27,7 +27,7 @@ function mount(activeDayIndex = 2) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const card = (activeDay: number) => <QueryClientProvider client={client}><TripBudgetCard whole={100} tripId="trip-1" days={days} activeDayIndex={activeDay} /></QueryClientProvider>;
   const view = render(card(activeDayIndex));
-  return { ...view, changeActiveDay: (activeDay: number) => view.rerender(card(activeDay)) };
+  return { ...view, client, changeActiveDay: (activeDay: number) => view.rerender(card(activeDay)) };
 }
 function fill(title = "Taxi", amount = "12.29") {
   fireEvent.change(screen.getByLabelText("Expense name"), { target: { value: title } });
@@ -37,6 +37,28 @@ beforeEach(() => { vi.resetAllMocks(); vi.mocked(request).mockResolvedValue(fixt
 afterEach(cleanup);
 
 describe("Trip budget & expenses", () => {
+  it("marks an invalid amount, connects its error and focuses it without losing the draft", async () => {
+    mount(); await screen.findByText("Lunch"); fill("Taxi", "nonsense");
+    fireEvent.click(screen.getByRole("button", { name: "Add expense" }));
+    const amount = screen.getByLabelText("Amount");
+    expect(document.activeElement).toBe(amount); expect(amount.getAttribute("aria-invalid")).toBe("true");
+    expect(document.getElementById(amount.getAttribute("aria-describedby")!)?.textContent).toContain("Check the entered values");
+    expect((screen.getByLabelText("Expense name") as HTMLInputElement).value).toBe("Taxi");
+    expect(vi.mocked(request).mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(0);
+  });
+  it("does not replace a newer confirmed budget with a delayed mutation response", async () => {
+    const { client } = mount(); await screen.findByText("Lunch"); fill();
+    let resolve!: (value: TripBudgetData) => void;
+    const newer = { ...fixture(), revision: 8, expenses: [{ ...lunch, title: "Newer expense" }] };
+    vi.mocked(request).mockImplementation((_path, options) => options?.method === "POST" ? new Promise(done => { resolve = done; }) : Promise.resolve(newer));
+    fireEvent.click(screen.getByRole("button", { name: "Add expense" }));
+    await waitFor(() => expect(resolve).toBeTypeOf("function"));
+    client.setQueryData(["trips", "trip-1", "budget"], newer);
+    resolve({ ...fixture(), revision: 1 });
+    await screen.findByText("Newer expense");
+    await waitFor(() => expect((screen.getByRole("button", { name: "Add expense" }) as HTMLButtonElement).disabled).toBe(true));
+    expect(client.getQueryData<TripBudgetData>(["trips", "trip-1", "budget"])?.revision).toBe(8);
+  });
   it("accepts Polish decimal input while preserving EUR integer minor units", async () => {
     await i18n.changeLanguage("pl");
     try {

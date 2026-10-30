@@ -53,6 +53,9 @@ function getRecognition(): SpeechRecognition | null {
 }
 
 export default function HomePage() {
+  const analyzeLock = useRef(false);
+  const createLock = useRef(false);
+  const saveLock = useRef(false);
   useTranslation();
   const { user } = useAuth();
   const guestUsage = useGuestUsage();
@@ -285,7 +288,8 @@ export default function HomePage() {
   };
 
   const startPlan = () => {
-    if (!canPlan || analyze.isPending) return;
+    if (!canPlan || analyze.isPending || analyzeLock.current) return;
+    analyzeLock.current = true;
     setSaveError(null);
     setCreateError(null);
     setDraft(null);
@@ -296,6 +300,7 @@ export default function HomePage() {
       { prompt: prompt.trim(), destinationId: selectedDestinationId, badges: hasCollectionPreferences ? selectedBadges.filter(id => HOME_BADGES.some(badge => badge.id === id)) : selectedBadges, ...(hasCollectionPreferences ? { interests: selectedBadges } : {}), pace: preferences.pace, maxWalkingDistanceKm: preferences.maxWalkingDistanceKm },
       {
         onSuccess: (result) => {
+          analyzeLock.current = false;
           setDraft(result);
           planning.finish();
 
@@ -305,16 +310,19 @@ export default function HomePage() {
           }
         },
         onError: (error) => {
+          analyzeLock.current = false;
           planning.reset();
           setVoiceHint({ text: errorKey(error), kind: "error" });
         },
+        onSettled: () => { analyzeLock.current = false; },
       },
     );
   };
 
   const generateTrip = () => {
     if (guestUsage.isGuest && guestUsage.data?.aiGenerationsRemaining === 0) { setCreateError("tripCreator/home:yourItineraryGenerationAllowanceIsUsedForThe"); return; }
-    if (!draft || createTrip.isPending) return;
+    if (!draft || createTrip.isPending || createLock.current) return;
+    createLock.current = true;
 
     setCreateError(null);
 
@@ -323,11 +331,13 @@ export default function HomePage() {
         navigate(`/trips/${trip.id}`, { state: { autoStart: true } });
       },
       onError: (error) => setCreateError(errorKey(error)),
+      onSettled: () => { createLock.current = false; },
     });
   };
 
   const saveAnswers = (payload: UpdateTripRequirements) => {
-    if (!draft) return;
+    if (!draft || saveLock.current || saveRequirements.isPending) return;
+    saveLock.current = true;
 
     setSaveError(null);
     setCreateError(null);
@@ -356,6 +366,7 @@ export default function HomePage() {
           setDialogOpen(false);
         },
         onError: (error) => setSaveError(errorKey(error)),
+        onSettled: () => { saveLock.current = false; },
       },
     );
   };
@@ -556,6 +567,11 @@ export default function HomePage() {
           error={saveError}
           onSave={saveAnswers}
           onClose={() => setDialogOpen(false)}
+          onExited={() => {
+            requestAnimationFrame(() => {
+              if (document.activeElement === document.body) document.querySelector<HTMLButtonElement>(".plan-summary-actions button")?.focus();
+            });
+          }}
         />
       )}
     </div>

@@ -1,4 +1,7 @@
 {
+  "moveEarlier": "Przesuń wcześniej",
+  "moveLater": "Przesuń później",
+  "removeConfirmation": "Usunąć {{name}} z tego dnia? Możesz dodać tę atrakcję ponownie, wybierając ją z listy atrakcji.",
   "breakLunch": "Przerwa na obiad",
   "breakCoffee": "Przerwa na kawę",
   "breakDinner": "Przerwa na kolację",

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import TripSharing from "./TripSharing";
 import {
@@ -28,6 +28,22 @@ beforeEach(() => {
   vi.mocked(disableSharing).mockResolvedValue(disabled);
 });
 afterEach(cleanup);
+it("blocks repeated enable requests and ignores a late token after an identity change", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(["auth", "session"], { status: "authenticated", user: { id: "owner-a" } });
+  let resolve!: (value: Awaited<ReturnType<typeof createShareLink>>) => void;
+  vi.mocked(createShareLink).mockImplementation(() => new Promise(done => { resolve = done; }));
+  render(<QueryClientProvider client={client}><TripSharing tripId="private-trip" /></QueryClientProvider>);
+  fireEvent.click(screen.getByText("Share")); await screen.findByText("Sharing disabled");
+  const enable = screen.getByRole("button", { name: "Enable sharing" });
+  fireEvent.click(enable); fireEvent.click(enable);
+  await waitFor(() => expect(createShareLink).toHaveBeenCalledTimes(1));
+  client.setQueryData(["auth", "session"], { status: "authenticated", user: { id: "owner-b" } });
+  client.removeQueries({ queryKey: ["tripSharing"] });
+  await act(async () => resolve({ ...enabled, token: "private-token" }));
+  expect(screen.queryByLabelText("Share link")).toBeNull();
+  expect(client.getQueryData(["tripSharing", "private-trip"])).toBeUndefined(); client.clear();
+});
 function mount() {
   render(
     <QueryClientProvider

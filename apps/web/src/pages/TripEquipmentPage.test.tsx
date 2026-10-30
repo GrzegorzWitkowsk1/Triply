@@ -44,6 +44,18 @@ function mount() {
 async function ready() { mount(); await screen.findByRole("progressbar"); }
 const addForm = () => within(screen.getByRole("form", { name: "Add packing item" }));
 const progress = () => screen.getByRole("progressbar", { hidden: true }).getAttribute("aria-valuenow");
+it("links invalid packing fields to the localized validation message", async () => {
+  await ready();
+  fireEvent.submit(screen.getByRole("form", { name: "Add packing item" }));
+  const alert = await screen.findByRole("alert");
+  const name = addForm().getByRole("textbox");
+  expect(name.getAttribute("aria-invalid")).toBe("true");
+  expect(name.getAttribute("aria-describedby")).toBe(alert.id);
+  expect(addForm().getByRole("spinbutton").getAttribute("aria-invalid")).toBe("false");
+  fireEvent.change(name, { target: { value: "Sunscreen" } });
+  expect(name.getAttribute("aria-invalid")).toBe("false");
+  expect(createEquipmentItem).not.toHaveBeenCalled();
+});
 it.each([[0, 0], [1, 50], [2, 100]])("calculates progress by items for %s packed", async (packed, percentage) => {
   records = [jacket(), passport()].map((item, index) => ({ ...item, packed: index < packed }));
   await ready(); expect(progress()).toBe(String(percentage)); expect(screen.getByText(`${packed} of 2 items packed`)).toBeTruthy();

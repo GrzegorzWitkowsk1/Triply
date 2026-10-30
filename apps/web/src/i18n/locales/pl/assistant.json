@@ -1,4 +1,5 @@
 {
+  "messageInput": "Wiadomość do Triply",
   "openLabel": "Zapytaj Triply",
   "panelLabel": "Zapytaj Triply o cel podróży: {{city}}",
   "couldNotLoadConversationHistoryCloseAndReopen": "Nie udało się wczytać historii rozmowy. Zamknij i otwórz ponownie, aby spróbować jeszcze raz.",

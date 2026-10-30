@@ -4,6 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { RegenerateDayRequest } from "@triply/shared";
 import { applyRegeneratedDay, regenerateTripDay } from "../api/trips";
 import { TRIPS_KEY, tripQueryKey } from "./useTrips";
+import { cacheConfirmedTrip } from "../query/confirmedTrip";
+import { ApiError } from "../api/client";
 
 interface RegenerateDayVariables {
   tripId: string;
@@ -33,9 +35,12 @@ export function useApplyRegeneration() {
     onSettled: () => { void queryClient.invalidateQueries({ queryKey: GUEST_USAGE_KEY }); },
     mutationFn: ({ tripId, dayIndex, previewId }: ApplyRegenerationVariables) =>
       applyRegeneratedDay(tripId, dayIndex, previewId),
-    onSuccess: (trip) => {
-      queryClient.setQueryData(tripQueryKey(trip.id), trip);
+    onSuccess: async (trip) => {
+      await cacheConfirmedTrip(queryClient, trip);
       void queryClient.invalidateQueries({ queryKey: TRIPS_KEY });
+    },
+    onError: (error, variables) => {
+      if (error instanceof ApiError && (error.status === 409 || error.status === 410)) void queryClient.invalidateQueries({ queryKey: tripQueryKey(variables.tripId) });
     },
   });
 }

@@ -75,6 +75,14 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof RegenerateD
 }
 
 describe("RegenerateDayDialog", () => {
+  it("blocks a stale preview while allowing safe discard", () => {
+    const { onApply, onClose } = renderDialog({ preview: PREVIEW, isStale: true });
+    expect(screen.getByRole("alert").textContent).toContain("This preview is out of date");
+    const apply = screen.getByRole("button", { name: "Apply changes" }) as HTMLButtonElement;
+    expect(apply.disabled).toBe(true);
+    fireEvent.click(apply); expect(onApply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" })); expect(onClose).toHaveBeenCalledOnce();
+  });
   it("localizes preview warnings and actions without regenerating the day", async () => {
     const { onGenerate, onApply } = renderDialog({ preview: PREVIEW });
     await act(() => i18n.changeLanguage("pl"));

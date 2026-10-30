@@ -12,7 +12,7 @@ export default function LanguageSwitcher({ fullWidth = false }: { fullWidth?: bo
   const label = languages.find(language => language.code === current)!.label;
   return <>
     <Button size="small" fullWidth={fullWidth} className="language-switcher"
-      aria-label={t("languageControl", { language: label })} aria-haspopup="menu"
+      aria-label={`${t("languageControl", { language: label })} — ${current.toUpperCase()}`} aria-haspopup="menu"
       aria-controls={anchor ? id : undefined} aria-expanded={Boolean(anchor)}
       onClick={event => setAnchor(event.currentTarget)}>
       <img className="flag-icon" src={`/flags/${current}.svg`} alt="" /><span aria-hidden="true" style={{ marginLeft: 6 }}>{current.toUpperCase()}</span>

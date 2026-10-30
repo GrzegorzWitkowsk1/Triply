@@ -1,4 +1,5 @@
 {
+  "messageInput": "Message Triply",
   "openLabel": "Ask Triply",
   "panelLabel": "Ask Triply about {{city}}",
   "couldNotLoadConversationHistoryCloseAndReopen": "Could not load conversation history. Close and reopen to retry.",

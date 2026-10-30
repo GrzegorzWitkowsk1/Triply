@@ -93,8 +93,10 @@ test("Barcelona requirements, creation and real generation survive reload", asyn
   expect(stored.itinerary!.days).toHaveLength(3);
   await page.reload();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Barcelona");
-  await expect(timelineNames(page)).toHaveCount(detail.itinerary!.days[0]!.stops.length);
-  for (const stop of detail.itinerary!.days[0]!.stops) await expect(page.getByRole("button", { name: `Reorder ${stop.name}`, exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/day=3/);
+  await expect(page.getByRole("tab").nth(2)).toHaveAttribute("aria-selected", "true");
+  await expect(timelineNames(page)).toHaveCount(detail.itinerary!.days[2]!.stops.length);
+  for (const stop of detail.itinerary!.days[2]!.stops) await expect(page.getByRole("button", { name: `Reorder ${stop.name}`, exact: true })).toBeVisible();
   expect((await harness.trip(detail.id)).analysis).toEqual(before.analysis);
   expect((await harness.state()).calls).toEqual(expect.arrayContaining(["ai", "geocoding", "weather", "overpass", "routing"]));
 });
@@ -203,7 +205,7 @@ test.describe("manual editing", () => {
     await expect(timelineNames(page).nth(0)).toHaveAccessibleName("Reorder Palau de la Musica");
     await expect(timelineNames(page).nth(1)).toHaveAccessibleName("Reorder Barcelona Cathedral");
     await page.getByRole("button", { name: "Next day" }).click();
-    await expect(page.getByText("Review this day's schedule before continuing.", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("region", { name: "Schedule and route checks" }).getByRole("alert").filter({ hasText: /Roman Walls:.*This visit has no feasible scheduled time/ })).toBeVisible();
     expect((await harness.trip(user.tripId!)).itinerary).toEqual(after.itinerary);
   });
 });

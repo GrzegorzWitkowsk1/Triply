@@ -48,7 +48,8 @@ test("guest entry, reload, mobile navigation, upgrade and exit", async ({ page, 
   }
   await page.setViewportSize({ width: 375, height: 812 });
   await expect(page.getByRole('link', { name: 'Notifications', exact: true })).toHaveCount(0);
-  await page.getByRole('link', { name: 'Create account', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Account menu', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Create account', exact: true }).click();
   await expect(page).toHaveURL(/\/register$/);
   await page.getByRole('button', { name: 'Continue as guest' }).click();
   expect((await harness.state()).sessions).toBe(1);

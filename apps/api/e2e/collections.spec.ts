@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures.ts";
 
 test("anonymous editorial collection links, focused chips, history and responsive keyboard navigation", async ({ page, harness }) => {
   await page.goto("/explore?q=barce&country=spain&sort=name-desc");
-  const collection = page.getByRole("link", { name: "Food-first weekends", exact: true });
+  const collection = page.getByRole("link", { name: /^Food-first weekends/ });
   await expect(collection).toBeVisible(); await collection.focus(); await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/explore\/collections\/food-first-weekends$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Food-first weekends");

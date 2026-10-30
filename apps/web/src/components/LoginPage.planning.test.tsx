@@ -33,3 +33,26 @@ it("retains the usual Home fallback for Guest Mode without a return URL", async 
   mount(false); fireEvent.click(screen.getByRole("button", { name: "Continue as guest" }));
   expect(await screen.findByTestId("destination")).toHaveTextContent("/home");
 });
+
+it("focuses the first invalid field and associates a localized validation error", () => {
+  const view = mount();
+  fireEvent.submit(view.container.querySelector("form")!);
+  const email = screen.getByRole("textbox", { name: /Email address/ });
+  expect(email).toHaveFocus(); expect(email).toHaveAttribute("aria-invalid", "true");
+  expect(email).toHaveAccessibleDescription(/Enter a valid email and password/);
+  expect(mocks.login).not.toHaveBeenCalled();
+});
+
+it("blocks duplicate sign-ins and preserves entered credentials after a failure", async () => {
+  let reject!: (reason: Error) => void;
+  mocks.login.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  const view = mount();
+  fireEvent.change(screen.getByRole("textbox", { name: /Email address/ }), { target: { value: "planner@example.com" } });
+  fireEvent.change(screen.getByLabelText(/^Password/), { target: { value: "Original123!Aa" } });
+  fireEvent.submit(view.container.querySelector("form")!); fireEvent.submit(view.container.querySelector("form")!);
+  expect(mocks.login).toHaveBeenCalledTimes(1);
+  reject(new Error("offline"));
+  await screen.findByRole("alert");
+  expect(screen.getByRole("textbox", { name: /Email address/ })).toHaveValue("planner@example.com");
+  expect(screen.getByLabelText(/^Password/)).toHaveValue("Original123!Aa");
+});

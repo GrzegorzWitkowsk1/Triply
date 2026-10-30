@@ -1,4 +1,7 @@
 {
+  "orderChanged": "Zmieniona kolejność",
+  "timeChanged": "Zmienione godziny",
+  "stalePreview": "Ta propozycja jest nieaktualna lub już niedostępna. Odrzuć ją lub wybierz inne opcje, aby przygotować nową. Zapisany plan nie został nadpisany.",
   "reviewAlternativeWarning": "Nie udało się potwierdzić wszystkich szczegółów tej propozycji. Przed zastosowaniem sprawdź harmonogram, godziny otwarcia, trasę i koszty.",
   "reworkDay": "Zmień plan dnia",
   "yourAiDayRegenerationAllowanceIsUsedFor": "Wykorzystano limit zmian planu dnia z AI na ostatnie 24 godziny. Usuń instrukcje tekstowe, aby użyć wybranych preferencji.",

@@ -21,6 +21,9 @@ import {
   type RegenerationPreferences,
 } from "@triply/shared";
 import { formatDuration } from "../../config/itineraryAdapters";
+import { formatClock } from "../../config/itineraryAdapters";
+import { dayPreviewChanges } from "../../config/dayPreviewChanges";
+import type { ItineraryDay } from "@triply/shared";
 
 const EMPTY_PREFERENCES: RegenerationPreferences = {
   lessWalking: false,
@@ -69,6 +72,8 @@ interface RegenerateDayDialogProps {
   open: boolean;
   dayNumber: number;
   preview: RegenerateDayPreview | null;
+  originalDay?: ItineraryDay;
+  isStale?: boolean;
   isGenerating: boolean;
   isApplying: boolean;
   error: string | null;
@@ -84,6 +89,8 @@ export default function RegenerateDayDialog({
   open,
   dayNumber,
   preview,
+  originalDay,
+  isStale = false,
   isGenerating,
   isApplying,
   error,
@@ -122,6 +129,7 @@ export default function RegenerateDayDialog({
   };
 
   const comparison = preview?.comparison ?? null;
+  const retainedChanges = originalDay && preview && !isStale ? dayPreviewChanges(originalDay, preview.day) : [];
 
   return (
     <Dialog
@@ -131,8 +139,9 @@ export default function RegenerateDayDialog({
       fullWidth
       maxWidth="sm"
       className="regenerate-dialog"
+      aria-labelledby="regenerate-day-title"
     >
-      <DialogTitle className="regenerate-title">
+      <DialogTitle className="regenerate-title" id="regenerate-day-title">
         {i18n.t("reworkDayTitle", { ns: "itinerary/generation", day: dayNumber })}
         <IconButton
           aria-label={i18n.t("close", { ns: "common" })}
@@ -191,7 +200,7 @@ export default function RegenerateDayDialog({
         />
 
         {isGenerating && (
-          <p className="regenerate-status">
+          <p className="regenerate-status" role="status">
             <AutoFixHighOutlined /> {i18n.t("exploringOptionsForThisDay", { ns: "itinerary/generation" })}</p>
         )}
 
@@ -255,10 +264,18 @@ export default function RegenerateDayDialog({
                 <li>{i18n.t("reviewAlternativeWarning", { ns: "itinerary/generation" })}</li>
               </ul>
             )}
+            {retainedChanges.length > 0 && <ul className="regenerate-retained-changes">
+              {retainedChanges.map(change => <li key={change.id}>
+                <strong>{change.name}</strong>
+                {change.reordered && <span>{i18n.t("orderChanged", { ns: "itinerary/generation" })}</span>}
+                {change.timeChanged && <span>{i18n.t("timeChanged", { ns: "itinerary/generation" })}: {change.before.startTime ? formatClock(change.before.startTime) : "—"}–{change.before.endTime ? formatClock(change.before.endTime) : "—"} → {change.after.startTime ? formatClock(change.after.startTime) : "—"}–{change.after.endTime ? formatClock(change.after.endTime) : "—"}</span>}
+              </li>)}
+            </ul>}
           </div>
         )}
 
-        {error && <p className="regenerate-error">{resolveMessage(error)}</p>}
+        {isStale && <p className="regenerate-error" role="alert">{i18n.t("stalePreview", { ns: "itinerary/generation" })}</p>}
+        {error && <p className="regenerate-error" role="alert">{resolveMessage(error)}</p>}
       </DialogContent>
 
       <DialogActions className="regenerate-actions">
@@ -271,7 +288,7 @@ export default function RegenerateDayDialog({
             <Button
               type="button"
               variant="contained"
-              disabled={busy || !preview}
+              disabled={busy || !preview || isStale}
               onClick={onApply}
             >
               {isApplying ? i18n.t("applying", { ns: "itinerary/generation" }) : i18n.t("applyChanges", { ns: "common" })}

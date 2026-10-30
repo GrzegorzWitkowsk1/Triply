@@ -2,8 +2,9 @@ import { resolveMessage } from "../../i18n/errors";
 import { errorMessage as localizedError } from "../../i18n/errors";
 import { useTranslation } from "react-i18next";
 import i18n from "../../i18n";
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIdentityMutation as useMutation } from "../../hooks/useIdentityMutation";
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from "@mui/material";
 import { ShareOutlined } from "@mui/icons-material";
 import { createShareLink, disableSharing, getSharingStatus } from "../../api/sharing";
@@ -17,6 +18,7 @@ export default function TripSharing({ tripId, open: controlledOpen, onClose, hid
   const [notice, setNotice] = useState<string | null>(null);
   const [copyError, setCopyError] = useState(false);
   const client = useQueryClient();
+  const actionLock = useRef(false);
   const key = ["tripSharing", tripId];
   const status = useQuery({ queryKey: key, queryFn: () => getSharingStatus(tripId), enabled: open, staleTime: 0 });
   const action = useMutation({ gcTime: 0, mutationFn: async (operation: "enable" | "rotate" | "disable") => operation === "disable"
@@ -27,6 +29,11 @@ export default function TripSharing({ tripId, open: controlledOpen, onClose, hid
       setConfirm(null); setNotice(null); setCopyError(false);
     }, onError: () => { setLink(null); void client.invalidateQueries({ queryKey: key }); },
   });
+  const run = (operation: "enable" | "rotate" | "disable") => {
+    if (actionLock.current || action.isPending) return;
+    actionLock.current = true;
+    action.mutate(operation, { onSettled: () => { actionLock.current = false; } });
+  };
   const close = () => { if (!action.isPending) { setOpen(false); setLink(null); setConfirm(null); setNotice(null); setCopyError(false); action.reset(); onClose?.(); } };
   return (
     <>
@@ -80,7 +87,7 @@ export default function TripSharing({ tripId, open: controlledOpen, onClose, hid
                 : i18n.t("disablingImmediatelyRevokesTheLink", { ns: "sharing" })}
               <Button
                 disabled={action.isPending}
-                onClick={() => action.mutate(confirm)}
+                onClick={() => run(confirm)}
               >
                 {i18n.t(confirm === "rotate" ? "confirmRotate" : "confirmDisable", { ns: "sharing" })}
               </Button>
@@ -100,7 +107,7 @@ export default function TripSharing({ tripId, open: controlledOpen, onClose, hid
               {!status.data.enabled && (
                 <Button
                   disabled={action.isPending}
-                  onClick={() => action.mutate("enable")}
+                  onClick={() => run("enable")}
                 >
                   {i18n.t("enableSharing", { ns: "sharing" })}</Button>
               )}

@@ -58,6 +58,7 @@ interface TripRequirementsDialogProps {
   error: string | null;
   onSave: (payload: UpdateTripRequirements) => void;
   onClose: () => void;
+  onExited?: () => void;
 }
 
 export default function TripRequirementsDialog({
@@ -70,6 +71,7 @@ export default function TripRequirementsDialog({
   error,
   onSave,
   onClose,
+  onExited,
 }: TripRequirementsDialogProps) {
   const { t } = useTranslation("tripCreator", { i18n });
   const needs = (field: AskableField): boolean => missingFields.includes(field);
@@ -93,6 +95,10 @@ export default function TripRequirementsDialog({
     mode: "onChange",
     defaultValues: createRequirementsDefaultValues(analysis),
   });
+  const field = (...args: Parameters<typeof register>) => {
+    const { ref, ...registration } = register(...args);
+    return { ...registration, inputRef: ref };
+  };
 
   const [interestDraft, setInterestDraft] = useState("");
 
@@ -151,7 +157,7 @@ export default function TripRequirementsDialog({
   }, [startDate, durationDaysValue, endDate, setValue]);
 
   const submit = handleSubmit((values) => {
-    if (durationTooLong) return;
+    if (durationTooLong || isSaving) return;
     onSave(buildRequirementsPayload(values, missingFields));
   });
 
@@ -181,6 +187,7 @@ export default function TripRequirementsDialog({
       fullWidth
       maxWidth="sm"
       className="requirements-dialog"
+      slotProps={{ transition: { onExited } }}
     >
       <form onSubmit={submit} className="requirements-form">
         <DialogTitle className="requirements-title">
@@ -210,7 +217,7 @@ export default function TripRequirementsDialog({
               }
               error={!!errors.destination}
               fullWidth
-              {...register("destination")}
+              {...field("destination")}
             />
           )}
 
@@ -220,7 +227,7 @@ export default function TripRequirementsDialog({
               helperText={(errors.country?.message ? i18n.t(errors.country?.message!) : undefined) ?? FIELD_COPY.country.helper}
               error={!!errors.country}
               fullWidth
-              {...register("country")}
+              {...field("country")}
             />
           )}
 
@@ -235,7 +242,7 @@ export default function TripRequirementsDialog({
                     error={!!errors.startDate}
                     helperText={(errors.startDate?.message ? i18n.t(errors.startDate?.message!) : undefined)}
                     slotProps={{ inputLabel: { shrink: true } }}
-                    {...register("startDate")}
+                    {...field("startDate")}
                   />
                 )}
 
@@ -247,7 +254,7 @@ export default function TripRequirementsDialog({
                     error={!!errors.endDate}
                     helperText={(errors.endDate?.message ? i18n.t(errors.endDate?.message!) : undefined)}
                     slotProps={{ inputLabel: { shrink: true } }}
-                    {...register("endDate", {
+                    {...field("endDate", {
                       onChange: (event) => {
                         endDateAutoFilledRef.current = false;
                         lastAutoEndDateRef.current = null;
@@ -274,7 +281,7 @@ export default function TripRequirementsDialog({
                       : FIELD_COPY.durationDays.helper)
                   }
                   slotProps={{ htmlInput: { min: 1, max: 365 } }}
-                  {...register("durationDays")}
+                  {...field("durationDays")}
                 />
               )}
 
@@ -293,7 +300,7 @@ export default function TripRequirementsDialog({
                 (errors.travelers?.message ? i18n.t(errors.travelers?.message!) : undefined) ?? FIELD_COPY.travelers.helper
               }
               slotProps={{ htmlInput: { min: 1, max: 50 } }}
-              {...register("travelers")}
+              {...field("travelers")}
             />
           )}
 
@@ -339,7 +346,7 @@ export default function TripRequirementsDialog({
                     error={!!errors.budgetAmount}
                     helperText={(errors.budgetAmount?.message ? i18n.t(errors.budgetAmount?.message!) : undefined)}
                     slotProps={{ htmlInput: { min: 0 } }}
-                    {...register("budgetAmount")}
+                    {...field("budgetAmount")}
                   />
 
                   <Controller
@@ -524,7 +531,7 @@ export default function TripRequirementsDialog({
               (errors.maxWalkingDistanceKm?.message ? i18n.t(errors.maxWalkingDistanceKm?.message!) : undefined) ?? i18n.t(WALKING_HELPER)
             }
             slotProps={{ htmlInput: { min: 0, max: 100 } }}
-            {...register("maxWalkingDistanceKm")}
+            {...field("maxWalkingDistanceKm")}
           />
 
           <TextField
@@ -534,7 +541,7 @@ export default function TripRequirementsDialog({
             fullWidth
             error={!!errors.notes}
             helperText={(errors.notes?.message ? i18n.t(errors.notes?.message!) : undefined) ?? i18n.t(NOTES_HELPER)}
-            {...register("notes")}
+            {...field("notes")}
           />
 
           {error && <p className="requirements-error is-server">{resolveMessage(error)}</p>}

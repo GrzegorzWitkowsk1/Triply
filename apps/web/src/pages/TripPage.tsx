@@ -5,20 +5,22 @@ import { errorMessage as localizedError } from "../i18n/errors";
 import { Trans, useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { useGuestUsage } from "../hooks/useGuestUsage";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, CircularProgress } from "@mui/material";
+import { Alert, Button, CircularProgress, useMediaQuery } from "@mui/material";
+import TripMobileViewSwitch, { type TripMobileView } from "../components/trip/TripMobileViewSwitch";
 import type { ItineraryEditOperation } from "@triply/shared";
 import AttractionPicker from "../components/trip/AttractionPicker";
 import MoveAttractionDialog from "../components/trip/MoveAttractionDialog";
 import { useItineraryEditing } from "../hooks/useItineraryEditing";
+import { useTripDaySelection } from "../hooks/useTripDaySelection";
+import TripDayNavigation from "../components/trip/TripDayNavigation";
+import TripDayDiagnostics from "../components/trip/TripDayDiagnostics";
 import {
   AccountBalanceWalletOutlined,
   AutoFixHighOutlined,
   BackpackOutlined,
-  ChevronLeftOutlined,
-  ChevronRightOutlined,
   DirectionsWalkOutlined,
   EditOutlined,
   PlaceOutlined,
@@ -113,9 +115,11 @@ export default function TripPage() {
   const [movingId, setMovingId] = useState<string | null>(null);
   const [editNotice, setEditNotice] = useState<(() => string) | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const narrow = useMediaQuery("(max-width: 1023px)");
+  const [mobileView, setMobileView] = useState<TripMobileView>("plan");
+  const [assistantHost, setAssistantHost] = useState<HTMLDivElement | null>(null);
+  useEffect(() => { setMobileView("plan"); }, [id]);
 
-  const [activeDay, setActiveDay] = useState(0);
-  const [activeStop, setActiveStop] = useState(0);
   const [tags, setTags] = useState<string[]>([]);
   const [pace, setPace] = useState(1);
   const [walking, setWalking] = useState(1);
@@ -124,9 +128,22 @@ export default function TripPage() {
   const [regenerationPreview, setRegenerationPreview] =
     useState<RegenerateDayPreview | null>(null);
   const autoStartRef = useRef<string | null>(null);
+  const editLock = useRef(false);
+  const previewLock = useRef(false);
+  const applyLock = useRef(false);
+  const currentTripId = useRef(id);
+  currentTripId.current = id;
+  useEffect(() => {
+    setRegenerateOpen(false); setRegenerationPreview(null); setPicker(null); setMovingId(null); setEditOpen(false); setEditNotice(null);
+    previewLock.current = false; applyLock.current = false; editLock.current = false;
+  }, [id]);
 
   const analysis = trip.data?.analysis ?? null;
   const itinerary = trip.data?.itinerary ?? null;
+  const { activeDay, activeStop, setActiveDay, setActiveStop } = useTripDaySelection(id, itinerary);
+  const currentDay = itinerary?.days[activeDay];
+  const stops = useMemo(() => dayStops(currentDay), [currentDay]);
+  const geometry = useMemo(() => dayGeometry(currentDay), [currentDay]);
   const status = trip.data?.status ?? "draft";
 
   const isGenerating = status === "generating" || generate.isPending;
@@ -138,15 +155,7 @@ export default function TripPage() {
     setWalking(walkingIndex(analysis?.maxWalkingDistanceKm));
   }, [id, analysis?.interests, analysis?.pace, analysis?.maxWalkingDistanceKm]);
 
-  const dayCount = itinerary?.days.length ?? analysis?.durationDays ?? 0;
 
-  useEffect(() => {
-    setActiveDay((current) => Math.min(current, Math.max(dayCount - 1, 0)));
-  }, [dayCount, id]);
-
-  useEffect(() => {
-    setActiveStop(0);
-  }, [id]);
 
   const autoStart =
     (location.state as { autoStart?: boolean } | null)?.autoStart ?? false;
@@ -204,10 +213,8 @@ export default function TripPage() {
 
   const center = analysis.location
     ? ([analysis.location.lat, analysis.location.lng] as [number, number])
-    : null;
+    : stops[0] ?? null;
   const entries = day ? buildDayTimeline(day) : [];
-  const stops = dayStops(day);
-  const geometry = dayGeometry(day);
 
   const totalActivities = itinerary ? totalItineraryActivities(itinerary) : 0;
   const walkingKm = itinerary ? totalWalkingKm(itinerary) : null;
@@ -277,29 +284,24 @@ export default function TripPage() {
   };
 
   const dayIndex = day?.dayIndex ?? activeDay + 1;
+  const previewRejected = applyRegeneration.error instanceof ApiError && (applyRegeneration.error.status === 409 || applyRegeneration.error.status === 410);
+  const previewStale = Boolean(regenerationPreview && (regenerationPreview.baseItineraryVersion !== (trip.data.itineraryVersion ?? 0) || regenerationPreview.dayIndex !== dayIndex || previewRejected));
   const scheduledStops = day?.stops.filter((stop) => day.activities.some((activity) => activity.type === "attraction" && activity.placeId === stop.placeId)) ?? [];
-  const editError = itineraryEdit.error ? (() => {
-    const error = itineraryEdit.error;
-    const details = error instanceof ApiError ? error.details : null;
-    const warnings = details && typeof details === "object" && "warnings" in details && Array.isArray(details.warnings)
-      ? details.warnings.filter((warning): warning is string => typeof warning === "string").join(" ") : "";
-    return localizedError(error);
-  })() : null;
+  const editError = itineraryEdit.error ? localizedError(itineraryEdit.error) : null;
   const submitEdit = (operation: ItineraryEditOperation) => {
-    if (!id || itineraryEdit.isPending || regenerate.isPending || applyRegeneration.isPending) return;
-    const selectedId = scheduledStops[activeStop]?.placeId;
+    if (!id || editLock.current || itineraryEdit.isPending || regenerateOpen || regenerate.isPending || applyRegeneration.isPending) return;
+    editLock.current = true;
     setEditNotice(null);
     itineraryEdit.mutate({ tripId: id, operation, expectedVersion: trip.data.itineraryVersion ?? 0 }, {
       onSuccess: (result) => {
         setPicker(null); setMovingId(null); setRegenerationPreview(null);
         const updatedDay = result.trip.itinerary?.days.find((entry) => entry.dayIndex === dayIndex);
-        const updatedStops = updatedDay?.stops.filter((stop) => updatedDay.activities.some((activity) => activity.type === "attraction" && activity.placeId === stop.placeId)) ?? [];
-        setActiveStop(selectedId ? updatedStops.findIndex((stop) => stop.placeId === selectedId) : -1);
         const routingUnavailable = operation.type === "reroute" && (!updatedDay?.geometry || updatedDay.geometry.coordinates.length < 2);
         setEditNotice(() => () => routingUnavailable
           ? i18n.t("routeMissingWithWarnings", { ns: "trips/details", warnings: "" }).trim()
           : result.warnings.length ? i18n.t("savedWithWarnings", { ns: "trips/details", warnings: i18n.t("dimension_schedule", { ns: "itinerary/quality" }) }) : i18n.t("itinerarySaved", { ns: "trips/details" }));
       },
+      onSettled: () => { editLock.current = false; },
     });
   };
 
@@ -314,22 +316,24 @@ export default function TripPage() {
   const handleRegenerationRequest = (
     request: RegenerateDayRequest,
   ) => {
-    if (!id) {
+    if (!id || previewLock.current || regenerate.isPending) {
       return;
     }
-
+    previewLock.current = true;
     setRegenerationPreview(null);
+    applyRegeneration.reset();
     regenerate.mutate(
       { tripId: id, dayIndex, request },
-      { onSuccess: setRegenerationPreview },
+      { onSuccess: result => { if (currentTripId.current === id) setRegenerationPreview(result); }, onSettled: () => { if (currentTripId.current === id) previewLock.current = false; } },
     );
   };
 
   const handleApplyRegeneration = () => {
-    if (!id || !regenerationPreview) {
+    if (!id || !regenerationPreview || previewStale || applyRegeneration.isPending || applyLock.current) {
       return;
     }
 
+    applyLock.current = true;
     applyRegeneration.mutate(
       {
         tripId: id,
@@ -338,9 +342,12 @@ export default function TripPage() {
       },
       {
         onSuccess: () => {
+          if (currentTripId.current !== id) return;
           setRegenerateOpen(false);
           setRegenerationPreview(null);
+          setEditNotice(() => () => i18n.t("itinerarySaved", { ns: "trips/details" }));
         },
+        onSettled: () => { if (currentTripId.current === id) applyLock.current = false; },
       },
     );
   };
@@ -377,7 +384,7 @@ export default function TripPage() {
                   <PlaceOutlined /> {i18n.t("activityCount", { ns: "trips", count: totalActivities })}
                 </span>
               )}
-              {status === "ready" && walkingKm !== null && (
+              {status === "ready" && walkingKm !== null && itinerary?.days.every(value => value.totalDistanceMeters !== null) && (
                 <span className="trip-badge">
                   <DirectionsWalkOutlined /> {i18n.t("walkingKm", { ns: "trips/details", distance: walkingKm })}
                 </span>
@@ -385,6 +392,9 @@ export default function TripPage() {
             </div>
           </div>
           <div className="trip-hero-actions">
+            {status === "ready" && <a className="trip-action" href="#trip-expenses" onClick={event => {
+              event.preventDefault(); setMobileView("plan"); requestAnimationFrame(() => { document.getElementById("trip-expenses")?.focus(); document.getElementById("trip-expenses")?.scrollIntoView({ block: "start" }); });
+            }}>{i18n.t("viewExpenses", { ns: "trips/details" })}</a>}
             <button
               type="button"
               className="trip-action"
@@ -413,40 +423,14 @@ export default function TripPage() {
 
         {status === "ready" && itinerary ? (
           <div className="trip-content">
-            <div className="trip-left">
-              <div className="trip-day-header">
-                <span className="trip-day-label">
-                  {i18n.t("dayPosition", { ns: "common", day: activeDay + 1, total: dayCount })}
-                </span>
-                <div className="trip-day-nav">
-                  <button
-                    type="button"
-                    aria-label={i18n.t("previousDay", { ns: "common" })}
-                    disabled={activeDay === 0 || itineraryEdit.isPending}
-                    onClick={() => {
-                      setActiveDay((dayIndex) => Math.max(0, dayIndex - 1));
-                      setActiveStop(0);
-                    }}
-                  >
-                    <ChevronLeftOutlined />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={i18n.t("nextDay", { ns: "common" })}
-                    disabled={activeDay >= dayCount - 1 || itineraryEdit.isPending}
-                    onClick={() => {
-                      setActiveDay((dayIndex) =>
-                        Math.min(dayCount - 1, dayIndex + 1)
-                      );
-                      setActiveStop(0);
-                    }}
-                  >
-                    <ChevronRightOutlined />
-                  </button>
-                </div>
-              </div>
-              <div className="trip-activity-list">
-                {day && <p className="trip-eyebrow">
+            <div className="trip-experience-controls">
+              <TripDayNavigation days={itinerary.days} active={activeDay} disabled={itineraryEdit.isPending || regenerateOpen || applyRegeneration.isPending} onSelect={setActiveDay} />
+              {narrow && <TripMobileViewSwitch value={mobileView} onChange={setMobileView} />}
+              <div className="trip-assistant-mobile-slot" ref={setAssistantHost} />
+            </div>
+            <div className="trip-left" hidden={narrow && mobileView === "map"}>
+              <div className="trip-activity-list" role="tabpanel" id="trip-day-panel" aria-labelledby={`trip-day-tab-${dayIndex}`} aria-busy={itineraryEdit.isPending}>
+                {day && <p className="trip-day-summary">
                   {i18n.t("daySummary", { ns: "trips/details", count: scheduledStops.length, visiting: formatDuration(day.totalVisitMinutes), travel: formatDuration(day.totalTravelMinutes) })}
                   {day.totalDistanceMeters !== null ? ` · ${formatDistance(day.totalDistanceMeters)}` : ` · ${i18n.t("distanceUnavailable", { ns: "trips/details" })}`}
                   {day.partiallyEstimated ? ` · ${i18n.t("estimatedTravel", { ns: "trips/details" })}` : ""}
@@ -454,8 +438,10 @@ export default function TripPage() {
                 <button type="button" className="trip-action" disabled={itineraryEdit.isPending || regenerateOpen} onClick={() => { itineraryEdit.reset(); setPicker({}); }}>{t("addAttraction")}</button>
                 {itineraryEdit.isPending && <p role="status">{t("saving")}</p>}
                 {editError && <Alert severity="error">{editError}</Alert>}
-                {editNotice && <Alert severity={itineraryEdit.data?.warnings.length || itineraryEdit.variables?.operation.type === "reroute" ? "warning" : "success"}>{editNotice()}</Alert>}
+                {editNotice && <Alert role={itineraryEdit.data?.warnings.length || itineraryEdit.variables?.operation.type === "reroute" ? "alert" : "status"} severity={itineraryEdit.data?.warnings.length || itineraryEdit.variables?.operation.type === "reroute" ? "warning" : "success"}>{editNotice()}</Alert>}
                 <TripTimeline
+                  visible={!narrow || mobileView === "plan"}
+                  key={dayIndex}
                   tripId={id}
                   entries={entries}
                   activeStop={activeStop}
@@ -470,34 +456,28 @@ export default function TripPage() {
                   }}
                 />
                 {entries.length === 0 && (
-                  <p className="trip-eyebrow">
-                    {i18n.t("noActivitiesWereScheduledForThisDay", { ns: "trips/details" })}</p>
+                  <div className="trip-empty-day"><h3>{i18n.t("noActivitiesWereScheduledForThisDay", { ns: "trips/details" })}</h3>
+                    <p>{i18n.t("emptyDayHelp", { ns: "trips/details" })}</p></div>
                 )}
-                {dayWarnings.length > 0 && (
-                  <ul className="trip-eyebrow trip-day-warnings">
-                    {dayWarnings.map((warning) => (
-                      <li key={warning}>{i18n.t("dimension_schedule", { ns: "itinerary/quality" })}</li>
-                    ))}
-                  </ul>
-                )}
-                {trip.data.quality && qualityIssues.length > 0 && (
-                  <Alert severity={trip.data.quality.valid ? "warning" : "error"}>
-                    {[...new Set(qualityIssues.sort((a, b) => Number(b.severity === "error") - Number(a.severity === "error")).map(issue => issueMessage(issue)))].slice(0, 4).join(" ")}
-                  </Alert>
-                )}
+                <TripDayDiagnostics day={day} issues={qualityIssues} hasWarnings={dayWarnings.length > 0} />
               </div>
             </div>
 
             <div className="trip-right">
+              {!center && <div className="trip-map-wrap" id="trip-map-panel" hidden={narrow && mobileView === "plan"}><p>{i18n.t("mapUnavailable", { ns: "trips/details" })}</p></div>}
               {center && (
-                <div className="trip-map-wrap">
+                <div className="trip-map-wrap" id="trip-map-panel" hidden={narrow && mobileView === "plan"}>
                   <TripMap
+                    visible={!narrow || mobileView === "map"}
+                    stopIds={scheduledStops.map(stop => stop.placeId!)}
+                    stopNames={scheduledStops.map(stop => stop.name)}
                     center={center}
                     stops={stops}
                     geometry={geometry}
                     active={activeStop}
                     onSelect={setActiveStop}
                   />
+                  {narrow && <p className="trip-map-gesture-hint">{i18n.t("mapGestures", { ns: "trips/details" })}</p>}
                   <p className="trip-map-caption">
                     {geometry ? <Trans ns="trips/details" i18nKey="mapCaption" values={{ city }} components={{ provider: <a href="https://project-osrm.org/" target="_blank" rel="noreferrer" />, data: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" />, fix: <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noreferrer" /> }} /> : i18n.t("stopsInRouteGeometryIsUnavailable", { ns: "trips/details", value0: city })}
                     {!geometry && scheduledStops.length > 0 && <Button
@@ -512,7 +492,9 @@ export default function TripPage() {
                   </p>
                 </div>
               )}
+              <div className="trip-secondary-panels" hidden={narrow && mobileView === "map"}>
               {(
+                <div id="trip-expenses" tabIndex={-1}>
                 <TripBudgetCard
                   tripId={trip.data.id}
                   budgetData={trip.data.budgetData}
@@ -522,6 +504,7 @@ export default function TripPage() {
                   whole={budgetAmount ?? 0}
                   currencySymbol={budgetSymbol}
                 />
+                </div>
               )}
               <TripPreferencesCard
                 dirty={preferencesDirty}
@@ -536,6 +519,7 @@ export default function TripPage() {
                 walking={walking}
                 onWalkingChange={setWalking}
               />
+              </div>
             </div>
           </div>
         ) : (
@@ -583,6 +567,8 @@ export default function TripPage() {
         open={regenerateOpen}
         dayNumber={dayIndex}
         preview={regenerationPreview}
+        originalDay={day}
+        isStale={previewStale}
         isGenerating={regenerate.isPending}
         isApplying={applyRegeneration.isPending}
         error={regenerationError}
@@ -594,7 +580,7 @@ export default function TripPage() {
           setRegenerationPreview(null);
         }}
       />
-      {id && !guestUsage.isGuest && <TripAssistant key={id} city={city} tripId={id} selectedDayId={String(dayIndex)} />}
+      {id && !guestUsage.isGuest && <TripAssistant key={id} city={city} tripId={id} selectedDayId={String(dayIndex)} itineraryVersion={trip.data.itineraryVersion} days={itinerary?.days} triggerHost={narrow ? assistantHost : null} />}
     </div>
   );
 }

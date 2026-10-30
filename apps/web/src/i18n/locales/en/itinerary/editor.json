@@ -1,4 +1,7 @@
 {
+  "moveEarlier": "Move earlier",
+  "moveLater": "Move later",
+  "removeConfirmation": "Remove {{name}} from this day? You can add it again from the attraction picker.",
   "breakLunch": "Lunch break",
   "breakCoffee": "Coffee break",
   "breakDinner": "Dinner break",

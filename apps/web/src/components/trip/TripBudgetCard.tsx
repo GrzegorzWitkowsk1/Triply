@@ -45,7 +45,7 @@ function spendingLabel(totals: SpendingTotal[]): string {
 
 export default function TripBudgetCard(props: TripBudgetCardProps) {
   const { t } = useTranslation("expenses", { i18n });
-  if (props.tripId) return <PersistentBudgetCard {...props} tripId={props.tripId} />;
+  if (props.tripId) return <PersistentBudgetCard key={props.tripId} {...props} tripId={props.tripId} />;
   return <section className="trip-card budget-card">
     <div className="trip-card-head">
       <h3>{t("title")}</h3>
@@ -67,6 +67,8 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState<ExpenseCategory>(EXPENSE_CATEGORIES[0]);
   const [error, setError] = useState<string | null>(null);
+  const [invalidAmount, setInvalidAmount] = useState(false);
+  const amountInput = useRef<HTMLInputElement>(null);
   const [perDayOpen, setPerDayOpen] = useState(false);
   const requestId = useRef(crypto.randomUUID());
   const currentDefaultDayId = useRef(defaultDayId);
@@ -92,7 +94,7 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
   const chartAvailable = Boolean(currency) && !hasOtherCurrencies && total !== null;
   const busy = mutation.isPending;
 
-  const changeDraft = () => { requestId.current = crypto.randomUUID(); setError(null); };
+  const changeDraft = () => { requestId.current = crypto.randomUUID(); setError(null); setInvalidAmount(false); };
   const addExpense = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!data || !currency || !title.trim() || !amount.trim() || submitting.current) return;
@@ -103,6 +105,7 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
         expense = expenseInputSchema.parse({ title, category, amountMinor: decimalToMinor(decimalInput(amount.trim()), currency), currency, type: "actual", dayId: dayId || null });
       } catch {
         setError("errors:validation");
+        setInvalidAmount(true); amountInput.current?.focus();
         return;
       }
       await mutation.mutateAsync({ type: "create", expense, id: requestId.current, revision: data.revision });
@@ -127,7 +130,7 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
     </div>
     <div className="budget-chart" aria-label={i18n.t("expensesByCategory", { ns: "expenses" })}>
       {chartAvailable && categories.map(item => <Tooltip key={item.category} title={`${expenseCategoryLabel(item.category)} · ${formatMoney(item.amountMinor, currency!)}`} placement="top" arrow>
-        <span className="budget-segment" tabIndex={0} aria-label={`${expenseCategoryLabel(item.category)}: ${formatMoney(item.amountMinor, currency!)}`}
+        <span className="budget-segment" role="img" tabIndex={0} aria-label={`${expenseCategoryLabel(item.category)}: ${formatMoney(item.amountMinor, currency!)}`}
           style={{ background: CATEGORY_COLORS[item.category], width: `${item.amountMinor / chartWhole * 100}%` }} />
       </Tooltip>)}
     </div>
@@ -177,12 +180,12 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
       </div>}
     </div>
 
-    <form className="budget-expense-form" onSubmit={event => void addExpense(event)}>
+    <form className="budget-expense-form" aria-busy={busy} onSubmit={event => void addExpense(event)}>
       <div className="budget-form-name-row">
-        <TextField fullWidth size="small" placeholder={i18n.t("expenseName", { ns: "expenses" })} value={title} disabled={busy}
+        <TextField fullWidth size="small" label={t("expenseName")} placeholder={t("expenseName")} value={title} disabled={busy}
           slotProps={{ htmlInput: { get "aria-label"() { return i18n.t("expenseName", { ns: "expenses" }); }, maxLength: 120 } }}
           onChange={event => { changeDraft(); setTitle(event.target.value); }} />
-        <TextField select fullWidth size="small" value={dayId} disabled={busy || days.length === 0}
+        <TextField select fullWidth size="small" label={t("tripDay")} value={dayId} disabled={busy || days.length === 0}
           slotProps={{ select: { inputProps: { get "aria-label"() { return i18n.t("tripDay", { ns: "expenses" }); } } } }}
           onChange={event => { changeDraft(); setSelectedDayId(event.target.value); }}>
           {days.map(day => <MenuItem key={day.dayIndex} value={String(day.dayIndex)}>{i18n.t("dayLabel", { ns: "common", day: day.dayIndex })}</MenuItem>)}
@@ -190,12 +193,14 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
         </TextField>
       </div>
       <div className="budget-form-row">
-        <TextField select fullWidth size="small" value={category} disabled={busy}
+        <TextField select fullWidth size="small" label={i18n.t("category", { ns: "common" })} value={category} disabled={busy}
           slotProps={{ select: { inputProps: { get "aria-label"() { return i18n.t("category", { ns: "common" }); } } } }}
           onChange={event => { changeDraft(); setCategory(event.target.value as ExpenseCategory); }}>
           {EXPENSE_CATEGORIES.map(value => <MenuItem key={value} value={value}>{expenseCategoryLabel(value)}</MenuItem>)}
         </TextField>
-        <TextField fullWidth size="small" placeholder={currency ? i18n.t("amount2", { ns: "expenses", value0: currency }) : t("amount")} value={amount} disabled={busy}
+        <TextField fullWidth size="small" label={t("amount")} inputRef={amountInput} error={invalidAmount}
+          helperText={invalidAmount ? i18n.t("validation", { ns: "errors" }) : undefined}
+          placeholder={currency ? i18n.t("amount2", { ns: "expenses", value0: currency }) : t("amount")} value={amount} disabled={busy}
           slotProps={{ htmlInput: { get "aria-label"() { return i18n.t("amount", { ns: "expenses" }); }, inputMode: "decimal" } }}
           onChange={event => { changeDraft(); setAmount(event.target.value); }} />
       </div>

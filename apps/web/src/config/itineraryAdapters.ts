@@ -7,6 +7,10 @@ export interface TimelineTravel {
   key: string;
   minutes: number;
   toName: string;
+  estimated?: boolean;
+  unavailable?: boolean;
+  mode?: import("@triply/shared").TravelMode;
+  distanceMeters?: number | null;
 }
 
 export interface TimelineAttraction {
@@ -17,6 +21,7 @@ export interface TimelineAttraction {
   key: string;
   stopIndex: number;
   time: string;
+  endTime?: string;
   name: string;
   category: string;
   durationMinutes: number;
@@ -92,7 +97,11 @@ export function buildDayTimeline(day: ItineraryDay): TimelineEntry[] {
         kind: "travel",
         key,
         minutes: Math.round(activity.durationMinutes),
-        toName: activity.title.replace(/^To\s+/i, ""),
+        toName: day.activities.slice(index + 1).find(next => next.type === "attraction")?.title ?? activity.title.replace(/^To\s+/i, ""),
+        estimated: activity.travelDurationSource !== "provider",
+        unavailable: activity.travelDurationSource === "unavailable",
+        mode: day.travelMode,
+        distanceMeters: activity.distanceMeters,
       } satisfies TimelineTravel;
     }
 
@@ -106,9 +115,10 @@ export function buildDayTimeline(day: ItineraryDay): TimelineEntry[] {
         kind: "attraction",
         attractionKey: stop?.attractionKey,
         placeId: activity.placeId,
-        key,
+        key: activity.placeId ? `${day.dayIndex}:${activity.placeId}` : key,
         stopIndex,
         time: activity.schedulingStatus === "unresolved" ? i18n.t("unresolved", { ns: "itinerary/editor" }) : formatClock(activity.startTime),
+        endTime: activity.schedulingStatus === "unresolved" || !activity.endTime ? undefined : formatClock(activity.endTime),
         name: activity.title,
         category: stop ? capitalize(stop.category) : i18n.t("sight", { ns: "itinerary/editor" }),
         durationMinutes: Math.round(activity.durationMinutes),

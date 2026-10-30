@@ -5,9 +5,11 @@ import TripMap from "./TripMap";
 const mocks = vi.hoisted(() => ({
   clearLayers: vi.fn(), fitBounds: vi.fn(), polyline: vi.fn(), marker: vi.fn(), divIcon: vi.fn(),
   tileLayer: vi.fn(),
+  panTo: vi.fn(),
+  invalidateSize: vi.fn(),
 }));
 vi.mock("leaflet", () => ({ default: {
-  map: () => ({ fitBounds: mocks.fitBounds, remove: vi.fn(), flyTo: vi.fn(), getZoom: () => 15 }),
+  map: () => ({ fitBounds: mocks.fitBounds, remove: vi.fn(), panTo: mocks.panTo, invalidateSize: mocks.invalidateSize, getZoom: () => 15 }),
   tileLayer: mocks.tileLayer,
   layerGroup: () => ({ addTo: () => ({ clearLayers: mocks.clearLayers }) }),
   latLngBounds: (coordinates: number[][]) => coordinates,
@@ -26,6 +28,22 @@ const center: [number, number] = [48.85, 2.35];
 const stops: [number, number][] = [[48.85, 2.35], [48.86, 2.36]];
 
 describe("TripMap itinerary updates", () => {
+  it("resizes the existing map on reveal without recreating markers or routes", () => {
+    const view = render(<TripMap center={center} stops={stops} geometry={stops} active={0} visible={false} onSelect={() => {}} />);
+    expect(mocks.fitBounds).not.toHaveBeenCalled();
+    view.rerender(<TripMap center={center} stops={stops} geometry={stops} active={0} visible onSelect={() => {}} />);
+    expect(mocks.invalidateSize).toHaveBeenCalledWith({ pan: false, animate: false });
+    expect(mocks.fitBounds).toHaveBeenCalledTimes(1);
+    expect(mocks.clearLayers).toHaveBeenCalledTimes(1);
+    expect(mocks.tileLayer).toHaveBeenCalledTimes(1);
+  });
+  it("preserves layers and zoom when selection changes with equivalent coordinates", () => {
+    const view = render(<TripMap center={center} stops={stops} geometry={stops} active={0} onSelect={() => {}} />);
+    view.rerender(<TripMap center={[...center]} stops={stops.map(stop => [...stop])} geometry={stops.map(stop => [...stop])} active={1} onSelect={() => {}} />);
+    expect(mocks.clearLayers).toHaveBeenCalledTimes(1);
+    expect(mocks.fitBounds).toHaveBeenCalledTimes(1);
+    expect(mocks.panTo).toHaveBeenCalledWith(stops[1], { animate: false });
+  });
   it("identifies the site to OSM without sending the shared URL or token", () => {
     render(<TripMap center={center} stops={stops} active={-1} onSelect={() => {}} />);
     expect(mocks.tileLayer).toHaveBeenCalledWith("https://tile.openstreetmap.org/{z}/{x}/{y}.png",

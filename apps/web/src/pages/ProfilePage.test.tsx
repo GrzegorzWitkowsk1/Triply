@@ -93,6 +93,6 @@ describe("profile settings", () => {
     fireEvent.click(screen.getByRole("menuitemradio", { name: "English" }));
     expect(localStorage.getItem("triply.language")).toBe("en");
     first.unmount(); page();
-    expect(screen.getByRole("button", { name: "Language: English" }).querySelector("img")?.getAttribute("src")).toBe("/flags/en.svg");
+    expect(screen.getByRole("button", { name: "Language: English — EN" }).querySelector("img")?.getAttribute("src")).toBe("/flags/en.svg");
   });
 });

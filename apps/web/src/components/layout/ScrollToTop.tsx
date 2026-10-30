@@ -6,6 +6,11 @@ export default function ScrollToTop() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
+    const frame = requestAnimationFrame(() => {
+      const main = document.querySelector<HTMLElement>("main");
+      if (main) { main.tabIndex = -1; main.focus({ preventScroll: true }); }
+    });
+    return () => cancelAnimationFrame(frame);
   }, [pathname]);
 
   return null;

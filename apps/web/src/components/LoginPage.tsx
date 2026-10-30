@@ -4,7 +4,7 @@ import { errorKey as localizedErrorKey, resolveMessage } from "../i18n/errors";
 import { errorMessage as localizedError } from "../i18n/errors";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { IconButton, InputAdornment, TextField } from "@mui/material";
 import {
@@ -39,7 +39,9 @@ function Fields({
   setEmail,
   setPassword,
   setShowPassword,
-}: FormState & { mode: AuthView }) {
+  invalidFields,
+  disabled,
+}: FormState & { mode: AuthView; invalidFields: string[]; disabled: boolean }) {
   useTranslation();
   return (
     <>
@@ -47,6 +49,10 @@ function Fields({
         label={i18n.t("emailAddress", { ns: "auth" })}
         fullWidth
         type="email"
+        name="email"
+        slotProps={{ htmlInput: { readOnly: disabled } }}
+        error={invalidFields.includes("email")}
+        helperText={invalidFields.includes("email") ? i18n.t("invalidForm", { ns: "auth" }) : undefined}
         value={email}
         onChange={(event) => setEmail(event.target.value)}
         autoComplete="email"
@@ -57,12 +63,16 @@ function Fields({
         label={i18n.t("password", { ns: "auth" })}
         fullWidth
         type={showPassword ? "text" : "password"}
+        name="password"
+        error={invalidFields.includes("password")}
+        helperText={invalidFields.includes("password") ? i18n.t("invalidForm", { ns: "auth" }) : undefined}
         value={password}
         onChange={(event) => setPassword(event.target.value)}
         autoComplete={mode === "register" ? "new-password" : "current-password"}
         required
         slotProps={{
           htmlInput: {
+            readOnly: disabled,
             minLength: mode === "register" ? 12 : undefined,
             maxLength: 128,
           },
@@ -73,6 +83,7 @@ function Fields({
                   aria-label={showPassword ? i18n.t("hidePassword", { ns: "auth" }) : i18n.t("showPassword", { ns: "auth" })}
                   onClick={() => setShowPassword(!showPassword)}
                   size="small"
+                  disabled={disabled}
                 >
                   {showPassword ? <VisibilityOffOutlined /> : <VisibilityOutlined />}
                 </IconButton>
@@ -94,10 +105,13 @@ export default function LoginPage({ mode }: LoginPageProps) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [invalidFields, setInvalidFields] = useState<string[]>([]);
+  const submitting = useRef(false);
   const isRegister = mode === "register";
 
   useEffect(() => {
     setError(null);
+    setInvalidFields([]);
   }, [mode]);
 
   const getDestination = () => {
@@ -113,6 +127,11 @@ export default function LoginPage({ mode }: LoginPageProps) {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitting.current || isSubmitting) return;
+    const invalid = [...event.currentTarget.querySelectorAll<HTMLInputElement>("input")].filter(input => !input.validity.valid);
+    setInvalidFields(invalid.map(input => input.name));
+    if (invalid.length) { invalid[0].focus(); return; }
+    submitting.current = true;
     setError(null);
 
     try {
@@ -125,13 +144,13 @@ export default function LoginPage({ mode }: LoginPageProps) {
       navigate(getDestination(), { replace: true });
     } catch (caught) {
       setError(caught instanceof ApiError && caught.status === 401 ? "auth:invalidCredentials" : caught instanceof ApiError && caught.status === 409 ? "auth:accountExists" : localizedErrorKey(caught));
-    }
+    } finally { submitting.current = false; }
   };
 
   const formState = { email, password, showPassword, setEmail, setPassword, setShowPassword };
 
   return (
-    <div className="login-screen">
+    <main className="login-screen" tabIndex={-1}>
       <div className="auth-card">
         <div className="auth-media">
           <img src="/barcelona.jpg" alt={i18n.t("heroImage", { ns: "auth" })} />
@@ -141,8 +160,8 @@ export default function LoginPage({ mode }: LoginPageProps) {
               <LocationOnOutlined sx={{ color: "var(--color-primary)" }} fontSize="small" />
               {i18n.t("heroImage", { ns: "auth" })}
             </span>
-            <h2 className="auth-tagline">
-              {i18n.t("aBetterTripStartsWithAPlanThat", { ns: "auth" })}</h2>
+            <p className="auth-tagline">
+              {i18n.t("aBetterTripStartsWithAPlanThat", { ns: "auth" })}</p>
             <ul className="auth-features">
               <li>
                 <CheckCircle sx={{ color: "var(--color-ok)" }} fontSize="small" />
@@ -164,6 +183,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
             <button
               type="button"
               className={`auth-switch-btn${!isRegister ? " is-active" : ""}`}
+              disabled={isSubmitting}
               onClick={() => navigate("/login", { state: location.state })}
               aria-pressed={!isRegister}
             >
@@ -171,16 +191,17 @@ export default function LoginPage({ mode }: LoginPageProps) {
             <button
               type="button"
               className={`auth-switch-btn${isRegister ? " is-active" : ""}`}
+              disabled={isSubmitting}
               onClick={() => navigate("/register", { state: location.state })}
               aria-pressed={isRegister}
             >
               {i18n.t("register", { ns: "auth" })}</button>
           </div>
 
-          <form noValidate className="auth-form" onSubmit={(event) => void handleSubmit(event)}>
-            <h3 className="auth-heading">
+          <form noValidate className="auth-form" aria-busy={isSubmitting} onSubmit={(event) => void handleSubmit(event)}>
+            <h1 className="auth-heading">
               {t(isRegister ? "createAccountTitle" : "welcomeBack")}
-            </h3>
+            </h1>
             <p className="auth-subtitle">
               {isRegister
                 ? i18n.t("joinTriplyAndKeepEveryThoughtfulItineraryIn", { ns: "auth" })
@@ -194,7 +215,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
             )}
             {sessionExpired && <p className="auth-error" role="status">{i18n.t("yourGuestSessionHasExpiredEnterGuestMode", { ns: "auth" })}</p>}
 
-            <Fields mode={mode} {...formState} />
+            <Fields mode={mode} {...formState} invalidFields={invalidFields} disabled={isSubmitting} />
 
             <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
               {isSubmitting
@@ -207,9 +228,11 @@ export default function LoginPage({ mode }: LoginPageProps) {
             </button>
 
             <button type="button" className="btn" disabled={isSubmitting} onClick={() => {
+              if (submitting.current || isSubmitting) return;
+              submitting.current = true;
               setError(null);
               void startGuest().then(() => navigate(getDestination(), { replace: true })).catch((caught: unknown) =>
-                setError(localizedErrorKey(caught)));
+                setError(localizedErrorKey(caught))).finally(() => { submitting.current = false; });
             }}>{isSubmitting ? i18n.t("pleaseWait", { ns: "auth" }) : i18n.t("continueAsGuest", { ns: "auth" })}</button>
             <p className="auth-switch-link">
               {isRegister ? i18n.t("alreadyHaveAnAccount", { ns: "auth" }) : i18n.t("newToTriply", { ns: "auth" })}
@@ -224,6 +247,6 @@ export default function LoginPage({ mode }: LoginPageProps) {
           </form>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

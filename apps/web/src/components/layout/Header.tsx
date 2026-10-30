@@ -11,6 +11,7 @@ import { useNotifications } from "../../hooks/useNotifications";
 import { useAuth } from "../../auth/AuthProvider";
 import Logo from "../Logo";
 import { useState } from "react";
+import { Menu, MenuItem } from "@mui/material";
 
 const TABS = [
   { to: "/trips", label: "myTrips" },
@@ -23,13 +24,14 @@ export default function Header() {
   const { data: notifications } = useNotifications();
   const { user, isGuest, logout, endGuest, isLoggingOut } = useAuth();
   const [exitError, setExitError] = useState(false);
+  const [accountAnchor, setAccountAnchor] = useState<HTMLElement | null>(null);
   const unreadCount =
     notifications?.filter((notification) => !notification.isRead).length ?? 0;
 
   return (
     <header className={`app-header${isGuest ? " guest-header" : ""}`}>
       <div className="app-header-inner">
-        <Link to="/home" className="logo-link">
+        <Link to="/home" className="logo-link" aria-label="Triply">
           <Logo />
         </Link>
 
@@ -48,7 +50,13 @@ export default function Header() {
         </nav>
 
         <div className="header-actions">
-          {!user ? <>{isGuest && <span className="guest-indicator">{i18n.t("guest", { ns: "navigation" })}</span>}<Link className="auth-link" to="/register">{i18n.t("createAccount", { ns: "auth" })}</Link><Link className="auth-link" to="/login">{i18n.t("logIn", { ns: "auth" })}</Link></> : <>
+          {!user ? <>{isGuest && <span className="guest-indicator">{i18n.t("guest", { ns: "navigation" })}</span>}<span className="header-auth-links"><Link className="auth-link" to="/register">{i18n.t("createAccount", { ns: "auth" })}</Link><Link className="auth-link" to="/login">{i18n.t("logIn", { ns: "auth" })}</Link></span>
+            <button className="header-icon mobile-account-trigger" type="button" aria-label={t("accountMenu")} aria-haspopup="menu" aria-expanded={!!accountAnchor} aria-controls={accountAnchor ? "mobile-account-menu" : undefined} onClick={event => setAccountAnchor(event.currentTarget)}><PersonOutlineOutlined /></button>
+            <Menu id="mobile-account-menu" anchorEl={accountAnchor} open={!!accountAnchor} onClose={() => setAccountAnchor(null)}>
+              <MenuItem component={Link} to="/register" onClick={() => setAccountAnchor(null)}>{i18n.t("createAccount", { ns: "auth" })}</MenuItem>
+              <MenuItem component={Link} to="/login" onClick={() => setAccountAnchor(null)}>{i18n.t("logIn", { ns: "auth" })}</MenuItem>
+            </Menu>
+          </> : <>
           <Link
             to="/notifications"
             className="header-icon header-notif"
@@ -57,7 +65,7 @@ export default function Header() {
             <NotificationsNoneOutlined />
             {unreadCount > 0 && <span className="header-notif-dot" />}
           </Link>
-          <Link to="/profile" className="user-btn" aria-label={t("profile")}>
+          <Link to="/profile" className="user-btn" aria-label={`${t("profile")}${user?.email ? `: ${user.email}` : ""}`}>
             <span className="user-icon">
               <PersonOutlineOutlined />
             </span>

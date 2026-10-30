@@ -29,15 +29,18 @@ export default function TripAttractionCard({
     <button
       type="button"
       className={`activity-card${selected ? " is-selected" : ""}`}
+      aria-pressed={selected}
+      data-place-id={entry.placeId}
       onClick={() => entry.stopIndex >= 0 && onSelect(entry.stopIndex)}
     >
       <span className="activity-name">{entry.name}</span>
+      {entry.endTime && <span className="activity-schedule">{entry.time}–{entry.endTime}</span>}
       <span className="activity-category">{categoryLabel(entry.category)}</span>
       <span className="activity-category" title={entry.admission ? i18n.t("priceSource", { ns: "itinerary/editor", source: entry.admission.source ?? i18n.t("sourceUnavailable", { ns: "itinerary/editor" }), url: entry.admission.sourceUrl ? ` (${entry.admission.sourceUrl})` : "" }) : undefined}>{localizedAdmission(entry.admission)}</span>
       <span className="activity-time">
         <ScheduleOutlined /> {i18n.t("durationVisit", { ns: "itinerary/editor", duration: formatDuration(entry.durationMinutes) })}
       </span>
-      <span className="activity-category">
+      <span className={`activity-category${check?.status === "closed" ? " activity-conflict" : ""}`}>
         {hoursLabel}
       </span>
     </button>

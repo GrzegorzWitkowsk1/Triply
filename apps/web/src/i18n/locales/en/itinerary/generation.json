@@ -1,4 +1,7 @@
 {
+  "orderChanged": "Order changed",
+  "timeChanged": "Time changed",
+  "stalePreview": "This preview is out of date or no longer available. Discard it or try different options to prepare a fresh preview. Your saved itinerary has not been overwritten.",
   "reviewAlternativeWarning": "Some details of this alternative could not be verified. Review the schedule, opening hours, route and costs before applying.",
   "reworkDay": "Rework Day",
   "yourAiDayRegenerationAllowanceIsUsedFor": "Your AI day-regeneration allowance is used for the last 24 hours. Clear the instructions to use selected preferences.",

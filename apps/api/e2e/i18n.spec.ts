@@ -11,7 +11,7 @@ for (const guest of [false, true]) test(`language preference persists for ${gues
   page.on("request", request => { if (request.method() !== "GET" && /\/api\//.test(request.url())) writes.push(request.url()); });
   const originalUrl = page.url();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
-  await page.getByRole("button", { name: "Language: English", exact: true }).focus();
+  await page.getByRole("button", { name: "Language: English — EN", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("menuitemradio", { name: "English", exact: true })).toBeFocused();
   await page.keyboard.press("End");

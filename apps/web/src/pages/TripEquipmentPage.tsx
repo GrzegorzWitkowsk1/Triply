@@ -2,7 +2,7 @@ import { errorKey as localizedErrorKey, resolveMessage } from "../i18n/errors";
 import { errorMessage as localizedError } from "../i18n/errors";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
-import { useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { Button, Collapse, useMediaQuery, Dialog, DialogActions, DialogContent, DialogTitle } from "@mui/material";
 import { useBulkPacking } from "../hooks/usePackingGeneration";
 import { Link, useParams } from "react-router-dom";
@@ -30,6 +30,8 @@ function ItemForm({ item, busy, onSave, onCancel }: {
   const [category, setCategory] = useState<EquipmentCategory>(item?.category ?? "other");
   const [count, setCount] = useState(String(item?.count ?? 1));
   const [error, setError] = useState("");
+  const [invalidFields, setInvalidFields] = useState<PropertyKey[]>([]);
+  const errorId = useId();
   const lock = useRef(false);
   const nameInput = useRef<HTMLInputElement>(null);
   async function submit(event: FormEvent) {
@@ -37,11 +39,13 @@ function ItemForm({ item, busy, onSave, onCancel }: {
     if (busy || lock.current) return;
     const result = createTripEquipmentItemSchema.safeParse({ name, category, count: Number(count) });
     if (!result.success) {
+      setInvalidFields(result.error.issues.flatMap(issue => issue.path[0] ?? []));
       setError("packing:enterAnItemName1120CharactersAnd");
       return;
     }
     lock.current = true;
     setError("");
+    setInvalidFields([]);
     try {
       await onSave(result.data);
       if (!item) { setName(""); nameInput.current?.focus(); }
@@ -50,12 +54,12 @@ function ItemForm({ item, busy, onSave, onCancel }: {
     } finally { lock.current = false; }
   }
   return <form className="packing-form" onSubmit={event => void submit(event)} noValidate aria-label={item ? i18n.t("edit", { ns: "packing", value0: item.name }) : i18n.t("addPackingItem", { ns: "packing" })}>
-    <label className="packing-name">{i18n.t("itemName", { ns: "packing" })}<input ref={nameInput} className="equipment-add-input" value={name} onChange={e => setName(e.target.value)} maxLength={120} required disabled={busy} autoFocus={!!item} placeholder={i18n.t("eGRainJacket", { ns: "packing" })} /></label>
+    <label className="packing-name">{i18n.t("itemName", { ns: "packing" })}<input ref={nameInput} className="equipment-add-input" value={name} aria-invalid={invalidFields.includes("name")} aria-describedby={invalidFields.includes("name") ? errorId : undefined} onChange={e => { setName(e.target.value); setInvalidFields(fields => fields.filter(field => field !== "name")); }} maxLength={120} required disabled={busy} autoFocus={!!item} placeholder={i18n.t("eGRainJacket", { ns: "packing" })} /></label>
     <label>{i18n.t("category", { ns: "common" })}<select className="equipment-add-input" value={category} onChange={e => setCategory(e.target.value as EquipmentCategory)} disabled={busy}>{EQUIPMENT_CATEGORIES.map(value => <option key={value} value={value}>{categories[value].label}</option>)}</select></label>
-    <label>{i18n.t("quantity", { ns: "common" })}<input className="equipment-add-input" type="number" min={1} max={999} step={1} required value={count} onChange={e => setCount(e.target.value)} disabled={busy} /></label>
+    <label>{i18n.t("quantity", { ns: "common" })}<input className="equipment-add-input" type="number" min={1} max={999} step={1} required value={count} aria-invalid={invalidFields.includes("count")} aria-describedby={invalidFields.includes("count") ? errorId : undefined} onChange={e => { setCount(e.target.value); setInvalidFields(fields => fields.filter(field => field !== "count")); }} disabled={busy} /></label>
     <button className="btn btn-primary" disabled={busy} type="submit">{!item && <AddOutlined />}{busy ? t("saving", { ns: "common" }) : item ? i18n.t("saveChanges", { ns: "common" }) : i18n.t("addItem", { ns: "packing" })}</button>
     {onCancel && <button className="btn btn-secondary" type="button" onClick={onCancel} disabled={busy}>{t("cancel", { ns: "common" })}</button>}
-    {error && <p className="packing-form-error" role="alert">{resolveMessage(error)}</p>}
+    {error && <p id={errorId} className="packing-form-error" role="alert">{resolveMessage(error)}</p>}
   </form>;
 }
 
