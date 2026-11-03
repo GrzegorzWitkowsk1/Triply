@@ -5285,7 +5285,7 @@ body:has(.assistant-panel[aria-modal="true"]) {
   .assistant-fab.is-inline .assistant-fab-label { display: inline; }
   .assistant-fab.is-inline:hover { background: var(--color-primary-tint); transform: none; }
 }
-@media (max-width: 360px) {
+@media (max-width: 480px) {
   .app-header .logo-name { display: none; }
   .app-header .logo { gap: 0; }
   .app-header .header-actions { flex-wrap: nowrap; }
@@ -5448,6 +5448,6 @@ body:has(.assistant-panel[aria-modal="true"]) {
 }
 @media (max-width: 768px) {
  .app-header-inner { padding: 0 12px; gap: 8px; }
- .header-actions { gap: 6px; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
+ .header-actions { gap: 6px; min-width: 0; flex-wrap: nowrap; justify-content: flex-end; }
  .header-actions .user-email { display: none; }
 }

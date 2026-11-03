@@ -7,6 +7,7 @@ import { CURATED_COLLECTIONS, findDestination, findCuratedCollection } from "@tr
 import CollectionPage from "./CollectionPage";
 import ExplorePage from "./ExplorePage";
 import SavedPage from "./SavedPage";
+import ScrollToTop from "../components/layout/ScrollToTop";
 
 const auth = vi.hoisted(() => ({ status: "guest" }));
 vi.mock("../auth/AuthProvider", () => ({ useAuth: () => ({ status: auth.status, guest: auth.status === "guest" ? { id: "g" } : null, user: auth.status === "authenticated" ? { id: "u" } : null }) }));
@@ -33,10 +34,11 @@ function mount(path = "/explore/collections/food-first-weekends") {
     return new Response(JSON.stringify({ destinations: [...saved].map(id => ({ destinationId: id, destination: findDestination(id), createdAt: "2030-01-01" })) }));
   });
   vi.stubGlobal("fetch", fetcher);
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><Probe /><Routes>
+  vi.stubGlobal("scrollTo", vi.fn());
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><ScrollToTop /><Probe /><main tabIndex={-1}><Routes>
     <Route path="/explore" element={<ExplorePage />} /><Route path="/explore/collections/:slug" element={<CollectionPage />} />
     <Route path="/saved" element={<SavedPage />} /><Route path="/home" element={<h1>Existing wizard</h1>} /><Route path="/login" element={<h1>Enter Guest Mode or sign in</h1>} />
-  </Routes></MemoryRouter></QueryClientProvider>);
+  </Routes></main></MemoryRouter></QueryClientProvider>);
   return fetcher;
 }
 afterEach(() => { cleanup(); client?.clear(); vi.unstubAllGlobals(); failure = empty = missing = deferred = failSave = false; release = undefined; auth.status = "guest"; });
@@ -46,9 +48,13 @@ it("keeps all four editorial titles and descriptions and actionable destination 
     expect(screen.getByRole("heading", { name: collection.title }).closest("a")).toHaveAttribute("href", `/explore/collections/${collection.slug}`);
     expect(screen.getByText(collection.description)).toBeVisible();
   }
+  fireEvent.click(screen.getByRole("heading", { name: "Food-first weekends" }).closest("a")!);
+  await screen.findByRole("article", { name: "Destination: Barcelona" });
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
   const chip = screen.getByRole("link", { name: "Explore Barcelona in Food-first weekends" });
   fireEvent.click(chip);
   await screen.findByRole("article", { name: "Destination: Barcelona" });
+  await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
   await waitFor(() => expect(document.getElementById("collection-city-003")).toHaveFocus());
   expect(screen.getByRole("link", { name: "Back to Explore" })).toHaveAttribute("href", "/explore?q=barce&country=spain&sort=name-desc&page=2");
   fireEvent.click(screen.getByRole("button", { name: "Back" }));

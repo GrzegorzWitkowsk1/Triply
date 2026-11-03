@@ -181,7 +181,7 @@ for (const device of devices) test.describe(device.name, () => {
 
 test("all target widths and portrait/landscape preserve navigation without overflow", async ({ page, user }) => {
   await login(page, user); await openTrip(page, user.tripId!);
-  for (const width of [320, 360, 375, 390, 430, 768, 1024, 1440]) {
+  for (const width of [320, 360, 375, 390, 430, 480, 481, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: width < 768 ? 568 : 900 }); await noOverflow(page);
     await headerFits(page);
     if (width < 1024) { await page.getByRole("button", { name: "Map", exact: true }).click(); await expect(page.locator(".trip-map")).toBeVisible(); }
@@ -191,7 +191,7 @@ test("all target widths and portrait/landscape preserve navigation without overf
   await page.getByRole("button", { name: "Plan", exact: true }).click(); await expect(page.locator(".trip-left")).toBeVisible();
   await page.goto(`/trips/${user.tripId}/equipment`);
   await expect(page.locator(".equipment-page")).toBeVisible();
-  for (const width of [320, 360, 375, 390, 430, 768, 1024, 1440]) {
+  for (const width of [320, 360, 375, 390, 430, 480, 481, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: width < 768 ? 568 : 900 });
     await noOverflow(page); await headerFits(page);
   }

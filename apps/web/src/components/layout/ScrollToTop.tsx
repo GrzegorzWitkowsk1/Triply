@@ -8,7 +8,10 @@ export default function ScrollToTop() {
     window.scrollTo(0, 0);
     const frame = requestAnimationFrame(() => {
       const main = document.querySelector<HTMLElement>("main");
-      if (main) { main.tabIndex = -1; main.focus({ preventScroll: true }); }
+      if (main && !main.contains(document.activeElement)) {
+        main.tabIndex = -1;
+        main.focus({ preventScroll: true });
+      }
     });
     return () => cancelAnimationFrame(frame);
   }, [pathname]);
