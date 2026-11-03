@@ -28,7 +28,18 @@ for (const code of ["en", "pl"] as const) for (const mobile of [false, true]) te
     await page.route("**/days/1/regenerate", route => { pending = route; });
     await dialog.getByRole("textbox").fill("Less walking");
     await dialog.getByRole("button", { name: code === "pl" ? "Wygeneruj wariant" : "Generate alternative", exact: true }).click();
-    await expect.poll(() => Boolean(pending)).toBe(true); await expect(dialog.getByRole("status")).toBeVisible(); await capture("loading");
+    await expect.poll(() => Boolean(pending)).toBe(true); await expect(dialog.getByRole("status")).toBeVisible();
+    if (mobile) {
+      await page.setViewportSize({ width: 375, height: 400 });
+      const content = dialog.locator(".regenerate-content");
+      await expect.poll(() => content.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+      await dialog.focus(); await page.keyboard.press("Tab");
+      await expect(content).toBeFocused();
+      await content.evaluate(element => { element.scrollTop = 0; });
+      await page.keyboard.press("PageDown");
+      await expect.poll(() => content.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+    }
+    await capture("loading");
     await pending!.abort("failed"); await expect(dialog.getByRole("alert")).toBeVisible(); await capture("network-error");
     await expect(dialog.getByRole("textbox")).toHaveValue("Less walking");
     await expect(dialog.getByRole("button", { name: code === "pl" ? "Wygeneruj wariant" : "Generate alternative", exact: true })).toBeEnabled();

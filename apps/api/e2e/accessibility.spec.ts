@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import type { Page } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 import { test, expect, login, openTrip } from "./fixtures.ts";
 
 test.use({ scenario: "editing" });
@@ -20,7 +20,19 @@ for (const code of ["en", "pl"] as const) for (const mobile of [false, true]) te
     await login(page, user); await language(page, code);
     const issues: Awaited<ReturnType<typeof audit>> = [];
     for (const path of ["/home", "/trips", "/explore", "/saved", `/trips/${user.tripId}/equipment`, "/profile", "/notifications"]) {
+      let migrationRequest: Route | undefined;
+      const migrationUrl = "**/api/auth/guest-migration/status";
+      if (path === "/explore") await page.route(migrationUrl, route => { migrationRequest = route; });
       await page.goto(path); await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+      if (path === "/explore") {
+        await expect.poll(() => Boolean(migrationRequest)).toBe(true);
+        const loading = page.locator(".guest-usage[role='status']");
+        await expect(loading).toBeVisible();
+        issues.push(...await audit(page, "guest-migration-loading"));
+        await migrationRequest!.continue();
+        await expect(loading).toBeHidden();
+        await page.unroute(migrationUrl);
+      }
       issues.push(...await audit(page, path));
     }
     await openTrip(page, user.tripId!); await expect(page.locator(".budget-expense-form")).toBeVisible();
@@ -42,4 +54,20 @@ for (const code of ["en", "pl"] as const) for (const mobile of [false, true]) te
     await info.attach("axe-results", { body: JSON.stringify(issues, null, 2), contentType: "application/json" });
     expect(issues).toEqual([]);
   });
+});
+
+test("guest usage loading and error states have no axe violations", async ({ page }, info) => {
+  let usageRequest: Route | undefined;
+  await page.route("**/api/guest/usage", route => { usageRequest = route; });
+  await page.goto("/login");
+  await page.getByRole("button", { name: "Continue as guest", exact: true }).click();
+  await expect.poll(() => Boolean(usageRequest)).toBe(true);
+  const loading = page.locator(".guest-usage[role='status']");
+  await expect(loading).toBeVisible();
+  const issues = await audit(page, "guest-usage-loading");
+  await usageRequest!.fulfill({ status: 503, json: { error: "Unavailable fixture" } });
+  await expect(page.locator(".guest-usage[role='alert']")).toBeVisible();
+  issues.push(...await audit(page, "guest-usage-error"));
+  await info.attach("axe-results", { body: JSON.stringify(issues, null, 2), contentType: "application/json" });
+  expect(issues).toEqual([]);
 });

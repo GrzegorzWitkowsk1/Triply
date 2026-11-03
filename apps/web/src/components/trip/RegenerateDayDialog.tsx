@@ -153,7 +153,7 @@ export default function RegenerateDayDialog({
         </IconButton>
       </DialogTitle>
 
-      <DialogContent className="regenerate-content">
+      <DialogContent className="regenerate-content" tabIndex={0}>
         {aiRemaining !== undefined && <p>{i18n.t("aiAllowance", { ns: "itinerary/generation", count: aiRemaining })}</p>}
         {aiBlocked && <p role="alert">{i18n.t("yourAiDayRegenerationAllowanceIsUsedFor", { ns: "itinerary/generation" })}</p>}
         <p className="regenerate-lead">

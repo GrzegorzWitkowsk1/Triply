@@ -69,7 +69,7 @@ export default function GuestMigration() {
     }
   }, [status.data, userId]);
   if (!userId) return null;
-  if (status.isPending) return <aside className="guest-usage" role="status">{i18n.t("checkingForGuestData", { ns: "auth/migration" })}</aside>;
+  if (status.isPending) return <div className="guest-usage" role="status">{i18n.t("checkingForGuestData", { ns: "auth/migration" })}</div>;
   if (status.isError) return <Alert severity="warning">{i18n.t("weCouldnTCheckForGuestData", { ns: "auth/migration" })}<Button onClick={() => void status.refetch()}>{i18n.t("retryImportStatus", { ns: "auth/migration" })}</Button></Alert>;
   const data = status.data;
   if (!data || data.status === "none" || data.status === "discarded" || dismissed) return null;

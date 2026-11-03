@@ -8,8 +8,8 @@ export default function GuestUsage() {
   const { t } = useTranslation("auth/guest");
   const usage = useGuestUsage();
   if (!usage.isGuest) return null;
-  if (usage.isPending) return <aside className="guest-usage" role="status">{t("loading")}</aside>;
-  if (usage.isError) return <aside className="guest-usage" role="alert">{errorMessage(usage.error)} <button className="auth-link" onClick={() => void usage.refetch()}>{t("retry", { ns: "common" })}</button></aside>;
+  if (usage.isPending) return <div className="guest-usage" role="status">{t("loading")}</div>;
+  if (usage.isError) return <div className="guest-usage" role="alert">{errorMessage(usage.error)} <button className="auth-link" onClick={() => void usage.refetch()}>{t("retry", { ns: "common" })}</button></div>;
   const u = usage.data;
   if (!u) return null;
   const allowance = (date: string) => <time dateTime={date}>{t("nextAllowance", { date: formatDate(date, { dateStyle: "medium", timeStyle: "short" }) })}</time>;
