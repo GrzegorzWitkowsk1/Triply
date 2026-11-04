@@ -148,6 +148,18 @@ export function applyItineraryOperation(days: ItineraryDay[], pool: readonly Tri
   };
   const day = selected[0];
   switch (operation.type) {
+    case "reschedule": {
+      const index = requireIndex(day, operation.attractionId);
+      const activity = day.activities.find(a => a.type === "attraction" && a.placeId === operation.attractionId)!;
+      activity.requestedStartTime = operation.time;
+      const stop = day.stops.splice(index, 1)[0];
+      const at = day.stops.findIndex(other => {
+        const existing = day.activities.find(a => a.type === "attraction" && a.placeId === other.placeId);
+        return (existing?.requestedStartTime ?? existing?.startTime.slice(11, 16) ?? "") > operation.time;
+      });
+      day.stops.splice(at < 0 ? day.stops.length : at, 0, stop);
+      break;
+    }
     // Retry uses the same validated recalculation and version-guarded save as other edits.
     case "reroute": break;
     case "add": insert(day, requireNew(operation.attractionId), operation.position); break;
@@ -206,6 +218,7 @@ export async function recalculateEditedDay(trip: TripDocument, day: ItineraryDay
   const dates: (string | null)[] = [];
   dates[day.dayIndex - 1] = day.date || null;
   const scheduled = buildDailySchedules({ dayRoutes: [route], travelMode: env.ROUTING_MODE,
+    fixedStartMinutes: Object.fromEntries(day.activities.filter(a => a.placeId && a.requestedStartTime).map(a => [a.placeId!, Number(a.requestedStartTime!.slice(0, 2)) * 60 + Number(a.requestedStartTime!.slice(3))])),
     retainUnresolvedVisits: Boolean(recovery),
     pace: trip.analysis.pace, weather: trip.weather,
     timeZone: resolvePoiTimeZone(trip.analysis.location ?? {}, day.timeZone), dates, start });
@@ -253,11 +266,10 @@ export async function recalculateEditedDay(trip: TripDocument, day: ItineraryDay
 }
 
 /** The entry point for all callers, including a future assistant: authorized load + validated edit + CAS. */
-export async function editTripItinerary(tripId: string, userId: string, input: ItineraryEditRequest,
+export async function prepareItineraryEdit(trip: TripDocument, input: ItineraryEditRequest,
   options: { provider?: RoutingProvider | null } = {}) {
   const parsed = itineraryEditRequestSchema.safeParse(input);
   if (!parsed.success) throw new ItineraryEditError(parsed.error.issues[0]?.message ?? "Invalid edit");
-  const trip = await loadEditableTrip(tripId, userId);
   if (trip.itineraryVersion !== parsed.data.expectedVersion) {
     throw new ItineraryEditError("The itinerary has changed. Refresh it and try again.", 409);
   }
@@ -305,6 +317,20 @@ export async function editTripItinerary(tripId: string, userId: string, input: I
   // Localize only after constraint checks and conflict recovery have finished.
   itinerary.days = itinerary.days.map(day => affectedDayIndices.includes(day.dayIndex)
     ? localizeGeneratedDay(day, contentLocale(trip.contentLocale)) : day);
+  if (parsed.data.operation.type === "reschedule") {
+    const operation = parsed.data.operation;
+    const visit = itinerary.days.find(d => d.dayIndex === operation.dayIndex)?.activities.find(a => a.type === "attraction" && a.placeId === operation.attractionId);
+    if (!visit || visit.schedulingStatus === "unresolved" || visit.startTime.slice(11, 16) !== operation.time) throw new ItineraryEditError("The requested time is not feasible. No changes were saved.", 422);
+  }
+  return { itinerary, affectedDayIndices, warnings: itinerary.days.filter(d => affectedDayIndices.includes(d.dayIndex)).flatMap(d => d.warnings) };
+}
+
+export async function editTripItinerary(tripId: string, userId: string, input: ItineraryEditRequest,
+  options: { provider?: RoutingProvider | null } = {}) {
+  const trip = await loadEditableTrip(tripId, userId);
+  const parsed = itineraryEditRequestSchema.safeParse(input);
+  if (!parsed.success) throw new ItineraryEditError("Invalid edit");
+  const { itinerary, affectedDayIndices } = await prepareItineraryEdit(trip, parsed.data, options);
   // Compare after the same Mongoose defaults/casting used by persistence.
   if (JSON.stringify(new TripModel({ itinerary }).toObject().itinerary) === JSON.stringify(trip.toObject().itinerary)) {
     const unchanged = await TripModel.findOne({ _id: trip._id, ...ownerFilter(storedOwner(trip)),

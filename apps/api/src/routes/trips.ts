@@ -18,7 +18,8 @@ import {
   type UpdateTripRequirements,
 } from "@triply/shared";
 import { aiService } from "../ai/index.js";
-import { assistantMessageRequestSchema } from "@triply/shared";
+import { assistantMessageRequestSchema, assistantConfirmationSchema } from "@triply/shared";
+import { AssistantActionError } from "../services/assistantToolRegistry.js";
 import { cancelAssistantAction, confirmAssistantEdit, getAssistantConversation, recordAssistantRegeneration, sendAssistantMessage } from "../services/tripAssistantService.js";
 import { itineraryCandidatesRequestSchema, itineraryEditRequestSchema } from "@triply/shared";
 import { editTripItinerary, itineraryCandidates, ItineraryEditError } from "../services/tripItineraryEditor.js";
@@ -90,29 +91,42 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
   app.post<HttpRoute>("/trips/:id/assistant/messages", { preHandler: aiLimiter },
     async (req, res) => {
     const parsed = assistantMessageRequestSchema.safeParse(req.body);
-    if (!parsed.success) { return res.code(400).send({ error: "Enter a message of 1–2000 characters and valid conversation/day identifiers." }); }
-    try { return res.send(await sendAssistantMessage(tripIdParam(req) ?? "", currentTripOwner(req), parsed.data)); }
+    if (!parsed.success) { return res.code(400).send({ code: "VALIDATION_ERROR", error: "Enter a message of 1–2000 characters and valid conversation/day identifiers." }); }
+    const controller = new AbortController();
+    const aborted = () => { if (!res.raw.writableEnded) controller.abort(); };
+    req.raw.once("aborted", aborted); res.raw.once("close", aborted);
+    try { return res.send(await sendAssistantMessage(tripIdParam(req) ?? "", currentTripOwner(req), parsed.data,
+      { signal: controller.signal, requestId: req.id, log: fields => req.log.info(fields, "assistant request") })); }
     catch (error) {
       if (!(error instanceof ItineraryEditError)) throw error;
       return res.code(error.status).send({ error: error.message });
     }
+    finally { req.raw.removeListener("aborted", aborted); res.raw.removeListener("close", aborted); }
   });
   app.post<HttpRoute>("/trips/:id/assistant/actions/:previewId/apply", async (req, res) => {
     const previewId = req.params.previewId;
     if (typeof previewId !== "string" || !/^[a-f\d-]{36}$/i.test(previewId)) { return res.code(400).send({ error: "Invalid preview" }); }
-    try { const result = await confirmAssistantEdit(tripIdParam(req) ?? "", currentTripOwner(req), previewId); return res.send({ ...result, trip: toTripDetail(result.trip) }); }
+    const parsed = assistantConfirmationSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.code(400).send({ code: "VALIDATION_ERROR", error: "Only the proposal identifier and locale are accepted." });
+    const started = Date.now();
+    try {
+      const result = await confirmAssistantEdit(tripIdParam(req) ?? "", currentTripOwner(req), previewId, parsed.data.locale);
+      req.log.info({ requestId: req.id, proposalId: previewId, tools: result.proposal.actions.map(a => a.tool), status: result.proposal.status, latencyMs: Date.now() - started }, "assistant confirmation");
+      return res.send({ ...result, trip: toTripDetail(result.trip) });
+    }
     catch (error) {
+      req.log.info({ requestId: req.id, proposalId: previewId, failureCode: error instanceof AssistantActionError ? error.code : "EXECUTION_FAILED", latencyMs: Date.now() - started }, "assistant confirmation failed");
       if (!(error instanceof ItineraryEditError)) throw error;
-      return res.code(error.status).send({ error: error.message });
+      return res.code(error.status).send({ code: error instanceof AssistantActionError ? error.code : "VALIDATION_FAILED", error: error.message, warnings: error.warnings });
     }
   });
   app.delete<HttpRoute>("/trips/:id/assistant/actions/:previewId", async (req, res) => {
     const previewId = req.params.previewId;
     if (typeof previewId !== "string" || !/^[a-f\d-]{36}$/i.test(previewId)) { return res.code(400).send({ error: "Invalid preview" }); }
-    try { await cancelAssistantAction(tripIdParam(req) ?? "", currentTripOwner(req), previewId); return res.code(204).send(); }
+    try { const proposal = await cancelAssistantAction(tripIdParam(req) ?? "", currentTripOwner(req), previewId); req.log.info({ requestId: req.id, proposalId: previewId, status: proposal.status }, "assistant proposal rejection"); return res.send({ proposal }); }
     catch (error) {
       if (!(error instanceof ItineraryEditError)) throw error;
-      return res.code(error.status).send({ error: error.message });
+      return res.code(error.status).send({ code: error instanceof AssistantActionError ? error.code : "VALIDATION_FAILED", error: error.message });
     }
   });
 

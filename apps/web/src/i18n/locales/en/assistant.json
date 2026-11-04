@@ -1,4 +1,5 @@
 {
+  "retryMessage": "Retry message",
   "messageInput": "Message Triply",
   "openLabel": "Ask Triply",
   "panelLabel": "Ask Triply about {{city}}",
@@ -21,5 +22,41 @@
   "suggestion_0": "Plan for rain",
   "suggestion_1": "Make it cheaper",
   "suggestion_2": "Less Walking",
-  "noAttractions": "No attractions"
+  "noAttractions": "No attractions",
+  "proposalTitle": "Review changes",
+  "before": "Before",
+  "after": "After",
+  "notPresent": "None",
+  "confirmAllNotice": "Confirmation applies to every change listed.",
+  "confirmProposal": "Confirm changes",
+  "cancelProposal": "Cancel",
+  "applying": "Saving…",
+  "proposalStatus": {
+    "pending": "Awaiting confirmation",
+    "completed": "Changes saved",
+    "rejected": "Cancelled",
+    "expired": "Proposal expired — request a new one.",
+    "stale": "Data changed — request a new preview.",
+    "failed": "Changes blocked"
+  },
+  "actionErrors": {
+    "PROPOSAL_STALE": "Data changed. Request a new preview.",
+    "PROPOSAL_EXPIRED": "Proposal expired. Request a new one.",
+    "PROPOSAL_REJECTED": "This proposal was cancelled.",
+    "PROPOSAL_NOT_FOUND": "Proposal unavailable. Request a new one.",
+    "VALIDATION_FAILED": "These changes cannot be saved. Review the warnings.",
+    "ACTION_FAILED": "Could not confirm the result. Retry safely; changes will not be duplicated."
+  },
+  "tools": {
+    "reschedule_attraction": "Reschedule attraction",
+    "move_attraction": "Move attraction",
+    "remove_attraction": "Remove attraction",
+    "add_existing_attraction": "Add attraction",
+    "suggest_replacement": "Replace attraction",
+    "add_expense": "Add expense",
+    "update_expense": "Update expense",
+    "add_packing_item": "Add packing item",
+    "remove_packing_item": "Remove packing item",
+    "update_packing_item_status": "Update packing status"
+  }
 }

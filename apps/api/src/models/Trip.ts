@@ -72,6 +72,8 @@ export interface TripRegenerationRecord {
 }
 
 export interface TripRecord {
+  assistantAction?: import("../services/assistantActions.js").StoredAssistantProposal | null;
+  assistantActionHistory?: import("@triply/shared").AssistantActionProposal[];
   contentLocale?: import("@triply/shared").SupportedLocale;
   sharing?: { enabled: boolean; tokenHash?: string | null; createdAt: Date | null; updatedAt: Date | null };
   createdAt: Date;
@@ -278,6 +280,7 @@ const itineraryActivitySchema = new Schema<ScheduledActivity>(
     title: { type: String, required: true },
     durationMinutes: { type: Number, required: true },
     durationSource: { type: String, enum: ["provided", "estimated", null], default: null },
+    requestedStartTime: { type: String },
     distanceMeters: { type: Number, default: null },
     travelDurationSource: {
       type: String,
@@ -424,6 +427,8 @@ const analysisSchema = new Schema<TripAnalysis>(
 
 const tripSchema = new Schema<TripRecord>(
   {
+    assistantAction: { type: Schema.Types.Mixed, default: null },
+    assistantActionHistory: { type: [Schema.Types.Mixed], default: [] },
     expenses: { type: [new Schema({
       id: { type: String, required: true }, title: { type: String, required: true, maxlength: 120 },
       category: { type: String, required: true, enum: EXPENSE_CATEGORIES },

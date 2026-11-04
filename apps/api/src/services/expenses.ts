@@ -20,8 +20,7 @@ export function validateExpenseAssociations(trip: TripDocument, expense: Expense
     if (count !== 1 && !unchanged) throw new ItineraryEditError("Select a single scheduled admission to replace");
   }
 }
-export async function mutateExpense(tripId: string, userId: string, operation: ExpenseOperation, revision: number): Promise<TripDocument> {
-  const trip = await loadBudgetTrip(tripId, userId);
+export function prepareExpenseOperation(trip: TripDocument, operation: ExpenseOperation, revision: number, timestamp = new Date().toISOString()) {
   const current = trip.toObject().expenses ?? [];
   // Stable client UUID makes retries idempotent, even after the revision advances.
   if (operation.type === "create") {
@@ -29,7 +28,7 @@ export async function mutateExpense(tripId: string, userId: string, operation: E
     if (previous) {
       const { id: _id, createdAt: _created, updatedAt: _updated, ...input } = previous;
       if (JSON.stringify(expenseInputSchema.parse(input)) !== JSON.stringify(expenseInputSchema.parse(operation.expense))) throw new ItineraryEditError("Request identifier already used", 409);
-      return trip;
+      return { expenses: current, unchanged: true };
     }
   }
   if ((trip.budgetRevision ?? 0) !== revision) throw new ItineraryEditError("Expenses changed. Refresh and try again.", 409);
@@ -43,12 +42,19 @@ export async function mutateExpense(tripId: string, userId: string, operation: E
     validateExpenseAssociations(trip, expense, current[index]);
     const occurrences = trip.itinerary?.days.flatMap(d => d.activities.filter(a => a.type === "attraction" && a.placeId === expense.attractionId)).length ?? 0;
     if (expense.replacesAdmission && current.some((e, i) => i !== index && e.replacesAdmission && (e.dayId === expense.dayId || occurrences === 1) && e.attractionId === expense.attractionId)) throw new ItineraryEditError("This admission already has a replacement expense");
-    const now = new Date().toISOString();
+    const now = timestamp;
     if (operation.type === "create") current.push({ ...expense, id: operation.requestId, createdAt: now, updatedAt: now });
     else current[index] = { ...current[index], ...expense, updatedAt: now };
   }
   if (current.length > 2000) throw new ItineraryEditError("Expense limit reached");
   try { summarizeBudget({ ...trip.toObject(), expenses: current }); } catch { throw new ItineraryEditError("Combined expenses exceed the supported money range"); }
+  return { expenses: current, unchanged: false };
+}
+export async function mutateExpense(tripId: string, userId: string, operation: ExpenseOperation, revision: number): Promise<TripDocument> {
+  const trip = await loadBudgetTrip(tripId, userId);
+  const prepared = prepareExpenseOperation(trip, operation, revision);
+  if (prepared.unchanged) return trip;
+  const current = prepared.expenses;
   const updated = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
     $and: [{ $or: [{ budgetRevision: revision }, ...(revision === 0 ? [{ budgetRevision: { $exists: false } }] : [])] },
       { $or: [{ itineraryVersion: trip.itineraryVersion ?? 0 }, ...(!trip.itineraryVersion ? [{ itineraryVersion: { $exists: false } }] : [])] }],

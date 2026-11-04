@@ -6,6 +6,8 @@ export type AiErrorCode =
   | "unreachable"
   | "rate_limited"
   | "invalid_credentials"
+  | "invalid_request"
+  | "context_too_large"
   | "unavailable"
   | "invalid_response";
 
@@ -30,6 +32,8 @@ export class AiError extends Error {
 }
 
 export function aiErrorFromHttpStatus(status: number, provider: AIProviderName): AiError {
+  if (status === 413) return new AiError("The AI request exceeds the context limit.", 413, { provider, code: "context_too_large" });
+  if (status >= 400 && status < 500 && ![401, 403, 429].includes(status)) return new AiError("The AI service rejected the request format.", 502, { provider, code: "invalid_request" });
   if (status === 429 || status === 503) {
     return new AiError("The AI service is busy right now. Please try again in a moment.", 503, {
       provider,

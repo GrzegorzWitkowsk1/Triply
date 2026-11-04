@@ -300,7 +300,7 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
     let unverifiedOpeningCount = 0;
     let stopped = false;
 
-    const insertDueBreaks = (at: number): number => {
+    const insertDueBreaks = (at: number, limit = endMinutes): number => {
       let current = at;
       const rules = BREAKS.map((entry) => ({
         ...entry,
@@ -316,7 +316,7 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
           continue;
         }
 
-        if (current + rule.durationMinutes > endMinutes) {
+        if (current + rule.durationMinutes > limit) {
           continue;
         }
 
@@ -470,6 +470,21 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
       cursor = insertDueBreaks(cursor);
 
       const travel = segment ? resolveTravel(segment, input.travelMode, config) : null;
+      const fixed = place.placeId ? input.fixedStartMinutes?.[place.placeId] : undefined;
+      if (fixed !== undefined) {
+        if (!Number.isInteger(fixed) || fixed < startMinutes || fixed >= endMinutes || cursor + (travel?.minutes ?? 0) > fixed) {
+          dropTrailing(placeIndex, "insufficient-time", "The requested arrival time conflicts with preceding activities or travel.");
+          if (input.retainUnresolvedVisits) continue;
+          break;
+        }
+        const departure = fixed - (travel?.minutes ?? 0);
+        // Use the waiting gap for normal breaks without shifting the fixed visit.
+        for (const { rule } of BREAKS.map(entry => ({ rule: profile.breaks[entry.key] })).sort((a, b) => a.rule.windowStartMinutes - b.rule.windowStartMinutes)) {
+          const at = Math.max(cursor, rule.windowStartMinutes);
+          if (at <= rule.windowEndMinutes && at + rule.durationMinutes <= departure) cursor = insertDueBreaks(at, departure);
+        }
+        cursor = departure;
+      }
       const anticipatedArrival = cursor + (travel?.minutes ?? 0);
       const weekday = date ? weekdayForDate(date) : null;
       const metadata = place.openingHours && "raw" in place.openingHours ? place.openingHours : null;
@@ -513,8 +528,10 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
         commitTravel(segment, `To ${place.name}`, place.placeId);
       }
 
-      cursor = insertCoveringBreak(cursor, visit.minutes);
-      cursor = insertDueBreaks(cursor);
+      if (fixed === undefined) {
+        cursor = insertCoveringBreak(cursor, visit.minutes);
+        cursor = insertDueBreaks(cursor);
+      }
 
       let activityStart = cursor;
 
@@ -530,6 +547,11 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
         activityStart = refit;
       }
 
+      if (fixed !== undefined && activityStart !== fixed) {
+        dropTrailing(placeIndex, "opening-hours-conflict", "The requested arrival time does not fit the known opening hours.");
+        if (input.retainUnresolvedVisits) continue;
+        break;
+      }
       if (activityStart + visit.minutes > endMinutes) {
         dropTrailing(placeIndex, "insufficient-time");
         if (input.retainUnresolvedVisits) continue;
@@ -574,6 +596,7 @@ export function buildDailySchedules<T extends SchedulablePoi = SchedulablePoi>(
       activities.push({
         type: "attraction",
         startTime: activityStartIso.iso,
+        ...(fixed !== undefined ? { requestedStartTime: `${String(Math.floor(fixed / 60)).padStart(2, "0")}:${String(fixed % 60).padStart(2, "0")}` } : {}),
         endTime: activityEndIso.iso,
         placeId: place.placeId,
         title: place.name,

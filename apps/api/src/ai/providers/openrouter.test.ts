@@ -145,7 +145,7 @@ describe("OpenRouterProvider", () => {
     expect(console.error).toHaveBeenCalledWith("[ai] openrouter returned non-JSON output");
   });
 
-  it("maps rate limiting to 503 and logs the upstream message", async () => {
+  it("maps rate limiting to 503 without logging the upstream response content", async () => {
     stubFetch(jsonResponse({ error: { message: "rate limit reached" } }, 429));
 
     await expectAiError(createOpenRouterProvider(config).generate(request), {
@@ -156,7 +156,7 @@ describe("OpenRouterProvider", () => {
     expect(console.error).toHaveBeenCalledWith(
       "[ai] openrouter request failed:",
       429,
-      "rate limit reached",
+      "upstream request rejected",
     );
   });
 

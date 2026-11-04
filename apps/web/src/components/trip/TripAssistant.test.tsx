@@ -5,7 +5,7 @@ import TripAssistant from "./TripAssistant";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const mocks = vi.hoisted(() => ({ send: vi.fn(), apply: vi.fn(), regenerate: vi.fn(), history: { data: { conversationId: "conversation", messages: [] as { id: string; role: "ai" | "user"; text: string }[] }, isLoading: false, error: null as Error | null } }));
-vi.mock("../../hooks/useTripAssistant", () => ({ useTripAssistant: () => ({ history: mocks.history, send: { mutateAsync: mocks.send }, apply: { mutateAsync: mocks.apply, isPending: false }, cancel: { isPending: false, mutate: vi.fn() } }) }));
+vi.mock("../../hooks/useTripAssistant", () => ({ useTripAssistant: () => ({ history: mocks.history, send: { mutateAsync: async (input: unknown) => { const result = await mocks.send(input); mocks.history.data = { conversationId: "conversation", messages: result.messages }; return result; } }, apply: { mutateAsync: mocks.apply, isPending: false }, cancel: { isPending: false, mutate: vi.fn() } }) }));
 vi.mock("../../hooks/useTripRegeneration", () => ({ useApplyRegeneration: () => ({ mutateAsync: mocks.regenerate, isPending: false }) }));
 vi.mock("./RegenerateDayDialog", () => ({ default: ({ open, onApply, onClose }: { open: boolean; onApply: () => void; onClose: () => void }) => open ? <div><button onClick={onApply}>Confirm regeneration</button><button onClick={onClose}>Cancel regeneration</button></div> : null }));
 afterEach(async () => { cleanup(); await i18n.changeLanguage("en"); });
@@ -34,7 +34,7 @@ describe("existing Ask Triply integration", () => {
     open(); expect(screen.getByText("Saved answer").className).toContain("assistant-bubble is-ai");
     send("How many?");
     await screen.findByText("Three attractions");
-    expect(mocks.send).toHaveBeenCalledWith({ message: "How many?", conversationId: "conversation", selectedDayId: "2" });
+    expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({ message: "How many?", conversationId: "conversation", selectedDayId: "2", requestId: expect.any(String), timeZone: expect.any(String) }));
   });
   it("renders clarifications and retains the existing typing indicator during requests", async () => {
     let resolve: (value: unknown) => void = () => {};
@@ -50,26 +50,28 @@ describe("existing Ask Triply integration", () => {
     open(); send("hello");
     await screen.findByText("Could not send your message. Please try again.");
   });
-  it("opens the existing regeneration preview and waits for explicit confirmation", async () => {
-    mocks.send.mockResolvedValue({ messages: [], response: { type: "action_preview", actionType: "regenerate_day", message: "Preview", preview: { dayIndex: 2, previewId: "preview" } } });
-    mocks.regenerate.mockResolvedValue({});
-    open(); send("Relax day 2");
-    await screen.findByText("Confirm regeneration");
-    expect(mocks.regenerate).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText("Confirm regeneration"));
-    await screen.findByText("Confirmed: your itinerary was updated.");
-    expect(mocks.regenerate).toHaveBeenCalledWith({ tripId: "trip", dayIndex: 2, previewId: "preview" });
-    await act(() => i18n.changeLanguage("pl"));
-    expect(screen.getByText("Confirmed: your itinerary was updated.")).toBeTruthy();
+  it("keeps provider failures visible, preserves the draft, and retries with the failed user ID", async () => {
+    mocks.send.mockResolvedValueOnce({ messages: [{ id: "u", role: "user", text: "Hours?", failed: true }, { id: "a", role: "ai", text: "Provider busy", failed: true }], response: { type: "error", message: "Provider busy", retryable: true } });
+    open(); send("Hours?");
+    await screen.findByText("Provider busy");
+    expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("Hours?");
+    expect(document.querySelector(".assistant-typing")).toBeNull();
+    mocks.send.mockResolvedValueOnce({ messages: [{ id: "u", role: "user", text: "Hours?" }, { id: "a2", role: "ai", text: "Recovered hours" }], response: { type: "message", message: "Recovered hours" } });
+    fireEvent.click(screen.getByRole("button", { name: "Retry message" }));
+    await screen.findByText("Recovered hours");
+    expect(mocks.send.mock.lastCall![0]).toMatchObject({ retryMessageId: "u", message: "Hours?" });
+    expect(screen.getAllByText("Hours?")).toHaveLength(1);
   });
-  it("confirms manual edits with only the server preview identifier", async () => {
-    mocks.send.mockResolvedValue({ messages: [], response: { type: "action_preview", actionType: "edit_itinerary", message: "Remove Prado", previewId: "stored", days: [], warnings: [] } });
-    mocks.apply.mockResolvedValue({});
-    open(); send("Remove Prado");
-    await screen.findByText("Review itinerary change");
-    expect(mocks.apply).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText("Apply changes"));
-    await waitFor(() => expect(mocks.apply).toHaveBeenCalledWith("stored"));
+  it("isolates a new trip and ignores the old trip's late response", async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.send.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    const client = new QueryClient();
+    const view = render(<QueryClientProvider client={client}><TripAssistant city="Madrid" tripId="first" selectedDayId="1" /></QueryClientProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Ask Triply" })); send("First trip");
+    view.rerender(<QueryClientProvider client={client}><TripAssistant city="Paris" tripId="second" selectedDayId="1" /></QueryClientProvider>);
+    expect(screen.queryByText("First trip")).toBeNull();
+    await act(async () => resolve({ messages: [], response: { type: "message", message: "Late" } }));
+    expect(screen.queryByText("Late")).toBeNull();
   });
   it("preserves Escape dismissal", () => {
     open(); fireEvent.keyDown(screen.getByRole("complementary"), { key: "Escape" });
@@ -80,6 +82,7 @@ describe("existing Ask Triply integration", () => {
     let reject!: (error: Error) => void;
     mocks.send.mockImplementation(() => new Promise((_resolve, fail) => { reject = fail; }));
     open(); send("Keep this draft");
+    expect((screen.getByRole("textbox", { name: "Message Triply" }) as HTMLInputElement).value).toBe("");
     fireEvent.keyDown(screen.getByRole("textbox", { name: "Message Triply" }), { key: "Enter" });
     expect(mocks.send).toHaveBeenCalledTimes(1);
     await act(async () => reject(new Error("offline")));
@@ -90,12 +93,12 @@ describe("existing Ask Triply integration", () => {
     await screen.findByText("Recovered");
     expect((screen.getByRole("textbox", { name: "Message Triply" }) as HTMLInputElement).value).toBe("");
   });
-  it("does not discard a newer draft when an earlier message succeeds", async () => {
+  it.each(["Next question", "First message"])("does not discard a newer draft (%s) when an earlier message succeeds", async draft => {
     let resolve!: (value: unknown) => void;
     mocks.send.mockImplementation(() => new Promise(done => { resolve = done; }));
     open(); send("First message");
-    fireEvent.change(screen.getByRole("textbox", { name: "Message Triply" }), { target: { value: "Next question" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Triply" }), { target: { value: draft } });
     await act(async () => resolve({ messages: [], response: { type: "message" } }));
-    expect((screen.getByRole("textbox", { name: "Message Triply" }) as HTMLInputElement).value).toBe("Next question");
+    expect((screen.getByRole("textbox", { name: "Message Triply" }) as HTMLInputElement).value).toBe(draft);
   });
 });

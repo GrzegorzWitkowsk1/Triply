@@ -3686,6 +3686,7 @@ button, input, textarea, select { font-family: inherit; }
   position: fixed;
   right: 24px;
   bottom: 24px;
+  color:white;
   z-index: 1100;
   display: inline-flex;
   align-items: center;
@@ -3693,8 +3694,7 @@ button, input, textarea, select { font-family: inherit; }
   padding: 14px 22px;
   border: none;
   border-radius: var(--radius-pill);
-  background: var(--color-primary);
-  color: var(--color-text);
+  background: var(--color-focus);
   font-family: inherit;
   font-size: 15px;
   font-weight: 700;
@@ -3705,7 +3705,7 @@ button, input, textarea, select { font-family: inherit; }
 }
 
 .assistant-fab:hover {
-  background: var(--color-primary);
+  background: var(--color-focus);
   filter: brightness(.97);
   transform: translateY(-2px);
   box-shadow: 0 16px 40px rgba(242, 102, 75, 0.5);

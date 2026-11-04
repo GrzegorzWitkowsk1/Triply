@@ -44,6 +44,7 @@ export type DurationSource = "provided" | "estimated";
 export type TravelDurationSource = "provider" | "approximation" | "unavailable";
 
 export interface ScheduledActivity {
+  requestedStartTime?: string;
   type: ScheduledActivityType;
   /** Local ISO 8601 date-time without offset, e.g. `2026-06-01T10:00:00`. */
   startTime: string;
@@ -143,6 +144,7 @@ export interface DayWindowOverride {
 }
 
 export interface DailySchedulingInput<T extends ClusterablePoi = SchedulablePoi> {
+  fixedStartMinutes?: Readonly<Record<string, number>>;
   /** Manual recovery retains a conflicting visit without times and tries later visits. */
   retainUnresolvedVisits?: boolean;
   dayRoutes: readonly OptimizedDayRoute<T>[];

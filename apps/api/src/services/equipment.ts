@@ -1,7 +1,7 @@
 import { ownerFilter } from "../middleware/tripIdentity.js";
 import { Types } from "mongoose";
 import type { CreateTripEquipmentItem, TripEquipmentItem, UpdateTripEquipmentItem } from "@triply/shared";
-import { LIMITS } from "@triply/shared";
+import { LIMITS, createTripEquipmentItemSchema, updateTripEquipmentItemSchema } from "@triply/shared";
 import { TripModel, type TripDocument } from "../models/Trip.js";
 
 export const TRIP_NOT_FOUND = "Trip not found";
@@ -57,6 +57,7 @@ export async function addEquipmentItem(
   userId: string,
   input: CreateTripEquipmentItem,
 ): Promise<TripEquipmentItem> {
+  input = createTripEquipmentItemSchema.parse(input);
   const itemId = new Types.ObjectId();
   const trip = await TripModel.findOneAndUpdate({
     _id: new Types.ObjectId(tripId), ...ownerFilter(userId),
@@ -78,6 +79,7 @@ export async function updateEquipmentItem(
   itemId: string,
   input: UpdateTripEquipmentItem,
 ): Promise<TripEquipmentItem> {
+  input = updateTripEquipmentItemSchema.parse(input);
   const fields = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)
     .map(([key, value]) => [`equipment.$.${key}`, value]));
   const trip = await TripModel.findOneAndUpdate({ _id: new Types.ObjectId(tripId), ...ownerFilter(userId),

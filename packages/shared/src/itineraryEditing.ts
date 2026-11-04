@@ -6,6 +6,7 @@ const dayIndex = z.number().int().positive().max(365);
 const position = z.number().int().nonnegative().max(500).optional();
 
 export const itineraryEditOperationSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("reschedule"), dayIndex, attractionId: id, time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/) }).strict(),
   z.object({ type: z.literal("reroute"), dayIndex }).strict(),
   z.object({ type: z.literal("add"), dayIndex, attractionId: id, position }).strict(),
   z.object({ type: z.literal("remove"), dayIndex, attractionId: id }).strict(),

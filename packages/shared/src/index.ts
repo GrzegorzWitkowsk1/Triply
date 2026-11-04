@@ -3,6 +3,7 @@ export * from "./quality.js";
 export * from "./weather.js";
 export * from "./budget.js";
 export * from "./assistant.js";
+export * from "./assistantActions.js";
 export * from "./itineraryEditing.js";
 export * from "./dates.js";
 export * from "./planner.js";

@@ -1,4 +1,5 @@
 {
+  "retryMessage": "Ponów wiadomość",
   "messageInput": "Wiadomość do Triply",
   "openLabel": "Zapytaj Triply",
   "panelLabel": "Zapytaj Triply o cel podróży: {{city}}",
@@ -21,5 +22,41 @@
   "suggestion_0": "Plan na deszcz",
   "suggestion_1": "Obniż koszty",
   "suggestion_2": "Mniej chodzenia",
-  "noAttractions": "Brak atrakcji"
+  "noAttractions": "Brak atrakcji",
+  "proposalTitle": "Podgląd zmian",
+  "before": "Przed",
+  "after": "Po",
+  "notPresent": "Brak",
+  "confirmAllNotice": "Potwierdzenie obejmuje wszystkie wymienione zmiany.",
+  "confirmProposal": "Potwierdź zmiany",
+  "cancelProposal": "Anuluj",
+  "applying": "Zapisywanie…",
+  "proposalStatus": {
+    "pending": "Oczekuje na potwierdzenie",
+    "completed": "Zmiany zapisane",
+    "rejected": "Anulowano",
+    "expired": "Propozycja wygasła — poproś o nową.",
+    "stale": "Dane się zmieniły — poproś o nowy podgląd.",
+    "failed": "Zmiany zablokowane"
+  },
+  "actionErrors": {
+    "PROPOSAL_STALE": "Dane się zmieniły. Poproś o nowy podgląd.",
+    "PROPOSAL_EXPIRED": "Propozycja wygasła. Poproś o nową.",
+    "PROPOSAL_REJECTED": "Ta propozycja została anulowana.",
+    "PROPOSAL_NOT_FOUND": "Propozycja jest niedostępna. Poproś o nową.",
+    "VALIDATION_FAILED": "Nie można zapisać tych zmian. Sprawdź ostrzeżenia.",
+    "ACTION_FAILED": "Nie udało się potwierdzić wyniku. Spróbuj ponownie; zmiany nie zostaną zdublowane."
+  },
+  "tools": {
+    "reschedule_attraction": "Zmień godzinę",
+    "move_attraction": "Przenieś atrakcję",
+    "remove_attraction": "Usuń atrakcję",
+    "add_existing_attraction": "Dodaj atrakcję",
+    "suggest_replacement": "Zastąp atrakcję",
+    "add_expense": "Dodaj wydatek",
+    "update_expense": "Zmień wydatek",
+    "add_packing_item": "Dodaj do pakowania",
+    "remove_packing_item": "Usuń z pakowania",
+    "update_packing_item_status": "Zmień stan pakowania"
+  }
 }

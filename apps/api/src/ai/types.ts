@@ -15,6 +15,10 @@ export function nullableSchema(schema: AISchema): AISchema {
 }
 
 export interface AIRequest {
+  onDiagnostics?: (fields: Record<string, unknown>) => void;
+  tools?: { name: string; description: string; parameters: Record<string, unknown> }[];
+  /** Conversational assistant only; generation callers retain JSON mode. */
+  responseFormat?: "text";
   signal?: AbortSignal;
   systemInstruction: string;
   prompt: string;
@@ -36,5 +40,6 @@ export interface ParseRegenerationInput {
 }
 
 export interface AIProvider {
+  supportsTools?: (signal?: AbortSignal) => Promise<boolean>;
   generate(request: AIRequest): Promise<unknown>;
 }

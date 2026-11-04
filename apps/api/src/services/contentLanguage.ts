@@ -2,6 +2,10 @@ import { contentLocale, type ItineraryDay, type SupportedLocale } from "@triply/
 
 /** Server-authored templates only. Interpolated names/user data are never translated. */
 export const polishContent: Record<string, string> = {
+  "The requested time is not feasible. No changes were saved.": "Wybrana godzina jest niewykonalna. Nie zapisano zmian.",
+  "The requested arrival time conflicts with preceding activities or travel.": "Wybrana godzina koliduje z wcześniejszymi wizytami lub dojazdem.",
+  "The requested arrival time does not fit the known opening hours.": "Wybrana godzina nie mieści się w znanych godzinach otwarcia.",
+  "An item with this name already exists. Choose the existing item or a different name.": "Przedmiot o tej nazwie już istnieje. Wybierz istniejący przedmiot lub inną nazwę.",
   "Confirmed: your expenses were updated.": "Potwierdzono: wydatki zostały zaktualizowane.",
   "Confirmed: your itinerary was updated.": "Potwierdzono: plan podróży został zaktualizowany.",
   "Conversation not found": "Nie znaleziono rozmowy",
@@ -89,7 +93,7 @@ export const polishContent: Record<string, string> = {
   "actual": "rzeczywistych",
   "known planned": "znanych planowanych",
   " Most expensive day by {0} spending: day {1}.": " Najdroższy dzień według {0} wydatków: dzień {1}.",
-  "Total budget: {0}. Known planned spending: {1}. Actual spending: {2}. Planned remaining: {3}. Actual remaining: {4}.\n{5}: {6}.{7}\n{8}": "Całkowity budżet: {0}. Znane planowane wydatki: {1}. Rzeczywiste wydatki: {2}. Pozostało według planu: {3}. Faktycznie pozostało: {4}.\n{5}: {6}.{7}\n{8}",
+  "Total budget: {0}. Known planned spending: {1}. Actual spending: {2}. Remaining after known planned expenses: {3}. Actual unspent budget: {4}.\n{5}: {6}.{7}\n{8}": "Całkowity budżet: {0}. Znane planowane wydatki: {1}. Rzeczywiste wydatki: {2}. Pozostało po znanych planowanych wydatkach: {3}. Faktycznie niewydany budżet: {4}.\n{5}: {6}.{7}\n{8}",
   "Review a cheaper alternative for day {0}. Unknown prices remain uncertain.": "Sprawdź tańszą propozycję dnia {0}. Nieznane ceny pozostają niepewne.",
   "Which day should I make cheaper? Please include the day number in your request.": "Który dzień ma być tańszy? Podaj numer dnia w prośbie.",
   "Please specify one currency, amount and title, for example: Record EUR 18 for drinks.": "Podaj jedną walutę, kwotę i tytuł, np.: Record EUR 18 for drinks.",

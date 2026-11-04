@@ -3,6 +3,8 @@ import type { AssistantMessage, ItineraryDay, ItineraryEditRequest } from "@trip
 import type { AssistantIntent } from "../services/assistantIntent.js";
 
 interface ConversationRecord {
+  actionDraft?: import("@triply/shared").AssistantToolRequest[] | null;
+  actionEvidence?: string;
   responseLocale?: import("@triply/shared").SupportedLocale;
   tripId: Types.ObjectId;
   userId: Types.ObjectId;
@@ -12,12 +14,22 @@ interface ConversationRecord {
   pending: AssistantIntent | null;
   prepared: { id: string; expiresAt: Date; request?: ItineraryEditRequest; expenseOperation?: import("@triply/shared").ExpenseOperation; budgetRevision?: number; days: ItineraryDay[]; warnings: string[] } | null;
   revision: number;
+  processingUntil?: Date | null;
+  lastRequestId?: string | null;
+  lastRequestHash?: string | null;
+  lastResponse?: import("@triply/shared").AssistantResponse | null;
 }
 const schema = new Schema<ConversationRecord>({
   responseLocale: { type: String, enum: ["en", "pl"] },
+  actionDraft: { type: Schema.Types.Mixed, default: null },
+  actionEvidence: { type: String, default: "" },
   tripId: { type: Schema.Types.ObjectId, required: true },
   userId: { type: Schema.Types.ObjectId, required: true },
-  messages: { type: [{ id: String, role: { type: String, enum: ["user", "ai"] }, text: String }], default: [] },
+  messages: { type: [{ id: String, role: { type: String, enum: ["user", "ai"] }, text: String, failed: Boolean, proposalId: String }], default: [] },
+  processingUntil: { type: Date, default: null },
+  lastRequestId: { type: String, default: null },
+  lastRequestHash: { type: String, default: null },
+  lastResponse: { type: Schema.Types.Mixed, default: null },
   lastDay: { type: Number, default: null },
   lastAttraction: { type: String, default: null },
   pending: { type: Schema.Types.Mixed, default: null },

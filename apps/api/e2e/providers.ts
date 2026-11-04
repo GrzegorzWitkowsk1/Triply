@@ -40,6 +40,26 @@ export class ProviderFixtures {
         if (url.hostname === "generativelanguage.googleapis.com" && url.pathname.endsWith(":generateContent")) {
           const request = JSON.parse(String(init?.body)) as { systemInstruction?: { parts?: { text?: string }[] }; contents?: { parts?: { text?: string }[] }[]; generationConfig?: { responseSchema?: { properties?: { items?: unknown; intent?: unknown; lessWalking?: unknown } } } };
           const polish = request.systemInstruction?.parts?.some(part => part.text?.includes("natural Polish"));
+          if (request.systemInstruction?.parts?.some(part => part.text?.includes("Triply's conversational travel assistant"))) {
+            await this.boundary("assistant");
+            const prompt = JSON.parse(request.contents?.[0]?.parts?.[0]?.text ?? "{}") as { message?: string; pendingProposal?: { requests: { tool: string; arguments: unknown }[] }; context: { budget?: { currency: string; actualRemainingMinor: number }; overview: { attractionCount: number }[]; referents: { dayIndex: number | null }; days: { dayIndex: number; activities: { title: string }[] }[] }; history: unknown[] };
+            if (JSON.stringify(prompt).includes("__parentArray")) throw new Error("Mongoose internals leaked into assistant prompt");
+            const message = prompt.message ?? "";
+            if (message.includes("provider failure")) return new Response("Fixture upstream limit", { status: 429 });
+            const toolCalls: { name: string; args: unknown }[] = [];
+            if (/add 25 EUR|dodaj 25 EUR/i.test(message)) toolCalls.push({ name: "add_expense", args: { title: "Lunch", amount: "25", currency: "EUR", category: "food_drinks", type: "planned" } });
+            const move = /move (.+?) to (\d{2}:\d{2})/i.exec(message);
+            if (move) toolCalls.push({ name: "reschedule_attraction", args: { attraction: move[1], time: move[2] } });
+            const remove = /remove (.+)/i.exec(message);
+            if (remove) toolCalls.push({ name: "remove_attraction", args: { attraction: remove[1] } });
+            if (toolCalls.length) return json({ candidates: [{ content: { parts: toolCalls.map(functionCall => ({ functionCall })) } }] });
+            if (/remaining budget/i.test(message)) return json({ candidates: [{ content: { parts: [{ text: `Remaining actual budget: ${prompt.context.budget?.actualRemainingMinor} minor units ${prompt.context.budget?.currency}.` }] } }] });
+            const count = prompt.context.overview.reduce((sum, d) => sum + d.attractionCount, 0);
+            const day = prompt.context.days.find(d => d.dayIndex === prompt.context.referents.dayIndex);
+            const answer = polish ? `Liczba zaplanowanych atrakcji: ${count}. ${day?.activities.map(a => a.title).join(", ") ?? ""}`
+              : `${count} scheduled attractions. ${day ? `Day ${day.dayIndex}: ${day.activities.map(a => a.title).join(", ")}.` : ""} Turn ${prompt.history.length / 2 + 1}.`;
+            return json({ candidates: [{ content: { parts: [{ text: answer }] } }] });
+          }
           if (request.generationConfig?.responseSchema?.properties?.intent) {
             await this.boundary("assistant");
             return json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ intent: "trip_question", question: "count", day: null, targetDay: null, attraction: null, replacement: null, before: null, operation: null, preferences: { lessWalking: false, moreFood: false, relaxedPace: false, preferIndoor: false, surpriseMe: false }, multipleActions: false }) }] } }] });
