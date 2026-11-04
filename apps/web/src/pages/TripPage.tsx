@@ -580,7 +580,7 @@ export default function TripPage() {
           setRegenerationPreview(null);
         }}
       />
-      {id && !guestUsage.isGuest && <TripAssistant key={id} city={city} tripId={id} selectedDayId={String(dayIndex)} itineraryVersion={trip.data.itineraryVersion} days={itinerary?.days} triggerHost={narrow ? assistantHost : null} />}
+      {/* {id && !guestUsage.isGuest && <TripAssistant key={id} city={city} tripId={id} selectedDayId={String(dayIndex)} itineraryVersion={trip.data.itineraryVersion} days={itinerary?.days} triggerHost={narrow ? assistantHost : null} />} */}
     </div>
   );
 }
