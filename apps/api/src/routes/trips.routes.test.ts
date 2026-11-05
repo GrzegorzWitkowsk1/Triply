@@ -395,7 +395,7 @@ describe("destination persistence and recovery", () => {
     const draft = await upsertTripDraft({ userId: new mongoose.Types.ObjectId().toString(), prompt: "Prague", badges: [],
       analysis: { ...COMPLETE_ANALYSIS, destination: "Prague", country: "Czech Republic", location: null, startDate: null, endDate: null } as TripAnalysis });
     expect((await TripModel.findById(draft._id))?.analysis.location).toMatchObject({ lat: 50.08, lng: 14.43 });
-    expect(new URL(String(fetch.mock.calls[0]![0])).searchParams.get("name")).toBe("Prague");
+    expect(new URL(String(fetch.mock.calls[0]![0])).searchParams.get("name")).toBe("Prague, czechia");
   });
 
   it("preserves saved coordinates during repeat analysis of the same destination", async () => {

@@ -738,6 +738,20 @@ button, input, textarea, select { font-family: inherit; }
 .prompt-hint.is-error {
   color: var(--color-destructive);
 }
+.attachment-format-hint {
+  max-width: 760px;
+  margin: 12px auto 0;
+  padding-inline: 20px;
+}
+
+.attachment-format-hint .prompt-hint {
+  margin-top: 8px;
+  line-height: 1.6;
+}
+
+.attachment-format-hint .prompt-hint:first-child {
+  margin-top: 0;
+}
 
 .attach-chip {
   display: inline-flex;
@@ -764,6 +778,50 @@ button, input, textarea, select { font-family: inherit; }
 
 .attach-chip button:hover {
   color: var(--color-accent-text);
+}
+.attach-chip.is-error { color: var(--color-destructive); }
+.attach-chip { max-width: 100%; flex-wrap: wrap; overflow-wrap: anywhere; }
+.attachment-review, .attachment-outcomes { margin-block: 16px; }
+
+.attachment-review {
+  padding: 20px;
+  border: 1px solid #e1e4e8;
+  border-radius: var(--radius-control);
+  background: #f5f6f8;
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.attachment-review > p:first-child {
+  margin-bottom: 14px;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.attachment-review ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 8px;
+  list-style: none;
+}
+
+.attachment-review li {
+  padding: 10px 14px;
+  border: 1px solid #e1e4e8;
+  border-radius: 8px;
+  background: #fafbfc;
+  font-weight: 500;
+}
+
+.attachment-review .prompt-hint {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #e1e4e8;
+  color: #596273;
+  font-weight: 400;
 }
 
 .prompt-submit {
@@ -1221,6 +1279,14 @@ button, input, textarea, select { font-family: inherit; }
 
   .prompt-card {
     padding: 16px 14px 12px;
+  }
+
+  .attachment-format-hint {
+    padding-inline: 14px;
+  }
+
+  .attachment-review {
+    padding: 16px;
   }
 
   .plan-card {
@@ -4424,7 +4490,9 @@ body:has(.assistant-panel[aria-modal="true"]) {
 
 /* Trip planning: requirements dialog + plan summary */
 
-.requirements-dialog .MuiDialog-paper {
+.requirements-dialog.MuiDialog-root .MuiDialog-paper {
+  width: calc(100% - 32px);
+  max-width: 600px;
   border-radius: var(--radius-card);
   background: var(--color-primary-tint);
   margin: 16px;

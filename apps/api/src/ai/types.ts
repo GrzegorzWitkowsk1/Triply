@@ -15,6 +15,9 @@ export function nullableSchema(schema: AISchema): AISchema {
 }
 
 export interface AIRequest {
+  privateContext?: boolean;
+  maxOutputTokens?: number;
+  timeoutMs?: number;
   signal?: AbortSignal;
   systemInstruction: string;
   prompt: string;
@@ -24,6 +27,7 @@ export interface AIRequest {
 export type AIProviderName = "gemini" | "openrouter";
 
 export interface AnalyzeTripInput {
+  signal?: AbortSignal;
   locale?: import("@triply/shared").SupportedLocale;
   prompt: string;
   badges: string[];

@@ -17,6 +17,9 @@ import { createAIProvider } from "./providers/factory.js";
 import { buildRegenerationRequest } from "./prompts/parseRegeneration.js";
 import { buildTripAnalysisRequest } from "./prompts/parseTrip.js";
 import type { AIProvider, AnalyzeTripInput, ParseRegenerationInput } from "./types.js";
+import { attractionNameSchema, supplementalRequirementsSchema, type SupplementalRequirements, type SupportedLocale } from "@triply/shared";
+import { buildAttachmentRequest, CREATION_SCHEMA } from "./prompts/attachmentContext.js";
+import { z } from "zod";
 
 export type { AnalyzeTripInput, ParseRegenerationInput } from "./types.js";
 
@@ -251,6 +254,8 @@ function normalizeRegenerationPreferences(raw: unknown): RegenerationPreferences
 }
 
 export interface AiService {
+  parseCreationPrompt(input: AnalyzeTripInput): Promise<{ analysis: TripAnalysis; requestedAttractions: string[]; excludedAttractions: string[]; protectedFields: string[] }>;
+  parseAttachments(texts: string[], locale: SupportedLocale, signal?: AbortSignal): Promise<SupplementalRequirements>;
   generatePacking(context: PackingGenerationContext, signal?: AbortSignal): Promise<unknown>;
   parseTrip(input: AnalyzeTripInput): Promise<TripAnalysis>;
   parseRegeneration(input: ParseRegenerationInput): Promise<RegenerationPreferences>;
@@ -258,6 +263,23 @@ export interface AiService {
 
 export function createAiService(provider: AIProvider): AiService {
   return {
+    async parseCreationPrompt(input) {
+      const request = buildTripAnalysisRequest(input);
+      const fields = ["destination", "dates", "travelers", "budget", "interests", "pace", "maxWalkingDistanceKm"];
+      request.schema = { ...CREATION_SCHEMA, properties: { ...CREATION_SCHEMA.properties, protectedFields: { type: "array", items: { type: "string", enum: fields } } }, required: [...CREATION_SCHEMA.required!, "protectedFields"] };
+      request.signal = input.signal;
+      request.privateContext = true;
+      request.maxOutputTokens = 3000;
+      request.timeoutMs = 30_000;
+      request.systemInstruction += "\nAlso extract requestedAttractions and excludedAttractions: real place names explicitly requested or rejected by the traveller. Return empty arrays when none. At most 20 names per list, each at most 120 characters.";
+      request.systemInstruction += "\nprotectedFields lists requirements explicitly addressed by the direct request, including negative instructions, unlimited budgets, flexible dates, and explicit lack of preference. Use only destination, dates, travelers, budget, interests, pace, maxWalkingDistanceKm. These fields must not be supplemented by documents. A negative category preference protects interests.";
+      const raw = asRecord(await provider.generate(request));
+      const names = z.array(attractionNameSchema).max(20);
+      return { analysis: normalizeAnalysis(raw, input.badges), requestedAttractions: names.parse(raw.requestedAttractions), excludedAttractions: names.parse(raw.excludedAttractions), protectedFields: z.array(z.enum(["destination", "dates", "travelers", "budget", "interests", "pace", "maxWalkingDistanceKm"])).max(7).parse(raw.protectedFields) };
+    },
+    async parseAttachments(texts, locale, signal) {
+      return supplementalRequirementsSchema.parse(await provider.generate(buildAttachmentRequest(texts, locale, signal)));
+    },
     generatePacking: (context, signal) => provider.generate(buildPackingRequest(context, signal)),
     async parseTrip(input: AnalyzeTripInput): Promise<TripAnalysis> {
       const raw = await provider.generate(buildTripAnalysisRequest(input));

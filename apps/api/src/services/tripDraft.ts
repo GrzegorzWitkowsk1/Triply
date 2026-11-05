@@ -1,4 +1,5 @@
 import { contentLocale, type SupportedLocale } from "@triply/shared";
+import { creationContextSchema, type CreationContext } from "@triply/shared";
 import { ownerFilter, storedOwner, guestOwnerId } from "../middleware/tripIdentity.js";
 import { savedAttractionIdentity, savedAttractionPlace } from "./savedAttractionIdentity.js";
 import { validateGuestDuration } from "./guestLimits.js";
@@ -208,6 +209,7 @@ export function mergeConfirmedFields(
 }
 
 export interface UpsertTripDraftInput {
+  creationContext?: CreationContext | null;
   locale?: SupportedLocale;
   userId: string;
   draftId?: string;
@@ -456,6 +458,8 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
       $set: {
         contentLocale: contentLocale(input.locale),
         prompt: input.prompt,
+        creationContext: input.creationContext ? creationContextSchema.parse(input.creationContext) : null,
+        requestedAttractionOutcomes: [],
         badges: input.badges,
         analysis: analysis,
         confirmedFields: [],
@@ -570,6 +574,8 @@ export function toTripAnalysisResult(draft: TripDocument): TripAnalysisResult {
 
   return {
     contentLocale: contentLocale(draft.contentLocale),
+    ...(draft.creationContext ? { attachmentContext: creationContextSchema.parse(draft.creationContext) } : {}),
+    ...(draft.requestedAttractionOutcomes?.length ? { requestedAttractionOutcomes: draft.requestedAttractionOutcomes } : {}),
     draftId: draft._id.toString(),
     analysis,
     missingFields: gaps,

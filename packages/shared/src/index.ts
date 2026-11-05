@@ -1,4 +1,5 @@
 export * from "./currency.js";
+export * from "./attachments.js";
 export * from "./quality.js";
 export * from "./weather.js";
 export * from "./budget.js";

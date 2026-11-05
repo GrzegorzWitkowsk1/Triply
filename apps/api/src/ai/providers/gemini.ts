@@ -5,6 +5,7 @@ import {
   AiError,
 } from "../errors.js";
 import type { AIProvider, AIRequest } from "../types.js";
+import { readPrivateResponse } from "../privateResponse.js";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -72,21 +73,22 @@ export function createGeminiProvider(config: GeminiConfig): AIProvider {
                 responseMimeType: "application/json",
                 responseSchema: request.schema,
                 temperature: 0.2,
+                ...(request.maxOutputTokens ? { maxOutputTokens: request.maxOutputTokens } : {}),
               },
             }),
-            signal: request.signal ? AbortSignal.any([request.signal, AbortSignal.timeout(config.timeoutMs)]) : AbortSignal.timeout(config.timeoutMs),
+            signal: AbortSignal.any([...(request.signal ? [request.signal] : []), AbortSignal.timeout(Math.min(config.timeoutMs, request.timeoutMs ?? config.timeoutMs))]),
           },
         );
       } catch (error) {
         throw aiConnectionError(error, "gemini");
       }
 
-      const payload = (await response.json().catch(() => null)) as GeminiResponse | null;
+      const payload = (request.privateContext ? await readPrivateResponse(response) : await response.json().catch(() => null)) as GeminiResponse | null;
       if (!response.ok) {
         console.error(
           "[ai] gemini request failed:",
           response.status,
-          payload?.error?.message ?? "no error message",
+          request.privateContext ? "private-analysis" : payload?.error?.message ?? "no error message",
         );
         throw aiErrorFromHttpStatus(response.status, "gemini");
       }

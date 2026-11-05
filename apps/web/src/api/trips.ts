@@ -48,7 +48,13 @@ export function getTrip(id: string): Promise<TripDetail> {
   return request<TripDetail>(`/api/trips/${id}`);
 }
 
-export function analyzeTrip(input: AnalyzeTripRequest): Promise<TripAnalysisResult> {
+export function analyzeTrip(input: AnalyzeTripRequest, files: File[] = [], signal?: AbortSignal): Promise<TripAnalysisResult> {
+  if (files.length) {
+    const body = new FormData();
+    body.append("metadata", JSON.stringify(input));
+    files.forEach(file => body.append("files", file));
+    return request<TripAnalysisResult>("/api/trips/analyze", { method: "POST", body, signal });
+  }
   return request<TripAnalysisResult>("/api/trips/analyze", {
     method: "POST",
     body: JSON.stringify(input),

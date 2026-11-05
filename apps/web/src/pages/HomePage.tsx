@@ -4,6 +4,10 @@ import { errorMessage as localizedError, errorKey, resolveMessage } from "../i18
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { useGuestUsage } from "../hooks/useGuestUsage";
+import { useTripAttachments } from "../hooks/useTripAttachments";
+import { ATTACHMENT_ACCEPT, ATTACHMENT_ERROR_CODES, type AttachmentFailure } from "@triply/shared";
+import { ApiError } from "../api/client";
+import { formatNumber } from "../i18n/format";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowForwardOutlined,
@@ -81,7 +85,21 @@ export default function HomePage() {
     if (!badgesEdited.current && !appliedCollection) setSelectedBadges(user?.preferences?.interests ?? []);
     if (!preferencesEdited.current && !appliedCollection) setPreferences(user?.preferences ?? DEFAULT_PROFILE_PREFERENCES);
   }, [user?.preferences]);
-  const [files, setFiles] = useState<File[]>([]);
+  const attachments = useTripAttachments();
+  const attachmentRequest = useRef<AbortController | null>(null);
+  const attachmentVersion = useRef(0);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [processingAttachments, setProcessingAttachments] = useState(false);
+  const attachmentOwner = useRef(user?.id);
+  useEffect(() => () => { attachmentVersion.current++; attachmentRequest.current?.abort(); }, []);
+  useEffect(() => {
+    if (attachmentOwner.current === user?.id) return;
+    attachmentOwner.current = user?.id;
+    if (attachmentRequest.current) { planning.reset(); analyze.reset?.(); }
+    if (attachments.entries.length) setDraft(null);
+    attachmentVersion.current++; attachmentRequest.current?.abort(); attachmentRequest.current = null;
+    attachments.clear(); setAttachmentError(null); setProcessingAttachments(false); analyzeLock.current = false;
+  }, [user?.id]);
   const [listening, setListening] = useState(false);
   const [voiceHint, setVoiceHint] = useState<VoiceHint | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -107,7 +125,7 @@ export default function HomePage() {
 
   const awaitingPrefill = Boolean(prefill.reference.id && prefill.query.isPending && handledReference.current !== referenceKey);
   const invalidPrefill = Boolean(prefill.reference.error || prefill.query.isError) && !promptEdited.current;
-  const canPlan = !storageBlocked && !awaitingPrefill && !invalidPrefill && !prefillConflict && (prompt.trim().length > 0 || selectedBadges.length > 0);
+  const canPlan = !attachments.blocked && !processingAttachments && !storageBlocked && !awaitingPrefill && !invalidPrefill && !prefillConflict && (prompt.trim().length > 0 || selectedBadges.length > 0);
   const isPlanning = planning.hasStarted;
   const showProgress = planning.hasStarted && !planning.isDone;
 
@@ -268,8 +286,8 @@ export default function HomePage() {
   };
 
   const onFilesPicked = (list: FileList | null) => {
-    if (!list) return;
-    setFiles((prev) => [...prev, ...Array.from(list)]);
+    if (!user) { setAttachmentError("ATTACHMENT_AUTH_REQUIRED"); return; }
+    attachments.pick(list); setAttachmentError(null); setDraft(null);
   };
 
   const toggleBadge = (id: string) => {
@@ -280,6 +298,10 @@ export default function HomePage() {
   };
 
   const cancelPlan = () => {
+    if (attachmentRequest.current) {
+      attachmentVersion.current++; attachmentRequest.current.abort(); attachmentRequest.current = null;
+      setProcessingAttachments(false); analyzeLock.current = false; analyze.reset?.();
+    }
     planning.reset();
     setDraft(null);
     setDialogOpen(false);
@@ -295,11 +317,17 @@ export default function HomePage() {
     setDraft(null);
     setVoiceHint(null);
     planning.start();
+    const withFiles = attachments.entries.length > 0;
+    if (withFiles && !user) { analyzeLock.current = false; planning.reset(); setAttachmentError("ATTACHMENT_AUTH_REQUIRED"); return; }
+    const version = ++attachmentVersion.current;
+    if (withFiles) { attachmentRequest.current = new AbortController(); setProcessingAttachments(true); setAttachmentError(null); }
+    const current = () => !withFiles || attachmentVersion.current === version;
 
     analyze.mutate(
-      { prompt: prompt.trim(), destinationId: selectedDestinationId, badges: hasCollectionPreferences ? selectedBadges.filter(id => HOME_BADGES.some(badge => badge.id === id)) : selectedBadges, ...(hasCollectionPreferences ? { interests: selectedBadges } : {}), pace: preferences.pace, maxWalkingDistanceKm: preferences.maxWalkingDistanceKm },
+      { prompt: prompt.trim(), destinationId: selectedDestinationId, badges: hasCollectionPreferences ? selectedBadges.filter(id => HOME_BADGES.some(badge => badge.id === id)) : selectedBadges, ...(hasCollectionPreferences ? { interests: selectedBadges } : {}), ...(!withFiles || preferencesEdited.current || hasCollectionPreferences ? { pace: preferences.pace, maxWalkingDistanceKm: preferences.maxWalkingDistanceKm } : {}), ...(withFiles ? { files: attachments.files, signal: attachmentRequest.current!.signal } : {}) },
       {
         onSuccess: (result) => {
+          if (!current()) return;
           analyzeLock.current = false;
           setDraft(result);
           planning.finish();
@@ -310,11 +338,18 @@ export default function HomePage() {
           }
         },
         onError: (error) => {
+          if (!current()) return;
           analyzeLock.current = false;
           planning.reset();
+          if (withFiles) {
+            const details = error instanceof ApiError ? error.details as { failures?: AttachmentFailure[] } | null : null;
+            if (Array.isArray(details?.failures)) attachments.fail(details.failures);
+            setAttachmentError(error instanceof ApiError && ATTACHMENT_ERROR_CODES.some(code => code === error.code) ? error.code! : "ATTACHMENT_FAILED");
+            return;
+          }
           setVoiceHint({ text: errorKey(error), kind: "error" });
         },
-        onSettled: () => { analyzeLock.current = false; },
+        onSettled: () => { if (!current()) return; analyzeLock.current = false; if (withFiles) { setProcessingAttachments(false); attachmentRequest.current = null; } },
       },
     );
   };
@@ -392,7 +427,7 @@ export default function HomePage() {
           {appliedCollection && selectedDestinationId && <p className="collection-prefill-note">{i18n.t("collectionSuggestions", { ns: "tripCreator/home", collection: localizedCollection(appliedCollection)?.title ?? appliedCollection })}</p>}
           {isPlanning ? (
             <div className="prompt-summary">
-              <span className="prompt-summary-text">{planSummary}</span>
+              <span className="prompt-summary-text">{processingAttachments ? i18n.t("attachmentProcessing", { ns: "tripCreator/home" }) : planSummary}</span>
               <button
                 type="button"
                 className="prompt-summary-cancel"
@@ -402,17 +437,19 @@ export default function HomePage() {
             </div>
           ) : (
             <>
-              {files.length > 0 && (
+              {attachments.entries.length > 0 && (
                 <div className="attach-chips">
-                  {files.map((file) => (
-                    <span key={`${file.name}-${file.lastModified}`} className="attach-chip">
+                  {attachments.entries.map(({ id, file, error }) => (
+                    <span key={id} className={`attach-chip${error ? " is-error" : ""}`}>
                       <AttachFileOutlined fontSize="small" />
                       {file.name}
+                      <span>{formatNumber(file.size / 1024, { maximumFractionDigits: 1 })} KB</span>
+                      {error && <span role="alert">{i18n.t(error, { ns: "tripCreator/home" })}</span>}
                       <button
                         type="button"
                         aria-label={i18n.t("remove", { ns: "tripCreator/home", value0: file.name })}
                         onClick={() =>
-                          setFiles((prev) => prev.filter((f) => f !== file))
+                          { attachments.remove(id); setAttachmentError(null); setDraft(null); }
                         }
                       >
                         <CloseOutlined />
@@ -421,6 +458,9 @@ export default function HomePage() {
                   ))}
                 </div>
               )}
+
+              {attachments.blocked && <p role="alert" className="prompt-hint is-error">{i18n.t("attachmentRemoveFailed", { ns: "tripCreator/home" })}</p>}
+              {(attachmentError || attachments.notice) && <p role="alert" className="prompt-hint is-error">{i18n.t(attachmentError ?? attachments.notice!, { ns: "tripCreator/home" })}</p>}
 
               <TextField
                 fullWidth
@@ -445,6 +485,7 @@ export default function HomePage() {
                   <input
                     ref={fileInputRef}
                     type="file"
+                    accept={ATTACHMENT_ACCEPT}
                     multiple
                     hidden
                     onChange={(e) => {
@@ -456,7 +497,7 @@ export default function HomePage() {
                     type="button"
                     className="prompt-icon"
                     aria-label={i18n.t("attachments", { ns: "tripCreator/home" })}
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => { if (user) fileInputRef.current?.click(); else setAttachmentError("ATTACHMENT_AUTH_REQUIRED"); }}
                   >
                     <AttachFileOutlined />
                   </button>
@@ -485,12 +526,20 @@ export default function HomePage() {
           )}
         </div>
 
+        {!isPlanning && (
+          <div className="attachment-format-hint">
+            <p className="prompt-hint">{i18n.t(user ? "attachmentFormats" : "ATTACHMENT_AUTH_REQUIRED", { ns: "tripCreator/home" })}</p>
+            {user && attachments.entries.length > 0 && <p className="prompt-hint">{i18n.t("attachmentPrivacy", { ns: "tripCreator/home" })}</p>}
+          </div>
+        )}
+
         {showProgress && (
           <PlanProgressCard statuses={planning.statuses} isDone={planning.isDone} />
         )}
 
         {draft && (
           <TripPlanSummaryCard
+            attachmentContext={draft.attachmentContext}
             analysis={draft.analysis}
             missingFields={draft.missingFields}
             requirementsComplete={draft.requirementsComplete}

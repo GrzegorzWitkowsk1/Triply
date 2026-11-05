@@ -5,6 +5,36 @@ import { INTEREST_FILTERS, type TagValuesFilter } from "./poiCategories.js";
 import { normalizeInterests, normalizePois, type RawPoiCandidate } from "./poiFiltering.js";
 import { scorePois } from "./poiScoring.js";
 import { fetchGeoapifyPlaces } from "./geoapify.js";
+import { attractionNameSchema } from "@triply/shared";
+import type { NamedLookup } from "./creationAttractionPreferences.js";
+
+/** One bounded query against existing Overpass endpoints. Names are escaped literals,
+ * never model-generated query fragments. Only real nearby OSM objects become candidates. */
+export async function lookupCreationAttractions(lat: number, lng: number, names: string[]): Promise<NamedLookup> {
+  const requested = names.slice(0, 20).map(name => attractionNameSchema.parse(name));
+  if (!requested.length || !Number.isFinite(lat) || !Number.isFinite(lng)) return { matches: [], available: true };
+  const pattern = `^(${requested.map(escapeRegex).join("|")})$`;
+  const clauses = ["name", "name:en", "name:pl", "alt_name"].map(key => `nwr(around:5000,${lat},${lng})[${JSON.stringify(key)}~${JSON.stringify(pattern)},i];`).join("");
+  const query = `[out:json][timeout:5][maxsize:2097152];(${clauses});out center tags 60;`;
+  for (const endpoint of DEFAULT_ENDPOINTS.slice(0, 2)) {
+    try {
+      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT },
+        body: new URLSearchParams({ data: query }), signal: AbortSignal.timeout(6000) });
+      if (!response.ok || !response.body) { await response.body?.cancel(); continue; }
+      const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let size = 0;
+      try { for (;;) { const next = await reader.read(); if (next.done) break; size += next.value.length; if (size > 2 * 1024 * 1024) throw new Error(); chunks.push(next.value); } }
+      finally { await reader.cancel().catch(() => {}); }
+      const payload = JSON.parse(Buffer.concat(chunks).toString("utf8")) as OverpassPayload;
+      if (!Array.isArray(payload.elements) || payload.elements.length > 60) continue;
+      const raw = parseCandidates(payload);
+      const places = toAttractions(payload, lat, lng, [], null, "en");
+      const normalize = (value: string) => value.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+      return { available: true, matches: requested.flatMap(name => raw.filter(p => ["name", "name:en", "name:pl", "alt_name"].some(key => typeof p.tags[key] === "string" && normalize(p.tags[key] as string) === normalize(name)))
+        .flatMap(p => places.filter(place => place.placeId === p.osmKey).map(place => ({ name, place })))) };
+    } catch { /* No query, names, or upstream response is logged. */ }
+  }
+  return { matches: [], available: false };
+}
 
 const DEFAULT_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",

@@ -21,6 +21,9 @@ import { planTrip, type PlanTripResult } from "./tripPlanner.js";
 import { resolvePoiTimeZone } from "./openingHoursService.js";
 import { repairItinerary } from "./itineraryRepairService.js";
 import { assessTripQuality } from "./tripQualityService.js";
+import { resolveCreationAttractions, prioritizeCreationCandidates, finalizeCreationOutcomes } from "./creationAttractionPreferences.js";
+import { remainingAttractionBudget } from "./budgetSelection.js";
+import { reliableAdmissionCost } from "./budgetSummary.js";
 
 /** A generation that has been running longer than this is considered abandoned. */
 export const STALE_GENERATION_MS = 2 * 60 * 1000;
@@ -217,6 +220,8 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
   );
   console.info({ event: "trip-generation", stage: "attractions", provider: "overpass-or-cache", durationMs: Math.round(performance.now() - stageStarted), status: attractions.query === null ? "unavailable" : "available", count: attractions.attractions.length });
 
+  const creation = trip.creationContext ? await resolveCreationAttractions(trip.creationContext, analysis, attractions.attractions) : null;
+  if (creation) attractions.attractions = creation.candidates;
   if (attractions.attractions.length === 0) {
     throw new GenerationUnavailableError(
       attractions.query === null
@@ -228,8 +233,23 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
   const start: Coordinates = { lat: location.lat, lng: location.lng };
 
   stageStarted = performance.now();
+  // Give requested places actual candidate slots before budget selection; score boosts
+  // alone could otherwise discard them among a large category-discovery pool.
+  let candidates = selectBudgetCandidates(creation ? prioritizeCreationCandidates(attractions.attractions, creation.outcomes, analysis.durationDays, analysis.pace) : attractions.attractions, trip.toObject());
+  if (creation) {
+    const remaining = remainingAttractionBudget(trip.toObject());
+    const excluded = new Set<string>();
+    for (const outcome of creation.outcomes) {
+      const place = attractions.attractions.find(p => p.placeId === outcome.placeId);
+      const cost = place && analysis.budget.currency ? reliableAdmissionCost(place.admission, analysis.travelers, analysis.budget.currency) : null;
+      if (outcome.status === "not_scheduled" && cost !== null && remaining !== null && cost > remaining) {
+        outcome.status = "excluded"; outcome.reason = "constraints"; if (outcome.placeId) excluded.add(outcome.placeId);
+      }
+    }
+    candidates = prioritizeCreationCandidates(candidates.filter(p => !excluded.has(p.placeId ?? "")), creation.outcomes, analysis.durationDays, analysis.pace);
+  }
   const result = await planTrip({
-    pois: toSchedulablePois(selectBudgetCandidates(attractions.attractions, trip.toObject())),
+    pois: toSchedulablePois(candidates),
     durationDays: analysis.durationDays,
     pace: analysis.pace,
     weather: weather.days,
@@ -269,6 +289,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
         itinerary: repaired.trip.itinerary ? { ...repaired.trip.itinerary, days: repaired.trip.itinerary.days.map(day => localizeGeneratedDay(day, contentLocale(trip.contentLocale))), unscheduled: repaired.trip.itinerary.unscheduled.map(entry => ({ ...entry, detail: entry.detail ? localizeExplanation(entry.detail, contentLocale(trip.contentLocale)) : entry.detail })) } : null,
         regeneration: null,
         status: "ready",
+        ...(creation ? { creationContext: null, requestedAttractionOutcomes: finalizeCreationOutcomes(creation.outcomes, repaired.trip.itinerary!) } : {}),
         "generation.generatedAt": now,
         "generation.error": null,
       },

@@ -5,6 +5,7 @@ import {
   AiError,
 } from "../errors.js";
 import type { AIProvider, AIRequest } from "../types.js";
+import { readPrivateResponse } from "../privateResponse.js";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -103,19 +104,20 @@ export function createOpenRouterProvider(config: OpenRouterConfig): AIProvider {
               { role: "user", content: request.prompt },
             ],
             temperature: 0.2,
+            ...(request.maxOutputTokens ? { max_tokens: request.maxOutputTokens } : {}),
           }),
-          signal: request.signal ? AbortSignal.any([request.signal, AbortSignal.timeout(config.timeoutMs)]) : AbortSignal.timeout(config.timeoutMs),
+          signal: AbortSignal.any([...(request.signal ? [request.signal] : []), AbortSignal.timeout(Math.min(config.timeoutMs, request.timeoutMs ?? config.timeoutMs))]),
         });
       } catch (error) {
         throw aiConnectionError(error, "openrouter");
       }
 
-      const payload = (await response.json().catch(() => null)) as OpenRouterResponse | null;
+      const payload = (request.privateContext ? await readPrivateResponse(response) : await response.json().catch(() => null)) as OpenRouterResponse | null;
       if (!response.ok) {
         console.error(
           "[ai] openrouter request failed:",
           response.status,
-          payload?.error?.message ?? "no error message",
+          request.privateContext ? "private-analysis" : payload?.error?.message ?? "no error message",
         );
         throw aiErrorFromHttpStatus(response.status, "openrouter");
       }

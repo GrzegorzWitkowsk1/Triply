@@ -1,4 +1,5 @@
 import { model, Schema, type HydratedDocument, type Types } from "mongoose";
+import { creationContextSchema, attractionOutcomeSchema, type CreationContext, type RequestedAttractionOutcome } from "@triply/shared";
 import type {
   AskableField,
   DayComparisonMetrics,
@@ -72,6 +73,8 @@ export interface TripRegenerationRecord {
 }
 
 export interface TripRecord {
+  creationContext?: CreationContext | null;
+  requestedAttractionOutcomes?: RequestedAttractionOutcome[];
   contentLocale?: import("@triply/shared").SupportedLocale;
   sharing?: { enabled: boolean; tokenHash?: string | null; createdAt: Date | null; updatedAt: Date | null };
   createdAt: Date;
@@ -450,6 +453,8 @@ const tripSchema = new Schema<TripRecord>(
       default: "draft",
     },
     contentLocale: { type: String, enum: ["en", "pl"] },
+    creationContext: { type: Schema.Types.Mixed, default: null, validate: (value: unknown) => value === null || creationContextSchema.safeParse(value).success },
+    requestedAttractionOutcomes: { type: [Schema.Types.Mixed], default: undefined, validate: (value: unknown) => value === undefined || Array.isArray(value) && value.length <= 20 && value.every(item => attractionOutcomeSchema.safeParse(item).success) },
     prompt: { type: String, default: "", trim: true },
     badges: { type: [String], default: [] },
     analysis: { type: analysisSchema, required: true },

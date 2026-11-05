@@ -33,6 +33,12 @@ async function lookup(city: string, country: string | null): Promise<TripLocatio
   if (!city) throw new DestinationResolutionError("Please select a destination before generating your trip.");
   const url = new URL(GEOCODING_URL);
   url.searchParams.set("name", city);
+  // Filter before the provider's result limit: a global prefix search can fill
+  // all 100 slots even when city + country identifies exactly one destination.
+  if (country) {
+    if (/^[a-z]{2}$/i.test(country)) url.searchParams.set("countryCode", country.toUpperCase());
+    else url.searchParams.set("name", `${city}, ${countryName(country)}`);
+  }
   url.searchParams.set("count", "100");
   url.searchParams.set("language", "en");
   let results: unknown[];

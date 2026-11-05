@@ -1,7 +1,9 @@
 ﻿import i18n from ".";
+import { ATTACHMENT_ERROR_CODES } from "@triply/shared";
 /** API diagnostics remain on the error object. UI copy depends only on stable codes/status. */
 export function errorKey(error: unknown): string {
   const value = error && typeof error === "object" ? error as { code?: unknown; status?: unknown; name?: unknown } : {};
+  if (ATTACHMENT_ERROR_CODES.some(code => code === value.code)) return `tripCreator/home:${value.code}`;
   const codes: Record<string, string> = {
     GUEST_SESSION_EXPIRED: "sessionExpired", GUEST_SESSION_REQUIRED: "sessionExpired",
     GUEST_TRIP_LIMIT_REACHED: "guestTripLimit", GUEST_AI_LIMIT_REACHED: "guestAiLimit",

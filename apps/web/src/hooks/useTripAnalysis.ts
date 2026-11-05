@@ -14,7 +14,9 @@ export function useAnalyzeTrip() {
   const queryClient = useQueryClient();
   return useMutation({
     onSettled: () => { void queryClient.invalidateQueries({ queryKey: GUEST_USAGE_KEY }); },
-    mutationFn: (input: AnalyzeTripRequest) => analyzeTrip({ ...input, locale: getSelectedLanguage() }),
+    mutationFn: ({ files, signal, ...input }: AnalyzeTripRequest & { files?: File[]; signal?: AbortSignal }) => files?.length
+      ? analyzeTrip({ ...input, locale: getSelectedLanguage() }, files, signal)
+      : analyzeTrip({ ...input, locale: getSelectedLanguage() }),
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: TRIPS_KEY }); },
   });
 }

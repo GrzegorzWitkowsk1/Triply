@@ -38,6 +38,7 @@ import TripRequirementsDialog from "../components/home/TripRequirementsDialog";
 import TripLoading from "../components/trip/TripLoading";
 import TripStatusCard from "../components/trip/TripStatusCard";
 import RegenerateDayDialog from "../components/trip/RegenerateDayDialog";
+import RequestedAttractionOutcomes from "../components/trip/RequestedAttractionOutcomes";
 import TripAssistant from "../components/trip/TripAssistant";
 import TripBudgetCard from "../components/trip/TripBudgetCard";
 import TripMap from "../components/trip/TripMap";
@@ -360,6 +361,7 @@ export default function TripPage() {
   return (
     <div className="trip-page">
       <div className="trip-inner">
+        <RequestedAttractionOutcomes outcomes={trip.data.requestedAttractionOutcomes} />
         <section className="trip-hero">
           <div className="trip-hero-locale">
             <p className="trip-eyebrow">{i18n.t("yourItinerary", { ns: "trips/details" })}</p>

@@ -1,4 +1,8 @@
 import { contentLocale } from "@triply/shared";
+import { registerAttachmentTransport, readAttachmentRequest } from "../http/attachments.js";
+import { AttachmentError, extractAttachments } from "../services/attachmentExtraction.js";
+import { mergeAttachmentContext } from "../services/attachmentContext.js";
+import type { CreationContext } from "@triply/shared";
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import type { HttpRoute, HttpRequest } from "../http/types.js";
 import { Types } from "mongoose";
@@ -144,15 +148,20 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
     }
   });
 
-  app.post<HttpRoute>(
+  app.register(async analysisApi => {
+  await registerAttachmentTransport(analysisApi);
+  analysisApi.post<HttpRoute>(
     "/trips/analyze",
     { preHandler: aiLimiter },
     async (req, res) => {
-      const parsed = analyzeTripRequestSchema.safeParse(req.body);
+      const upload = req.isMultipart() ? await readAttachmentRequest(req) : null;
+      const metadata = upload ? upload.metadata : req.body;
+      const parsed = analyzeTripRequestSchema.safeParse(metadata);
 
       if (!parsed.success) {
         return res.code(400).send({
           error: "Describe your trip or pick at least one interest to get started.",
+          ...(upload ? { code: "ATTACHMENT_METADATA" } : {}),
         });
       }
 
@@ -164,11 +173,25 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       const reservation = guestOwnerId(owner) ? await reserveGuestDraft(owner, request.prompt, request.badges) : null;
       try {
       const preferences = req.user?.preferences ?? DEFAULT_PROFILE_PREFERENCES;
-      const badges = Object.prototype.hasOwnProperty.call(req.body, "badges") ? request.badges : preferences.interests;
+      const badges = Object.prototype.hasOwnProperty.call(metadata, "badges") ? request.badges : preferences.interests;
       const effectivePrompt = selectedDestination
         ? `The selected destination is ${selectedDestination.city}, ${selectedDestination.country}. This selection overrides any other destination in the request. Other trip preferences: ${request.prompt}`
         : request.prompt;
-      const parsedAnalysis = await aiService.parseTrip({ prompt: effectivePrompt, badges, locale: contentLocale(request.locale) });
+      let creationContext: CreationContext | undefined;
+      let parsedAnalysis;
+      if (upload) {
+        let texts: string[];
+        try { texts = await extractAttachments(upload.files, req.attachmentSignal); }
+        finally { for (const file of upload.files) file.bytes.fill(0); upload.files.length = 0; }
+        try {
+          const direct = await aiService.parseCreationPrompt({ prompt: effectivePrompt, badges, locale: contentLocale(request.locale), signal: req.attachmentSignal });
+          req.attachmentSignal?.throwIfAborted();
+          const suggestions = await aiService.parseAttachments(texts, contentLocale(request.locale), req.attachmentSignal);
+          const merged = mergeAttachmentContext(direct.analysis, direct, suggestions, request);
+          parsedAnalysis = merged.analysis; creationContext = merged.context;
+        } catch (error) { if (error instanceof AttachmentError) throw error; throw new AttachmentError(req.attachmentSignal?.aborted ? "ATTACHMENT_TIMEOUT" : "ATTACHMENT_AI_FAILED", 502); }
+        finally { texts.length = 0; }
+      } else parsedAnalysis = await aiService.parseTrip({ prompt: effectivePrompt, badges, locale: contentLocale(request.locale) });
       const analysis = applyProfilePreferences(parsedAnalysis, {
         ...preferences, pace: request.pace ?? preferences.pace,
         maxWalkingDistanceKm: request.maxWalkingDistanceKm ?? preferences.maxWalkingDistanceKm,
@@ -184,6 +207,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         analysis.location = null;
       }
 
+      if (upload && req.attachmentSignal?.aborted) throw new AttachmentError("ATTACHMENT_TIMEOUT", 408);
       const draft = await upsertTripDraft({
         locale: contentLocale(request.locale),
         userId: owner,
@@ -191,6 +215,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         prompt: effectivePrompt,
         badges,
         analysis,
+        creationContext: creationContext ?? null,
       });
 
       return res.send(toTripAnalysisResult(draft));
@@ -200,6 +225,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
       }
     },
   );
+  });
 
   app.patch<HttpRoute>(
     "/trips/:id/requirements",

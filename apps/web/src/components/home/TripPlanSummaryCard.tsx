@@ -5,8 +5,11 @@ import { useTranslation } from "react-i18next";
 import i18n from "../../i18n";
 import { CheckOutlined, LockOutlined } from "@mui/icons-material";
 import { PACE_OPTIONS, interestLabel, type AskableField, type TripAnalysis } from "@triply/shared";
+import AttachmentRequirements from "./AttachmentRequirements";
+import type { CreationContext } from "@triply/shared";
 
 interface TripPlanSummaryCardProps {
+  attachmentContext?: CreationContext;
   analysis: TripAnalysis;
   missingFields: AskableField[];
   requirementsComplete: boolean;
@@ -49,6 +52,7 @@ function formatPace(pace: TripAnalysis["pace"]): string | null {
 }
 
 export default function TripPlanSummaryCard({
+  attachmentContext,
   analysis,
   missingFields,
   requirementsComplete,
@@ -105,6 +109,7 @@ export default function TripPlanSummaryCard({
       )}
 
       {analysis.notes && <p className="plan-summary-notes">{analysis.notes}</p>}
+      <AttachmentRequirements context={attachmentContext} analysis={analysis} />
 
       <div className="plan-summary-actions">
         <button type="button" className="btn" onClick={onEdit}>

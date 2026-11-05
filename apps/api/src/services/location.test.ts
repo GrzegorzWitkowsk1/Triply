@@ -12,17 +12,35 @@ function provider(results: unknown[]) {
 }
 
 describe("destination resolution", () => {
-  it("searches the city alone and accepts the legacy Czech Republic country name", async () => {
+  it("scopes the search to the country and accepts the legacy Czech Republic country name", async () => {
     const fetch = provider([prague, { ...prague, country: "United States", country_code: "US" }]);
     expect(await geocodeLocation("Prague, Czech Republic")).toEqual({ lat: 50.08, lng: 14.43, city: "Prague", country: "Czechia" });
     const url = new URL(fetch.mock.calls[0]![0]);
-    expect(url.searchParams.get("name")).toBe("Prague");
+    expect(url.searchParams.get("name")).toBe("Prague, czechia");
     expect(url.searchParams.get("count")).toBe("100");
   });
 
   it("accepts zero coordinates and country codes", async () => {
-    provider([{ ...prague, latitude: 0, longitude: 0 }]);
+    const fetch = provider([{ ...prague, latitude: 0, longitude: 0 }]);
     expect(await resolveDestination("Prague", "CZ")).toMatchObject({ lat: 0, lng: 0 });
+    const url = new URL(fetch.mock.calls[0]![0]);
+    expect(url.searchParams.get("countryCode")).toBe("CZ");
+    expect(url.searchParams.get("name")).toBe("Prague");
+  });
+
+  it("resolves Rome within Italy instead of treating a full global prefix search as ambiguity", async () => {
+    const rome = { name: "Rome", country: "Italy", country_code: "IT", latitude: 41.89193, longitude: 12.51133 };
+    const global = [rome, ...Array.from({ length: 99 }, () => ({ ...rome, country: "United States", country_code: "US" }))];
+    const fetch = vi.fn(async (url: string) => Response.json({ results: new URL(url).searchParams.get("name") === "Rome, italy" ? [rome, { ...rome, name: "Romeno" }] : global }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(resolveDestination("Rome", "Italy")).resolves.toEqual({ lat: rome.latitude, lng: rome.longitude, city: "Rome", country: "Italy" });
+    expect(fetch).toHaveBeenCalledOnce();
+    await expect(resolveDestination("Rome")).rejects.toThrow("more than one city");
+  });
+
+  it("still rejects a saturated country-scoped search rather than assuming uniqueness", async () => {
+    provider([prague, ...Array.from({ length: 99 }, () => ({ ...prague, name: "Prague suburb" }))]);
+    await expect(resolveDestination("Prague", "Czechia")).rejects.toThrow("more than one city");
   });
 
   it("shares simultaneous requests", async () => {

@@ -244,6 +244,8 @@ export const updateTripRequirementsSchema = z.object({
 export type UpdateTripRequirements = z.infer<typeof updateTripRequirementsSchema>;
 
 export interface TripAnalysisResult {
+  attachmentContext?: import("./attachments.js").CreationContext;
+  requestedAttractionOutcomes?: import("./attachments.js").RequestedAttractionOutcome[];
   contentLocale?: SupportedLocale;
   draftId: string;
   analysis: TripAnalysis;
