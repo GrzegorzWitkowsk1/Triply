@@ -7,6 +7,7 @@ import { useAuth } from "../../auth/AuthProvider";
 import { saveProfilePreferences } from "../../api/profile";
 import { useToast } from "../ToastProvider";
 import PreferenceFields from "../trip/PreferenceFields";
+import JourneyPreferencesSetting from "./JourneyPreferencesCard";
 
 export default function PreferencesCard() {
   useTranslation();
@@ -27,6 +28,7 @@ export default function PreferencesCard() {
       onToggleTag={id => setValues(current => ({ ...current, interests: current.interests.includes(id as ProfilePreferences["interests"][number]) ? current.interests.filter(tag => tag !== id) : [...current.interests, id as ProfilePreferences["interests"][number]] }))}
       pace={PACE_VALUES.indexOf(values.pace)} onPaceChange={index => setValues(current => ({ ...current, pace: PACE_VALUES[index] }))}
       walking={PROFILE_WALKING_LIMITS.indexOf(values.maxWalkingDistanceKm)} onWalkingChange={index => setValues(current => ({ ...current, maxWalkingDistanceKm: PROFILE_WALKING_LIMITS[index] }))} />
+    <JourneyPreferencesSetting />
     <div className="settings-footer"><button type="submit" className="btn btn-primary settings-submit" disabled={saving}>{i18n.t("save", { ns: "common" })}</button></div>
   </form>;
 }

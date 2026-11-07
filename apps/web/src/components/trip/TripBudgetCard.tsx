@@ -5,16 +5,17 @@ import { errorMessage as localizedError } from "../../i18n/errors";
 import { useTranslation } from "react-i18next";
 import i18n from "../../i18n";
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
-import { DeleteOutlined, KeyboardArrowDown } from "@mui/icons-material";
-import { Alert, Button, IconButton, MenuItem, TextField, Tooltip } from "@mui/material";
+import { DeleteOutlined, EditOutlined, KeyboardArrowDown } from "@mui/icons-material";
+import { Alert, Button, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, MenuItem, TextField, Tooltip } from "@mui/material";
 import {
-  decimalToMinor, expenseInputSchema, EXPENSE_CATEGORIES, EXPENSE_CATEGORY_LABELS,
-  type ExpenseCategory, type ItineraryDay, type SpendingTotal, type TripAttraction, type TripBudgetData,
+  decimalToMinor, minorToDecimal, expenseInputSchema, EXPENSE_CATEGORIES, EXPENSE_CATEGORY_LABELS,
+  type ExpenseCategory, type ItineraryDay, type SpendingTotal, type TripAttraction, type TripBudgetData, type TripExpense,
 } from "@triply/shared";
 import { useTripBudget } from "../../hooks/useTripBudget";
 import type { BudgetSlice } from "../../config/trip";
 
 interface TripBudgetCardProps {
+  expenseDraft?: VisitExpenseDraft | null;
   tripId?: string;
   budgetData?: TripBudgetData;
   days?: ItineraryDay[];
@@ -25,6 +26,8 @@ interface TripBudgetCardProps {
   breakdown?: BudgetSlice[] | null;
   currencySymbol?: string;
 }
+
+export interface VisitExpenseDraft { key: string; tripId: string; itemId: string; name: string; dayId: string; date: string | null }
 
 const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
   attractions: "#8064a2", food_drinks: "#eb995b", transport: "#6d9bcc",
@@ -54,7 +57,7 @@ export default function TripBudgetCard(props: TripBudgetCardProps) {
   </section>;
 }
 
-function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }: TripBudgetCardProps & { tripId: string }) {
+function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex, expenseDraft }: TripBudgetCardProps & { tripId: string }) {
   const { t } = useTranslation("expenses", { i18n });
   const { query, mutation } = useTripBudget(tripId);
   const data = query.data ?? budgetData;
@@ -65,18 +68,35 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
   const dayId = days.some(day => String(day.dayIndex) === selectedDayId) ? selectedDayId : defaultDayId;
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
+  const [itineraryItemId, setItineraryItemId] = useState<string | null>(null);
+  const [date, setDate] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
   const [category, setCategory] = useState<ExpenseCategory>(EXPENSE_CATEGORIES[0]);
   const [error, setError] = useState<string | null>(null);
   const [invalidAmount, setInvalidAmount] = useState(false);
+  const [correcting, setCorrecting] = useState<TripExpense | null>(null);
+  const [correctedAmount, setCorrectedAmount] = useState("");
   const amountInput = useRef<HTMLInputElement>(null);
   const [perDayOpen, setPerDayOpen] = useState(false);
   const requestId = useRef(crypto.randomUUID());
+  const handledVisitDraft = useRef<string | null>(null);
   const currentDefaultDayId = useRef(defaultDayId);
   currentDefaultDayId.current = defaultDayId;
   useEffect(() => {
+    if (itineraryItemId) return;
     setSelectedDayId(defaultDayId);
     requestId.current = crypto.randomUUID();
   }, [defaultDayId]);
+  useEffect(() => {
+    if (!expenseDraft || expenseDraft.tripId !== tripId || mutation.isPending || handledVisitDraft.current === expenseDraft.key) return;
+    handledVisitDraft.current = expenseDraft.key;
+    setTitle(expenseDraft.name.slice(0, 120)); setAmount(""); setCategory("attractions");
+    setSelectedDayId(expenseDraft.dayId); setDate(expenseDraft.date); setItineraryItemId(expenseDraft.itemId);
+    requestId.current = crypto.randomUUID(); setError(null); setSuccess(false);
+    amountInput.current?.focus();
+    const frame = requestAnimationFrame(() => { amountInput.current?.scrollIntoView?.({ block: "center", behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" }); });
+    return () => cancelAnimationFrame(frame);
+  }, [expenseDraft?.key, tripId, mutation.isPending]);
   const submitting = useRef(false);
   const expenses = [...(data?.expenses ?? [])].reverse().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const ownTotal = summary?.totals.find(total => total.currency === currency);
@@ -94,7 +114,7 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
   const chartAvailable = Boolean(currency) && !hasOtherCurrencies && total !== null;
   const busy = mutation.isPending;
 
-  const changeDraft = () => { requestId.current = crypto.randomUUID(); setError(null); setInvalidAmount(false); };
+  const changeDraft = () => { requestId.current = crypto.randomUUID(); setError(null); setInvalidAmount(false); setSuccess(false); };
   const addExpense = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!data || !currency || !title.trim() || !amount.trim() || submitting.current) return;
@@ -102,7 +122,8 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
     try {
       let expense;
       try {
-        expense = expenseInputSchema.parse({ title, category, amountMinor: decimalToMinor(decimalInput(amount.trim()), currency), currency, type: "actual", dayId: dayId || null });
+        expense = expenseInputSchema.parse({ title, category, amountMinor: decimalToMinor(decimalInput(amount.trim()), currency), currency, type: "actual", dayId: dayId || null, date,
+          ...(itineraryItemId ? { itineraryItemId } : {}) });
       } catch {
         setError("errors:validation");
         setInvalidAmount(true); amountInput.current?.focus();
@@ -110,6 +131,7 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
       }
       await mutation.mutateAsync({ type: "create", expense, id: requestId.current, revision: data.revision });
       setTitle(""); setAmount(""); setCategory(EXPENSE_CATEGORIES[0]); requestId.current = crypto.randomUUID();
+      setItineraryItemId(null); setDate(null); setSuccess(true);
       setSelectedDayId(currentDefaultDayId.current);
     } catch (failure) {
       setError(localizedErrorKey(failure));
@@ -120,6 +142,20 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
     submitting.current = true; setError(null);
     try { await mutation.mutateAsync({ type: "delete", id, revision: data.revision }); }
     catch (failure) { setError(localizedErrorKey(failure)); }
+    finally { submitting.current = false; }
+  };
+  const correctExpense = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!correcting || !data || submitting.current) return;
+    submitting.current = true; setError(null);
+    try {
+      const { id, createdAt: _created, updatedAt: _updated, automaticSource: _source, ...original } = correcting;
+      let amountMinor: number;
+      try { amountMinor = decimalToMinor(decimalInput(correctedAmount.trim()), correcting.currency); }
+      catch { setError("errors:validation"); return; }
+      await mutation.mutateAsync({ type: "update", id, revision: data.revision, expense: { ...original, amountMinor } });
+      setCorrecting(null); setSuccess(true);
+    } catch (failure) { setError(localizedErrorKey(failure)); }
     finally { submitting.current = false; }
   };
 
@@ -141,6 +177,7 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
     {query.isLoading && !data && <p role="status" className="budget-note">{i18n.t("loadingExpenses", { ns: "expenses" })}</p>}
     {query.isError && <Alert severity="error">{i18n.t("couldNotLoadExpenses", { ns: "expenses" })}<Button onClick={() => void query.refetch()}>{i18n.t("retryExpenses", { ns: "expenses" })}</Button></Alert>}
     {error && <Alert severity="error">{resolveMessage(error)}</Alert>}
+    {success && <Alert severity="success">{i18n.t("expenseSaved", { ns: "itinerary/expenses" })}</Alert>}
 
     <ul className="budget-list budget-expenses" aria-label={i18n.t("expenses", { ns: "expenses" })}>
       {expenses.map(expense => <li key={expense.id} className="budget-expense-row" style={{ "--expense-color": CATEGORY_COLORS[expense.category] } as CSSProperties}>
@@ -148,14 +185,35 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
         <div className="budget-expense-description">
           <span className="budget-expense-title">{expense.title}</span>
           <span className="budget-expense-category">{expenseCategoryLabel(expense.category)}</span>
+          {expense.itineraryItemId && <small>{i18n.t("linkedExpense", { ns: "itinerary/expenses" })}</small>}
+          {expense.automaticSource && <small>{i18n.t("automaticAdmission", { ns: "itinerary/expenses" })}</small>}
         </div>
         <span className="budget-amount">{formatMoney(expense.amountMinor, expense.currency)}</span>
+        <div className="budget-expense-actions">
+        {expense.automaticSource && <IconButton size="small" aria-label={i18n.t("correctLabel", { ns: "itinerary/expenses", name: expense.title })} disabled={busy} onClick={() => {
+          setCorrecting(expense); setCorrectedAmount(minorToDecimal(expense.amountMinor, expense.currency)); setError(null); setSuccess(false);
+        }}><EditOutlined fontSize="small" /></IconButton>}
         <IconButton size="small" className="budget-delete" aria-label={i18n.t("delete", { ns: "expenses", value0: expense.title })} disabled={busy} onClick={() => void deleteExpense(expense.id)}>
           <DeleteOutlined fontSize="small" />
         </IconButton>
+        </div>
       </li>)}
       {data && expenses.length === 0 && <li className="budget-empty">{i18n.t("noExpensesYet", { ns: "expenses" })}</li>}
     </ul>
+    <Dialog open={Boolean(correcting)} onClose={busy ? undefined : () => { setCorrecting(null); setError(null); }} fullWidth maxWidth="xs" aria-labelledby={`correct-expense-${tripId}`}>
+      <form onSubmit={event => void correctExpense(event)}>
+        <DialogTitle id={`correct-expense-${tripId}`}>{i18n.t("correctAmount", { ns: "itinerary/expenses" })}</DialogTitle>
+        <DialogContent>
+          <p>{correcting?.title}</p>
+          {correcting?.automaticSource && <p>{i18n.t("originalAmount", { ns: "itinerary/expenses", amount: formatMoney(correcting.automaticSource.postedAmountMinor, correcting.automaticSource.currency) })}</p>}
+          {error && <Alert severity="error">{resolveMessage(error)}</Alert>}
+          <TextField autoFocus fullWidth margin="normal" label={t("amount")} value={correctedAmount} disabled={busy} slotProps={{ htmlInput: { inputMode: "decimal" } }}
+            onChange={event => { setCorrectedAmount(event.target.value); setError(null); }} helperText={correcting?.currency} />
+        </DialogContent>
+        <DialogActions><Button disabled={busy} onClick={() => { setCorrecting(null); setError(null); }}>{i18n.t("cancel", { ns: "common" })}</Button>
+          <Button type="submit" disabled={busy || !correctedAmount.trim()}>{i18n.t("saveChanges", { ns: "common" })}</Button></DialogActions>
+      </form>
+    </Dialog>
 
     <div className="budget-per-day">
       <button type="button" className="budget-per-day-toggle" aria-expanded={perDayOpen} aria-controls={`budget-days-${tripId}`} onClick={() => setPerDayOpen(value => !value)}>
@@ -181,6 +239,18 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex }:
     </div>
 
     <form className="budget-expense-form" aria-busy={busy} onSubmit={event => void addExpense(event)}>
+      <TextField select fullWidth size="small" label={i18n.t("linkedVisit", { ns: "itinerary/expenses" })} value={itineraryItemId ?? ""} disabled={busy}
+        onChange={event => {
+          changeDraft(); const id = event.target.value; setItineraryItemId(id || null);
+          const selected = days.find(day => day.activities?.some(item => item.itineraryItemId === id));
+          if (selected) { setSelectedDayId(String(selected.dayIndex)); setDate(selected.date || null); }
+        }}>
+        <MenuItem value="">{i18n.t("noLink", { ns: "itinerary/expenses" })}</MenuItem>
+        {days.flatMap(day => (day.activities ?? []).filter(item => item.type === "attraction" && item.itineraryItemId).map(item =>
+          <MenuItem key={item.itineraryItemId} value={item.itineraryItemId}>{item.title} · {i18n.t("dayLabel", { ns: "common", day: day.dayIndex })}</MenuItem>))}
+      </TextField>
+      <TextField fullWidth size="small" type="date" label={i18n.t("spendingDate", { ns: "itinerary/expenses" })} value={date ?? ""} disabled={busy}
+        slotProps={{ inputLabel: { shrink: true } }} onChange={event => { changeDraft(); setDate(event.target.value || null); }} />
       <div className="budget-form-name-row">
         <TextField fullWidth size="small" label={t("expenseName")} placeholder={t("expenseName")} value={title} disabled={busy}
           slotProps={{ htmlInput: { get "aria-label"() { return i18n.t("expenseName", { ns: "expenses" }); }, maxLength: 120 } }}

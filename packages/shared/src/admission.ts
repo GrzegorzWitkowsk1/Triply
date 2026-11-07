@@ -7,6 +7,8 @@ export const admissionPriceSchema = z.object({
   fractionDigits: z.number().int().min(0).max(3),
   priceType: z.enum(["adult", "general"]),
   unit: z.enum(["per_person", "per_group", "unknown"]),
+  /** Legacy unclassified values require evidence/confirmation before actual posting. */
+  reliability: z.enum(["confirmed", "estimated"]).optional(),
 });
 export const attractionAdmissionSchema = z.object({
   status: z.enum(["free", "paid", "unknown"]),

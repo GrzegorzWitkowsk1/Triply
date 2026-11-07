@@ -44,6 +44,8 @@ export async function requireTripIdentity(request: FastifyRequest, reply: Fastif
     /^\/api\/saved\/(?:destinations|attractions)\/status$/.test(path) && method === "GET" ||
     /^\/api\/saved\/(?:destinations|attractions)\/[^/]+$/.test(path) && method === "DELETE";
   const supported = savedPath || allowed[tripPath]?.includes(method) ||
+    (method === "PATCH" && /^\/api\/trips\/:id\/visits\/[a-f0-9-]{36}$/.test(tripPath)) ||
+    (method === "POST" && /^\/api\/trips\/:id\/visits\/[a-f0-9-]{36}\/expense\/retry$/.test(tripPath)) ||
     (method === "POST" && /^\/api\/trips\/:id\/days\/\d+\/(?:regenerate|apply)$/.test(tripPath)) ||
     (["PATCH", "DELETE"].includes(method) && /^\/api\/trips\/:id\/(?:equipment\/[a-f0-9]{24}|expenses\/[a-f0-9-]+)$/.test(tripPath));
   const guest = getSessionGuest(request);

@@ -9,6 +9,9 @@ import { TripModel } from "../models/Trip.js";
 import { ensureAttractions, saveTripRequirements, upsertTripDraft } from "../services/tripDraft.js";
 import { recoverTripDestination } from "../services/tripDestination.js";
 import type { TripAnalysis } from "@triply/shared";
+import { expenseInputSchema } from "@triply/shared";
+import { randomUUID } from "node:crypto";
+import { mutateExpense } from "../services/expenses.js";
 import { planTrip } from "../services/tripPlanner.js";
 import {
   claimTripForGeneration, GenerationSupersededError, markGenerationFailed, runTripGeneration,
@@ -295,6 +298,20 @@ describe("POST /api/trips/:id/generate", () => {
 });
 
 describe("generation ownership", () => {
+  it("preserves spending added during generation without rerunning the planner", async () => {
+    const userId = new mongoose.Types.ObjectId().toString(); const trip = await seedTrip(userId);
+    const claimed = await claimTripForGeneration(trip.id, userId);
+    const result = await planTrip({ pois: [], durationDays: 1 });
+    vi.mocked(planTrip).mockImplementationOnce(async () => {
+      await mutateExpense(trip.id, userId, { type: "create", requestId: randomUUID(), expense: expenseInputSchema.parse({ title: "Paid taxi", category: "transport", amountMinor: 1500, currency: "EUR", type: "actual" }) }, 0);
+      return result;
+    });
+    const plannedBefore = vi.mocked(planTrip).mock.calls.length;
+    const generated = await runTripGeneration(claimed!);
+    expect(generated.status).toBe("ready"); expect(generated.expenses).toHaveLength(1);
+    expect(generated.expenses[0]).toMatchObject({ title: "Paid taxi", amountMinor: 1500 });
+    expect(vi.mocked(planTrip).mock.calls.length - plannedBefore).toBe(1);
+  });
   it("prevents an old generation from overwriting the new owner's state", async () => {
     const userId = new mongoose.Types.ObjectId().toString();
     const trip = await seedTrip(userId);

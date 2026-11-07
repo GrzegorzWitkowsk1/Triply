@@ -1,4 +1,7 @@
 import { localizeGeneratedDay, localizeExplanation } from "./contentLanguage.js";
+import { expenseLinksForItinerary } from "./expenseLinks.js";
+import { assertNoVisited } from "./visitedProtection.js";
+import { ensureItemIdentities } from "./itineraryIdentity.js";
 import { contentLocale } from "@triply/shared";
 import { ownerFilter, storedOwner } from "../middleware/tripIdentity.js";
 import {
@@ -153,7 +156,7 @@ export function toItineraryDay(
   day: DailySchedule<SchedulablePoi>,
   route: OptimizedDayRoute<SchedulablePoi> | undefined,
 ): ItineraryDay {
-  return {
+  const result: ItineraryDay = {
     dayIndex: day.dayIndex,
     routeStopOffset: route?.segments.length ? Math.max(0, route.segments.length - route.orderedPlaces.length + 1 - (route.returnsToStart ? 1 : 0)) : 0,
     routeReturnsToStart: route?.returnsToStart ?? false,
@@ -161,7 +164,7 @@ export function toItineraryDay(
     routingSource: route?.routingSource,
     date: day.date,
     timeZone: day.timeZone,
-    activities: day.activities,
+    activities: day.activities.map(activity => ({ ...activity })),
     stops: (route?.orderedPlaces ?? []).filter(isUsableStop).map(toItineraryStop),
     geometry: route?.geometry ?? null,
     segments: route?.segments ?? [],
@@ -171,6 +174,8 @@ export function toItineraryDay(
     partiallyEstimated: day.partiallyEstimated,
     warnings: day.warnings,
   };
+  ensureItemIdentities([result]);
+  return result;
 }
 
 export function toItineraryRecord(
@@ -195,6 +200,7 @@ export function toItineraryRecord(
 }
 
 export async function runTripGeneration(trip: TripDocument): Promise<TripDocument> {
+  assertNoVisited(trip);
   const started = performance.now();
   const analysis = trip.analysis;
   const location = analysis.location;
@@ -256,27 +262,39 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
   const quality = assessTripQuality(repaired.trip);
   console.info({ event: "trip-generation", stage: "validation", durationMs: Math.round(performance.now() - started), routingSource: result.routing.source, issueCount: quality.issues.length, repairAttempts: repaired.attempts, valid: quality.valid, dimensions: quality.dimensions });
   if (!quality.valid) throw new GenerationUnavailableError(`The itinerary has scheduling conflicts. ${quality.issues.filter(i => i.severity === "error").map(i => i.message).slice(0, 3).join(" ")}`);
-  const saved = await TripModel.findOneAndUpdate(
-    { _id: trip._id, ...ownerFilter(storedOwner(trip)), status: "generating", "generation.startedAt": trip.generation.startedAt },
-    {
-      $set: {
-        weather: weather.days,
-        weatherFetchedAt: weather.fetchedAt,
-        weatherAvailability: weather.availability ?? null,
-        attractions: attractions.attractions,
-        attractionsFetchedAt: attractions.fetchedAt,
-        attractionsQuery: attractions.query,
-        itinerary: repaired.trip.itinerary ? { ...repaired.trip.itinerary, days: repaired.trip.itinerary.days.map(day => localizeGeneratedDay(day, contentLocale(trip.contentLocale))), unscheduled: repaired.trip.itinerary.unscheduled.map(entry => ({ ...entry, detail: entry.detail ? localizeExplanation(entry.detail, contentLocale(trip.contentLocale)) : entry.detail })) } : null,
-        regeneration: null,
-        status: "ready",
-        "generation.generatedAt": now,
-        "generation.error": null,
+  let expenseSnapshot = trip;
+  let saved: TripDocument | null = null;
+  // Retry only persistence when spending changes during planning; never rerun providers.
+  for (let attempt = 0; attempt < 8 && !saved; attempt++) {
+    const links = expenseLinksForItinerary(expenseSnapshot, repaired.trip.itinerary?.days ?? []);
+    saved = await TripModel.findOneAndUpdate(
+      { _id: trip._id, ...ownerFilter(storedOwner(trip)), ...links.filter, status: "generating", "generation.startedAt": trip.generation.startedAt },
+      {
+        $set: {
+          weather: weather.days,
+          weatherFetchedAt: weather.fetchedAt,
+          weatherAvailability: weather.availability ?? null,
+          attractions: attractions.attractions,
+          attractionsFetchedAt: attractions.fetchedAt,
+          attractionsQuery: attractions.query,
+          itinerary: repaired.trip.itinerary ? { ...repaired.trip.itinerary, days: repaired.trip.itinerary.days.map(day => localizeGeneratedDay(day, contentLocale(trip.contentLocale))), unscheduled: repaired.trip.itinerary.unscheduled.map(entry => ({ ...entry, detail: entry.detail ? localizeExplanation(entry.detail, contentLocale(trip.contentLocale)) : entry.detail })) } : null,
+          regeneration: null,
+          status: "ready",
+          "generation.generatedAt": now,
+          "generation.error": null,
+          ...links.set,
+        },
+        $inc: { itineraryVersion: 1, ...links.increment },
       },
-      $inc: { itineraryVersion: 1 },
-    },
-    { new: true, runValidators: true },
-  ).exec();
-  if (!saved) throw new GenerationSupersededError();
+      { new: true, runValidators: true },
+    ).exec();
+    if (!saved) {
+      const latest = await TripModel.findOne({ _id: trip._id, ...ownerFilter(storedOwner(trip)), status: "generating", "generation.startedAt": trip.generation.startedAt });
+      if (!latest) throw new GenerationSupersededError();
+      expenseSnapshot = latest;
+    }
+  }
+  if (!saved) throw new GenerationUnavailableError("Expenses kept changing during generation. Please retry.");
   console.info({ event: "trip-generation", stage: "persistence", status: "ready", durationMs: Math.round(performance.now() - started), issueCount: quality.issues.length });
   return saved;
 }

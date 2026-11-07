@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import type { ProfileUser } from "@triply/shared";
 import ProfilePage from "./ProfilePage";
 import { ToastProvider } from "../components/ToastProvider";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 const mocks = vi.hoisted(() => ({ user: {} as ProfileUser, updateUser: vi.fn(), saveNames: vi.fn(), upload: vi.fn(), savePreferences: vi.fn(), password: vi.fn() }));
 vi.mock("../auth/AuthProvider", () => ({ useAuth: () => ({ user: mocks.user, updateUser: mocks.updateUser }) }));
 vi.mock("../api/profile", () => ({ saveProfileNames: mocks.saveNames, uploadAvatar: mocks.upload, saveProfilePreferences: mocks.savePreferences, changePassword: mocks.password }));
@@ -13,7 +14,8 @@ beforeEach(() => {
   mocks.savePreferences.mockResolvedValue(mocks.user); mocks.password.mockResolvedValue(undefined);
 });
 afterEach(cleanup);
-function page() { return render(<ToastProvider><ProfilePage /></ToastProvider>); }
+function SettingsTestPage() { return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider><ProfilePage /></ToastProvider></QueryClientProvider>; }
+function page() { return render(<SettingsTestPage />); }
 describe("profile settings", () => {
   it("saves only the changed name and keeps email readonly", async () => {
     page();
@@ -82,7 +84,7 @@ describe("profile settings", () => {
     const view = page();
     fireEvent.click(screen.getByRole("button", { name: "Packed" }));
     mocks.user = { ...mocks.user, preferences: { ...mocks.user.preferences!, interests: [...mocks.user.preferences!.interests] } };
-    view.rerender(<ToastProvider><ProfilePage /></ToastProvider>);
+    view.rerender(<SettingsTestPage />);
     expect(screen.getByRole("button", { name: "Packed" }).getAttribute("aria-pressed")).toBe("true");
   });
   it("persists application language across remounts", () => {

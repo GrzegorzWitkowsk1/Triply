@@ -1,0 +1,16 @@
+{
+  "locked": "Editing locked. Reset this visit to planned to change its itinerary.",
+  "planned": "Planned",
+  "visited": "Visited",
+  "skipped": "Skipped",
+  "visitedAction": "Mark visited",
+  "skippedAction": "Skip",
+  "plannedAction": "Undo",
+  "visitedLabel": "Mark {{name}} as visited",
+  "skippedLabel": "Mark {{name}} as skipped",
+  "plannedLabel": "Reset {{name}} to planned",
+  "saving": "Saving visit status…",
+  "error": "Visit status could not be saved. Try again.",
+  "progress": "Visited {{visited}}/{{total}} ({{percentage}}%) · Skipped {{skipped}} · Remaining {{remaining}}",
+  "empty": "No places to visit this day"
+}

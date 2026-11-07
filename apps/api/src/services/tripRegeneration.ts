@@ -1,4 +1,8 @@
 import { localizeGeneratedDay, localizeExplanation } from "./contentLanguage.js";
+import { expenseLinksForItinerary } from "./expenseLinks.js";
+import { assertNoVisited, assertVisitedUnchanged, visitRevisionGuard } from "./visitedProtection.js";
+import { ensureTripItemIdentities } from "./tripVisits.js";
+import { retainRegeneratedIdentities } from "./itineraryIdentity.js";
 import { contentLocale } from "@triply/shared";
 import {
   type Coordinates,
@@ -603,6 +607,8 @@ function toPlainRecord(record: TripRegenerationRecord): TripRegenerationRecord {
 export async function createDayRegenerationPreview(
   input: CreateDayPreviewInput,
 ): Promise<RegenerateDayPreview> {
+  input = { ...input, trip: await ensureTripItemIdentities(input.trip) };
+  assertNoVisited(input.trip, input.dayIndex);
   const now = input.now ?? new Date();
   const result = await regenerateTripDay({ ...input, now });
   const candidate = { ...input.trip.toObject(), attractions: [...input.trip.attractions, ...result.newAttractions], itinerary: { ...input.trip.toObject().itinerary!, days: input.trip.itinerary!.days.map(d => d.dayIndex === input.dayIndex ? result.day : d) } };
@@ -610,6 +616,7 @@ export async function createDayRegenerationPreview(
   const quality = assessTripQuality(repaired.trip, { dayIndex: input.dayIndex });
   if (!quality.valid) throw new NoSuitableAlternativesError(quality.issues.map(i => i.message));
   result.day = repaired.trip.itinerary!.days.find(d => d.dayIndex === input.dayIndex)!;
+  retainRegeneratedIdentities(input.trip.itinerary!.days.find(d => d.dayIndex === input.dayIndex)!, result.day);
   result.warnings = [...new Set([...result.warnings, ...quality.issues.map(i => i.message)])];
   result.comparison.proposed = dayMetrics(result.day);
   const locale = contentLocale(input.trip.contentLocale);
@@ -638,7 +645,7 @@ export async function createDayRegenerationPreview(
   };
 
   const updated = await TripModel.findOneAndUpdate(
-    { _id: input.trip._id, itineraryVersion: baseItineraryVersion },
+    { _id: input.trip._id, itineraryVersion: baseItineraryVersion, $and: [visitRevisionGuard(input.trip)] },
     { $set: { regeneration: record } },
     { new: true },
   ).exec();
@@ -683,7 +690,12 @@ export async function applyDayRegeneration(
   }
 
   const preview = toPlainRecord(stored);
+  // Also supports previews created before occurrence IDs were introduced.
+  if (preview.day.activities.some(item => item.type === "attraction" && !item.itineraryItemId)) {
+    retainRegeneratedIdentities(trip.itinerary!.days.find(day => day.dayIndex === dayIndex)!, preview.day);
+  }
   const base = preview.baseItineraryVersion;
+  assertVisitedUnchanged(trip, trip.itinerary!.days.map(day => day.dayIndex === dayIndex ? preview.day : day));
   const quality = assessTripQuality({ ...trip.toObject(), attractions: [...trip.attractions, ...preview.newAttractions], itinerary: { ...trip.toObject().itinerary!, days: trip.itinerary!.days.map(d => d.dayIndex === dayIndex ? preview.day : d) } }, { dayIndex });
   if (!quality.valid) throw new NoSuitableAlternativesError(quality.issues.map(i => i.message));
 
@@ -696,13 +708,16 @@ export async function applyDayRegeneration(
       detail: entry.detail ?? null,
     }));
 
+  const links = expenseLinksForItinerary(trip, trip.itinerary!.days.map(day => day.dayIndex === dayIndex ? preview.day : day));
   const update: Record<string, unknown> = {
     $set: {
       "itinerary.days.$[day]": preview.day,
       "itinerary.unscheduled": [...remainingUnscheduled, ...preview.unscheduled],
       itineraryVersion: base + 1,
       regeneration: null,
+      ...links.set,
     },
+    ...(Object.keys(links.increment).length ? { $inc: links.increment } : {}),
   };
 
   if (preview.newAttractions.length > 0) {
@@ -715,6 +730,8 @@ export async function applyDayRegeneration(
       itineraryVersion: base,
       "regeneration.previewId": previewId,
       "regeneration.dayIndex": dayIndex,
+      ...links.filter,
+      $and: [visitRevisionGuard(trip)],
     },
     update,
     { new: true, arrayFilters: [{ "day.dayIndex": dayIndex }] },

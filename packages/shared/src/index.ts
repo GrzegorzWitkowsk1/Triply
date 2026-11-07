@@ -26,3 +26,4 @@ export * from "./destinationCatalog.js";
 export * from "./curatedCollections.js";
 
 export * from "./packing.js";
+export * from "./visits.js";

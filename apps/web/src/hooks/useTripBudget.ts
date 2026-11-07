@@ -4,14 +4,14 @@ import type { BudgetAllocations, ExpenseInput, TripBudgetData } from "@triply/sh
 import { request } from "../api/client";
 import { TRIPS_KEY } from "./useTrips";
 
-export function useTripBudget(tripId: string) {
+export function useTripBudget(tripId: string, enabled = true) {
   const client = useQueryClient();
   const key = [...TRIPS_KEY, tripId, "budget"];
-  const query = useQuery({ queryKey: key, enabled: Boolean(tripId), queryFn: async ({ signal }) => {
+  const query = useQuery({ queryKey: key, enabled: Boolean(tripId) && enabled, queryFn: async ({ signal }) => {
     const data = await request<TripBudgetData>(`/api/trips/${tripId}/budget`, { signal });
     if (!Array.isArray(data.expenses) || !data.summary || !Number.isSafeInteger(data.revision)) throw new Error("Invalid budget response");
     return data;
-  } });
+  }, structuralSharing: (old, incoming) => old && (old as TripBudgetData).revision > (incoming as TripBudgetData).revision ? old : incoming });
   const mutation = useMutation({
     onMutate: async () => { await client.cancelQueries({ queryKey: key, exact: true }); return { key }; },
     mutationFn: (input: { type: "create" | "update"; expense: ExpenseInput; id: string; revision: number } | { type: "delete"; id: string; revision: number } | { type: "allocations"; allocations: BudgetAllocations; revision: number }) => {

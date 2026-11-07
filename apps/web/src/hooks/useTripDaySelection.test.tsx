@@ -1,10 +1,27 @@
 import { act, renderHook, cleanup } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { vi } from "vitest";
 import type { ItineraryDay, TripItinerary } from "@triply/shared";
 import { useTripDaySelection } from "./useTripDaySelection";
 
 afterEach(cleanup);
+it("chooses today's destination-local day once, keeps it on refetch and respects explicit links", () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date("2030-06-03T00:30:00Z"));
+  try {
+    const data = itinerary(); data.timeZone = "America/Los_Angeles";
+    data.days[0] = { ...data.days[0], date: "2030-06-01", timeZone: data.timeZone };
+    data.days[1] = { ...data.days[1], date: "2030-06-02", timeZone: data.timeZone };
+    const view = renderHook(({ itinerary }) => ({ ...useTripDaySelection("t", itinerary), search: useLocation().search, navigate: useNavigate() }), {
+      initialProps: { itinerary: data }, wrapper: ({ children }) => <MemoryRouter initialEntries={["/trips/t?mode=journey"]}>{children}</MemoryRouter>,
+    });
+    expect(view.result.current.activeDay).toBe(1); expect(view.result.current.search).toContain("day=2"); expect(view.result.current.search).toContain("mode=journey");
+    act(() => view.result.current.setActiveDay(0));
+    vi.setSystemTime(new Date("2030-06-03T12:00:00Z")); view.rerender({ itinerary: structuredClone(data) });
+    expect(view.result.current.activeDay).toBe(0);
+    act(() => view.result.current.navigate(-1)); expect(view.result.current.activeDay).toBe(1);
+  } finally { vi.useRealTimers(); }
+});
 function day(dayIndex: number, ids: string[]): ItineraryDay {
   return { dayIndex, date: "2030-06-02", timeZone: "UTC", stops: ids.map(placeId => ({ placeId, name: placeId, lat: 1, lng: 2, category: "culture", score: null })),
     activities: ids.map(placeId => ({ placeId, type: "attraction", title: placeId, startTime: "", endTime: "", durationMinutes: 30 })),

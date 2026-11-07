@@ -1,4 +1,5 @@
 import { useIdentityMutation as useMutation } from "./useIdentityMutation";
+import { mergeConfirmedTrip } from "@triply/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { TripDetail, TripStatus } from "@triply/shared";
 import { deleteTrip, getTrip, listTrips } from "../api/trips";
@@ -32,6 +33,7 @@ const GENERATING_POLL_MS = 4000;
 
 export function useTrip(id: string | undefined) {
   return useQuery({
+    structuralSharing: (old, incoming) => mergeConfirmedTrip(old as TripDetail | undefined, incoming as TripDetail),
     queryKey: tripQueryKey(id ?? ""),
     queryFn: () => getTrip(id as string),
     enabled: Boolean(id),

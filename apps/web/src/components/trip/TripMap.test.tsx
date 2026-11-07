@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import TripMap from "./TripMap";
 
 const mocks = vi.hoisted(() => ({
@@ -28,6 +28,30 @@ const center: [number, number] = [48.85, 2.35];
 const stops: [number, number][] = [[48.85, 2.35], [48.86, 2.36]];
 
 describe("TripMap itinerary updates", () => {
+  it("updates status/next marker labels without rebuilding layers, and maps filtered indices in both directions", () => {
+    const elements: HTMLElement[] = []; const clicks: (() => void)[] = []; const select = vi.fn();
+    mocks.marker.mockImplementation(() => {
+      const element = document.createElement("div"); element.innerHTML = '<div class="trip-marker-inner"></div>'; elements.push(element);
+      const marker = { addTo: () => marker, getElement: () => element, on: (_event: string, callback: () => void) => { clicks.push(callback); }, setZIndexOffset: vi.fn() };
+      return marker;
+    });
+    const view = render(<TripMap center={center} stops={stops} geometry={stops} active={2} stopIndexes={[0, 2]} stopNames={["Museum", "Gallery"]} statuses={["visited", "planned"]} nextStop={2} onSelect={select} />);
+    expect(elements[0].querySelector(".trip-marker-inner")!.classList.contains("is-visited")).toBe(true);
+    expect(elements[1].querySelector(".trip-marker-inner")!.classList.contains("is-next")).toBe(true);
+    expect(elements[1].getAttribute("aria-pressed")).toBe("true");
+    expect(elements[1].getAttribute("aria-label")).toContain("Planned"); expect(elements[1].getAttribute("aria-label")).toContain("Next planned stop");
+    clicks[1](); expect(select).toHaveBeenCalledWith(2);
+    fireEvent.keyDown(elements[1], { key: " " }); expect(select).toHaveBeenCalledTimes(2);
+    view.rerender(<TripMap center={center} stops={stops} geometry={stops} active={0} stopIndexes={[0, 2]} stopNames={["Museum", "Gallery"]} statuses={["skipped", "visited"]} onSelect={select} />);
+    expect(elements[0].getAttribute("aria-label")).toContain("Skipped");
+    expect(elements[0].getAttribute("aria-pressed")).toBe("true");
+    expect(elements[1].querySelector(".trip-marker-inner")!.classList.contains("is-next")).toBe(false);
+    expect(mocks.clearLayers).toHaveBeenCalledTimes(1); expect(mocks.tileLayer).toHaveBeenCalledTimes(1);
+  });
+  it("ignores invalid marker coordinates and fits only valid stops", () => {
+    render(<TripMap center={center} stops={[[NaN, 2], stops[1]]} active={1} onSelect={() => {}} />);
+    expect(mocks.marker).toHaveBeenCalledTimes(1); expect(mocks.fitBounds).toHaveBeenCalledWith([stops[1]], expect.any(Object));
+  });
   it("resizes the existing map on reveal without recreating markers or routes", () => {
     const view = render(<TripMap center={center} stops={stops} geometry={stops} active={0} visible={false} onSelect={() => {}} />);
     expect(mocks.fitBounds).not.toHaveBeenCalled();

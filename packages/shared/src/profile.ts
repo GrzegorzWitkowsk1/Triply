@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { PACE_VALUES, type TripAnalysis } from "./trip.js";
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+export const journeyPreferencesSchema = z.object({ promptForExpenseAfterVisit: z.boolean() }).strict();
+export type JourneyPreferences = z.infer<typeof journeyPreferencesSchema>;
+export const DEFAULT_JOURNEY_PREFERENCES: JourneyPreferences = { promptForExpenseAfterVisit: true };
+export const updateJourneyPreferencesSchema = journeyPreferencesSchema.extend({ expectedRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) }).strict();
+export interface JourneyPreferencesResponse { preferences: JourneyPreferences; revision: number }
 export const MAX_AVATAR_DIMENSION = 2048;
 export const AVATAR_TYPES = ["image/jpeg", "image/png", "image/svg+xml"] as const;
 

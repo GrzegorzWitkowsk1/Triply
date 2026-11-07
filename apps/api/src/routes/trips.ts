@@ -1,4 +1,6 @@
 import { contentLocale } from "@triply/shared";
+import { ensureTripItemIdentities, updateTripVisit, retryTripVisitExpense } from "../services/tripVisits.js";
+import { updateVisitSchema } from "@triply/shared";
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import type { HttpRoute, HttpRequest } from "../http/types.js";
 import { Types } from "mongoose";
@@ -69,6 +71,27 @@ import {
 
 export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAsyncHookHandler): void {
   registerExpenseRoutes(app);
+  app.post<HttpRoute>("/trips/:id/visits/:itemId/expense/retry", async (req, res) => {
+    try {
+      const result = await retryTripVisitExpense(tripIdParam(req) ?? "", currentTripOwner(req), String(req.params.itemId ?? ""));
+      return res.send({ ...toTripDetail(result.trip), ...(result.automaticExpense ? { automaticExpense: result.automaticExpense } : {}) });
+    } catch (error) {
+      if (!(error instanceof ItineraryEditError)) throw error;
+      return res.code(error.status).send({ error: error.message });
+    }
+  });
+  app.patch<HttpRoute>("/trips/:id/visits/:itemId", async (req, res) => {
+    const parsed = updateVisitSchema.safeParse(req.body);
+    if (!parsed.success) return res.code(400).send({ error: "Invalid visit status" });
+    try {
+      const result = await updateTripVisit(tripIdParam(req) ?? "", currentTripOwner(req), String(req.params.itemId ?? ""), parsed.data.status);
+      return res.send({ ...toTripDetail(result.trip), ...(result.expensePromptItemId ? { expensePromptItemId: result.expensePromptItemId } : {}),
+        ...(result.automaticExpense ? { automaticExpense: result.automaticExpense } : {}) });
+    } catch (error) {
+      if (!(error instanceof ItineraryEditError)) throw error;
+      return res.code(error.status).send({ error: error.message });
+    }
+  });
   registerPackingActions(app, aiLimiter);
 
   app.delete<HttpRoute>("/trips/:id", async (req, res) => {
@@ -289,7 +312,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         await backfillTripAttractions(trip);
       }
 
-      return res.send(toTripDetail(trip));
+      return res.send(toTripDetail(await ensureTripItemIdentities(trip)));
     },
   );
 

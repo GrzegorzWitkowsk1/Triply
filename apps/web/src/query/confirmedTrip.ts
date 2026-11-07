@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { mergeConfirmedTrip } from "@triply/shared";
 import type { IdentitySession, TripDetail } from "@triply/shared";
 import { tripQueryKey } from "../hooks/useTrips";
 
@@ -11,6 +12,7 @@ export async function cacheConfirmedTrip(client: QueryClient, trip: TripDetail) 
   const startedAs = owner();
   const key = tripQueryKey(trip.id);
   await client.cancelQueries({ queryKey: key });
-  if (owner() !== startedAs) return;
-  client.setQueryData<TripDetail>(key, current => (current?.itineraryVersion ?? -1) > (trip.itineraryVersion ?? 0) ? current : trip);
+  if (owner() !== startedAs) return false;
+  client.setQueryData<TripDetail>(key, current => mergeConfirmedTrip(current, trip));
+  return true;
 }

@@ -14,6 +14,7 @@ export interface TimelineTravel {
 }
 
 export interface TimelineAttraction {
+  itineraryItemId?: string;
   attractionKey?: string;
   admission?: import("@triply/shared").AttractionAdmission | null;
   placeId?: string;
@@ -113,9 +114,10 @@ export function buildDayTimeline(day: ItineraryDay): TimelineEntry[] {
 
       return {
         kind: "attraction",
+        itineraryItemId: activity.itineraryItemId,
         attractionKey: stop?.attractionKey,
         placeId: activity.placeId,
-        key: activity.placeId ? `${day.dayIndex}:${activity.placeId}` : key,
+        key: activity.itineraryItemId ?? (activity.placeId ? `${day.dayIndex}:${activity.placeId}` : key),
         stopIndex,
         time: activity.schedulingStatus === "unresolved" ? i18n.t("unresolved", { ns: "itinerary/editor" }) : formatClock(activity.startTime),
         endTime: activity.schedulingStatus === "unresolved" || !activity.endTime ? undefined : formatClock(activity.endTime),

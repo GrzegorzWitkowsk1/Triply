@@ -43,6 +43,7 @@ export function minorToDecimal(amountMinor: number, currency: string): string {
   return `${value / factor}${digits ? `.${(value % factor).toString().padStart(digits, "0")}` : ""}`;
 }
 export const expenseInputSchema = z.object({
+  itineraryItemId: z.uuid().nullable().optional(),
   title: z.string().trim().min(1).max(120), category: z.enum(EXPENSE_CATEGORIES),
   amountMinor: moneyMinorSchema, currency: expenseCurrencySchema, type: z.enum(["planned", "actual"]),
   date: z.string().refine(isIsoDate, "Invalid date").nullable().default(null),
@@ -52,7 +53,12 @@ export const expenseInputSchema = z.object({
   note: z.string().trim().max(2000).nullable().default(null),
 }).strict().refine(value => !value.replacesAdmission || (value.attractionId !== null && value.dayId !== null && value.category === "attractions"), "Admission replacement requires an attraction, day and Attractions category");
 export type ExpenseInput = z.infer<typeof expenseInputSchema>;
-export interface TripExpense extends ExpenseInput { id: string; createdAt: string; updatedAt: string }
+/** Server-owned provenance survives corrections and detaching retired itinerary links. */
+export interface AutomaticAdmissionSource {
+  type: "visit_admission"; itineraryItemId: string; unit: "per_person" | "per_group";
+  participants: number | null; unitAmountMinor: number; postedAmountMinor: number; currency: string;
+}
+export interface TripExpense extends ExpenseInput { id: string; createdAt: string; updatedAt: string; automaticSource?: AutomaticAdmissionSource }
 export const expenseCreateSchema = z.object({ expense: expenseInputSchema, requestId: z.uuid(), expectedRevision: moneyMinorSchema }).strict();
 export const expenseUpdateSchema = z.object({ expense: expenseInputSchema, expectedRevision: moneyMinorSchema }).strict();
 export const budgetAllocationsSchema = z.partialRecord(z.enum(EXPENSE_CATEGORIES), moneyMinorSchema);

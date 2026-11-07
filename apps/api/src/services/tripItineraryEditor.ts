@@ -1,4 +1,8 @@
 import { contentLocale } from "@triply/shared";
+import { assertVisitedUnchanged, visitRevisionGuard } from "./visitedProtection.js";
+import { expenseLinksForItinerary } from "./expenseLinks.js";
+import { ensureTripItemIdentities } from "./tripVisits.js";
+import { carryStopIdentities } from "./itineraryIdentity.js";
 import { localizeGeneratedDay } from "./contentLanguage.js";
 import { ownerFilter, storedOwner, guestOwnerId } from "../middleware/tripIdentity.js";
 import {
@@ -37,7 +41,7 @@ export async function loadEditableTrip(tripId: string, userId: string): Promise<
   if (trip.status !== "ready" || !trip.itinerary) {
     throw new ItineraryEditError("Generate the itinerary before editing it.");
   }
-  return trip;
+  return ensureTripItemIdentities(trip);
 }
 
 /** Only provider/server candidates are accepted. Legacy candidates get a coordinate identity. */
@@ -239,6 +243,7 @@ export async function recalculateEditedDay(trip: TripDocument, day: ItineraryDay
   }
   if (conflicts.length) result.warnings.push("Schedule unresolved. Visits without times are retained; adjust or remove attractions and recalculate.");
   const updated = toItineraryDay(result, route);
+  carryStopIdentities(updated, day.stops);
   if (route.routingSource === "approximation" && route.segments.length) {
     updated.warnings.push("Routing is unavailable. Travel distance and time are estimates. Route geometry is unavailable.");
     updated.partiallyEstimated = true;
@@ -305,6 +310,7 @@ export async function editTripItinerary(tripId: string, userId: string, input: I
   // Localize only after constraint checks and conflict recovery have finished.
   itinerary.days = itinerary.days.map(day => affectedDayIndices.includes(day.dayIndex)
     ? localizeGeneratedDay(day, contentLocale(trip.contentLocale)) : day);
+  assertVisitedUnchanged(trip, itinerary.days);
   // Compare after the same Mongoose defaults/casting used by persistence.
   if (JSON.stringify(new TripModel({ itinerary }).toObject().itinerary) === JSON.stringify(trip.toObject().itinerary)) {
     const unchanged = await TripModel.findOne({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
@@ -313,9 +319,10 @@ export async function editTripItinerary(tripId: string, userId: string, input: I
     return { trip: unchanged, itineraryVersion: unchanged.itineraryVersion, affectedDayIndices,
       warnings: itinerary.days.filter(day => affectedDayIndices.includes(day.dayIndex)).flatMap(day => day.warnings) };
   }
-  const updated = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
-    status: "ready", itineraryVersion: parsed.data.expectedVersion }, {
-    $set: { itinerary, regeneration: null }, $inc: { itineraryVersion: 1 },
+  const links = expenseLinksForItinerary(trip, itinerary.days);
+  const updated = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)), ...links.filter,
+    status: "ready", itineraryVersion: parsed.data.expectedVersion, $and: [visitRevisionGuard(trip)] }, {
+    $set: { itinerary, regeneration: null, ...links.set }, $inc: { itineraryVersion: 1, ...links.increment },
   }, { new: true, runValidators: true }).exec();
   if (!updated) throw new ItineraryEditError("The itinerary has changed. Refresh it and try again.", 409);
   return { trip: updated, itineraryVersion: updated.itineraryVersion, affectedDayIndices,

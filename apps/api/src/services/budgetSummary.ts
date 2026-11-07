@@ -55,7 +55,8 @@ export function summarizeBudget(trip: TripRecord): BudgetSummary {
       const admission = matches.length === 1 ? matches[0].admission : stop?.admission;
       const occurrences = activity.placeId ? (trip.itinerary?.days ?? []).flatMap(d => d.activities.filter(a => a.type === "attraction" && a.placeId === activity.placeId)) : [];
       // A unique moved admission keeps its explicit replacement; historical expense day/date stay fixed.
-      const replacement = activity.placeId && expenses.some(e => e.replacesAdmission && e.attractionId === activity.placeId && (e.dayId === String(day.dayIndex) || occurrences.length === 1));
+      const replacement = expenses.some(e => (e.type === "actual" && activity.itineraryItemId && e.itineraryItemId === activity.itineraryItemId && e.automaticSource?.type === "visit_admission") ||
+        (activity.placeId && e.replacesAdmission && e.attractionId === activity.placeId && (e.dayId === String(day.dayIndex) || occurrences.length === 1)));
       if (replacement) continue;
       const code = admission?.price?.currency;
       if (admission?.status === "free" && !admission.rawFeeConditional && !admission.rawChargeConditional) continue;

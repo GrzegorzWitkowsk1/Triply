@@ -4,6 +4,7 @@ import { TripModel, type TripDocument } from "../models/Trip.js";
 import { ItineraryEditError } from "./tripItineraryEditor.js";
 import { summarizeBudget, totalBudgetMinor } from "./budgetSummary.js";
 import { Types } from "mongoose";
+import { visitRevisionGuard } from "./visitedProtection.js";
 
 export async function loadBudgetTrip(tripId: string, userId: string): Promise<TripDocument> {
   if (!Types.ObjectId.isValid(tripId) || (!guestOwnerId(userId) && !Types.ObjectId.isValid(userId))) throw new ItineraryEditError("Trip not found", 404);
@@ -12,6 +13,12 @@ export async function loadBudgetTrip(tripId: string, userId: string): Promise<Tr
   return trip;
 }
 export function validateExpenseAssociations(trip: TripDocument, expense: ExpenseInput, existing?: ExpenseInput) {
+  const itemId = expense.itineraryItemId === undefined ? existing?.itineraryItemId : expense.itineraryItemId;
+  if (itemId) {
+    const item = trip.itinerary?.days.flatMap(day => day.activities).find(item => item.type === "attraction" && item.itineraryItemId === itemId);
+    if (!item) throw new ItineraryEditError("Itinerary item does not belong to this trip");
+    if (expense.attractionId && expense.attractionId !== item.placeId) throw new ItineraryEditError("Attraction does not match this itinerary item");
+  }
   if (expense.dayId !== null && expense.dayId !== existing?.dayId && !trip.itinerary?.days.some(d => String(d.dayIndex) === expense.dayId)) throw new ItineraryEditError("Day does not belong to this trip");
   if (expense.attractionId !== null && expense.attractionId !== existing?.attractionId && !trip.attractions.some(p => p.placeId === expense.attractionId)) throw new ItineraryEditError("Attraction does not belong to this trip");
   if (expense.replacesAdmission) {
@@ -23,11 +30,12 @@ export function validateExpenseAssociations(trip: TripDocument, expense: Expense
 export async function mutateExpense(tripId: string, userId: string, operation: ExpenseOperation, revision: number): Promise<TripDocument> {
   const trip = await loadBudgetTrip(tripId, userId);
   const current = trip.toObject().expenses ?? [];
+  const receipts = trip.toObject().automaticAdmissions ?? [];
   // Stable client UUID makes retries idempotent, even after the revision advances.
   if (operation.type === "create") {
     const previous = current.find(e => e.id === operation.requestId);
     if (previous) {
-      const { id: _id, createdAt: _created, updatedAt: _updated, ...input } = previous;
+      const { id: _id, createdAt: _created, updatedAt: _updated, automaticSource: _automaticSource, ...input } = previous;
       if (JSON.stringify(expenseInputSchema.parse(input)) !== JSON.stringify(expenseInputSchema.parse(operation.expense))) throw new ItineraryEditError("Request identifier already used", 409);
       return trip;
     }
@@ -46,13 +54,17 @@ export async function mutateExpense(tripId: string, userId: string, operation: E
     const now = new Date().toISOString();
     if (operation.type === "create") current.push({ ...expense, id: operation.requestId, createdAt: now, updatedAt: now });
     else current[index] = { ...current[index], ...expense, updatedAt: now };
+    if (expense.type === "actual" && expense.itineraryItemId && expense.category === "attractions") {
+      const pending = receipts.find(receipt => receipt.itineraryItemId === expense.itineraryItemId && receipt.state === "pending");
+      if (pending) pending.state = "resolved";
+    }
   }
   if (current.length > 2000) throw new ItineraryEditError("Expense limit reached");
   try { summarizeBudget({ ...trip.toObject(), expenses: current }); } catch { throw new ItineraryEditError("Combined expenses exceed the supported money range"); }
   const updated = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
-    $and: [{ $or: [{ budgetRevision: revision }, ...(revision === 0 ? [{ budgetRevision: { $exists: false } }] : [])] },
+    $and: [visitRevisionGuard(trip), { $or: [{ budgetRevision: revision }, ...(revision === 0 ? [{ budgetRevision: { $exists: false } }] : [])] },
       { $or: [{ itineraryVersion: trip.itineraryVersion ?? 0 }, ...(!trip.itineraryVersion ? [{ itineraryVersion: { $exists: false } }] : [])] }],
-  }, { $set: { expenses: current }, $inc: { budgetRevision: 1 } }, { new: true, runValidators: true });
+  }, { $set: { expenses: current, automaticAdmissions: receipts }, $inc: { budgetRevision: 1 } }, { new: true, runValidators: true });
   if (!updated) throw new ItineraryEditError("Trip changed. Refresh and try again.", 409);
   return updated;
 }

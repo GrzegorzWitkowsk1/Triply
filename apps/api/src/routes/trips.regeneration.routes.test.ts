@@ -7,6 +7,9 @@ import request from "supertest";
 import { env } from "../config/env.js";
 import { TripModel } from "../models/Trip.js";
 import { normalizeAdmission } from "../services/admissionPricingService.js";
+import { expenseInputSchema } from "@triply/shared";
+import { randomUUID } from "node:crypto";
+import { mutateExpense } from "../services/expenses.js";
 
 vi.mock("../ai/index.js", () => ({
   aiService: {
@@ -244,6 +247,96 @@ describe("POST /api/trips/:id/days/:dayId/regenerate", () => {
 });
 
 describe("POST /api/trips/:id/days/:dayId/apply", () => {
+  it("rejects a preview that would remove an occurrence marked visited after preview creation", async () => {
+    const { agent, userId } = await registerAgent();
+    const trip = await seedReadyTrip(userId, { attractions: ATTRACTIONS.map((place, index) => ({ ...place,
+      ...(index === 0 ? { openingHours: { raw: "closed", source: "osm" } } : {}),
+    })) });
+    const itemId = trip.itinerary!.days[0].activities[0].itineraryItemId!;
+    const path = `/api/trips/${trip.id}`;
+    const preview = await agent.post(`${path}/days/1/regenerate`).set("Origin", ORIGIN).send({ preferences: { relaxedPace: true } });
+    expect(preview.status, preview.body).toBe(200);
+    await agent.patch(`${path}/visits/${itemId}`).set("Origin", ORIGIN).send({ status: "visited" });
+    const apply = await agent.post(`${path}/days/1/apply`).set("Origin", ORIGIN).send({ previewId: preview.body.previewId });
+    expect(apply.status, apply.body).toBe(409);
+    const saved = (await TripModel.findById(trip.id))!;
+    expect(saved.toObject().itinerary).toEqual(trip.toObject().itinerary);
+    expect(saved.regeneration?.previewId).toBe(preview.body.previewId);
+    expect(saved.visits[0].status).toBe("visited");
+  });
+  it("keeps visits through preview, discard (no apply), retry and commit, including changes after preview", async () => {
+    const { agent, userId } = await registerAgent();
+    const trip = await seedReadyTrip(userId);
+    const itemId = trip.itinerary!.days[0].activities[0].itineraryItemId!;
+    const withExpense = await mutateExpense(trip.id, userId, { type: "create", requestId: randomUUID(), expense: expenseInputSchema.parse({ title: "Real ticket", category: "attractions", currency: "EUR", amountMinor: 1700, type: "actual", itineraryItemId: itemId, date: "2026-06-01", dayId: "1" }) }, 0);
+    const originalExpenses = withExpense.toObject().expenses;
+    const path = `/api/trips/${trip.id}`;
+    const mark = (status: string) => agent.patch(`${path}/visits/${itemId}`).set("Origin", ORIGIN).send({ status });
+    let marked = await mark("visited");
+    expect(marked.status).toBe(200);
+    const preview = () => agent.post(`${path}/days/1/regenerate`).set("Origin", ORIGIN).send({ preferences: { relaxedPace: true } });
+    expect((await preview()).status).toBe(409);
+    marked = await mark("skipped");
+    const first = await preview();
+    expect(first.status, first.body).toBe(200);
+    // Discard is intentionally client-only: leaving a preview unapplied changes no visits.
+    expect((await TripModel.findById(trip.id))!.toObject().visits).toEqual(marked.body.visits);
+    expect((await TripModel.findById(trip.id))!.toObject().itinerary).toEqual(trip.toObject().itinerary);
+    expect((await TripModel.findById(trip.id))!.toObject().expenses).toEqual(originalExpenses);
+    const retry = await preview();
+    expect(retry.status, retry.body).toBe(200);
+    const skipped = await mark("skipped");
+    const applied = await agent.post(`${path}/days/1/apply`).set("Origin", ORIGIN).send({ previewId: retry.body.previewId });
+    expect(applied.status, applied.body).toBe(200);
+    expect(applied.body.visits).toEqual(skipped.body.visits);
+    expect(applied.body.budgetData.expenses).toEqual(originalExpenses);
+    expect(applied.body.budgetData.summary.actualSpendingMinor).toBe(1700);
+    const activities = applied.body.itinerary.days[0].activities.filter((item: { type: string }) => item.type === "attraction");
+    expect(activities.find((item: { placeId: string }) => item.placeId === "node/1").itineraryItemId).toBe(itemId);
+    expect(activities.filter((item: { placeId: string }) => item.placeId !== "node/1").every((item: { itineraryItemId: string }) => item.itineraryItemId !== itemId)).toBe(true);
+    expect(new Set(activities.map((item: { itineraryItemId: string }) => item.itineraryItemId)).size).toBe(activities.length);
+    expect((await agent.post(`${path}/days/1/apply`).set("Origin", ORIGIN).send({ previewId: retry.body.previewId })).status).toBe(410);
+    expect((await TripModel.findById(trip.id))!.visits).toHaveLength(1);
+  });
+
+  it("keeps visits exactly when regeneration fails", async () => {
+    const { agent, userId } = await registerAgent();
+    const trip = await seedReadyTrip(userId, { attractions: ATTRACTIONS.map(place => ({ ...place, openingHours: { raw: "closed", source: "osm" } })) });
+    const itemId = trip.itinerary!.days[0].activities[0].itineraryItemId!;
+    const originalExpenses = (await mutateExpense(trip.id, userId, { type: "create", requestId: randomUUID(), expense: expenseInputSchema.parse({ title: "Real ticket", category: "attractions", currency: "EUR", amountMinor: 1700, type: "actual", itineraryItemId: itemId }) }, 0)).toObject().expenses;
+    const marked = await agent.patch(`/api/trips/${trip.id}/visits/${itemId}`).set("Origin", ORIGIN).send({ status: "visited" });
+    const failed = await agent.post(`/api/trips/${trip.id}/days/1/regenerate`).set("Origin", ORIGIN).send({ preferences: { surpriseMe: true } });
+    expect(failed.status).toBe(409);
+    const saved = (await TripModel.findById(trip.id))!.toObject();
+    expect(saved.visits).toEqual(marked.body.visits);
+    expect(saved.itinerary).toEqual(trip.toObject().itinerary);
+    expect(saved.expenses).toEqual(originalExpenses);
+  });
+
+  it("requires unlocking before archiving an occurrence without transferring its status to a same-name replacement", async () => {
+    const { agent, userId } = await registerAgent();
+    const trip = await seedReadyTrip(userId, { attractions: ATTRACTIONS.map((place, index) => ({ ...place,
+      ...(index === 0 ? { openingHours: { raw: "closed", source: "osm" } } : { name: "Louvre" }),
+    })) });
+    const itemId = trip.itinerary!.days[0].activities[0].itineraryItemId!;
+    const originalExpenses = (await mutateExpense(trip.id, userId, { type: "create", requestId: randomUUID(), expense: expenseInputSchema.parse({ title: "Actual ticket", category: "attractions", currency: "EUR", amountMinor: 1700, type: "actual", itineraryItemId: itemId, date: "2026-06-01", dayId: "1" }) }, 0)).toObject().expenses;
+    const path = `/api/trips/${trip.id}`;
+    let marked = await agent.patch(`${path}/visits/${itemId}`).set("Origin", ORIGIN).send({ status: "visited" });
+    expect(marked.status).toBe(200);
+    expect((await agent.post(`${path}/days/1/regenerate`).set("Origin", ORIGIN).send({ preferences: { relaxedPace: true } })).status).toBe(409);
+    marked = await agent.patch(`${path}/visits/${itemId}`).set("Origin", ORIGIN).send({ status: "skipped" });
+    const preview = await agent.post(`${path}/days/1/regenerate`).set("Origin", ORIGIN).send({ preferences: { relaxedPace: true } });
+    expect(preview.status, preview.body).toBe(200);
+    const applied = await agent.post(`${path}/days/1/apply`).set("Origin", ORIGIN).send({ previewId: preview.body.previewId });
+    expect(applied.status, applied.body).toBe(200);
+    expect(applied.body.visits).toEqual(marked.body.visits);
+    expect(applied.body.budgetData.expenses).toEqual(originalExpenses.map(expense => ({ ...expense, itineraryItemId: null })));
+    expect(applied.body.budgetData.summary.actualSpendingMinor).toBe(1700);
+    const items = applied.body.itinerary.days[0].activities.filter((item: { type: string }) => item.type === "attraction");
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.every((item: { itineraryItemId: string; placeId: string }) => item.itineraryItemId !== itemId && item.placeId !== "node/1")).toBe(true);
+    expect(items.every((item: { title: string }) => item.title === "Louvre")).toBe(true);
+  });
   it("applies a valid preview and replaces only that day", async () => {
     const { agent, userId } = await registerAgent();
     const admission = normalizeAdmission({ tourism: "museum", charge: "12 EUR/person" });

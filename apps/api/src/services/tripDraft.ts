@@ -1,4 +1,6 @@
 import { contentLocale, type SupportedLocale } from "@triply/shared";
+import { expenseLinksForItinerary } from "./expenseLinks.js";
+import { assertNoVisited, visitRevisionGuard } from "./visitedProtection.js";
 import { ownerFilter, storedOwner, guestOwnerId } from "../middleware/tripIdentity.js";
 import { savedAttractionIdentity, savedAttractionPlace } from "./savedAttractionIdentity.js";
 import { validateGuestDuration } from "./guestLimits.js";
@@ -75,6 +77,7 @@ function normalizeInterests(incoming: string[]): string[] {
 }
 
 function toPlainAnalysis(stored: TripDocument["analysis"]): TripAnalysis {
+  const travelers = tripAnalysisSchema.shape.travelers.safeParse(stored.travelers);
   return {
     destinationId: stored.destinationId ?? null,
     destination: stored.destination,
@@ -82,7 +85,7 @@ function toPlainAnalysis(stored: TripDocument["analysis"]): TripAnalysis {
     startDate: stored.startDate,
     endDate: stored.endDate,
     durationDays: stored.durationDays,
-    travelers: stored.travelers,
+    travelers: travelers.success ? travelers.data : null,
     budget: {
       amount: stored.budget.amount,
       currency: stored.budget.currency,
@@ -485,6 +488,7 @@ export async function saveTripRequirements(
   confirmedFields: AskableField[],
   regenerate = false,
 ): Promise<TripDocument> {
+  if (regenerate) assertNoVisited(draft);
   const merged = mergeRequirements(draft.analysis, answers);
   validateGuestDuration(storedOwner(draft), merged);
   if (answers.location === undefined &&
@@ -511,12 +515,15 @@ export async function saveTripRequirements(
   const confirmed = mergeConfirmedFields(draft.confirmedFields, confirmedFields, answers);
 
   const gaps = missingFields(analysis, confirmed);
+  const links = expenseLinksForItinerary(draft, regenerate ? [] : draft.itinerary?.days ?? []);
   const saved = await TripModel.findOneAndUpdate(
     {
       _id: draft._id,
       ...ownerFilter(storedOwner(draft)),
       status: { $in: regenerate ? ["draft", "failed", "ready"] : ["draft", "failed"] },
       updatedAt: (draft as TripDocument & { updatedAt: Date }).updatedAt,
+      ...links.filter,
+      $and: [visitRevisionGuard(draft)],
     },
     { $set: {
       analysis, weather: weather.days, weatherFetchedAt: weather.fetchedAt, weatherAvailability: weather.availability ?? null,
@@ -524,7 +531,8 @@ export async function saveTripRequirements(
       attractionsQuery: attractions.query, clustering: buildClustering(analysis, attractions.attractions),
       confirmedFields: confirmed, missingFields: gaps, status: "draft", "generation.error": null,
       ...(regenerate ? { itinerary: null, regeneration: null, "generation.generatedAt": null, "generation.startedAt": null } : {}),
-    }, ...(regenerate ? { $inc: { itineraryVersion: 1 } } : {}) },
+      ...links.set,
+    }, ...(regenerate || Object.keys(links.increment).length ? { $inc: { ...(regenerate ? { itineraryVersion: 1 } : {}), ...links.increment } } : {}) },
     { new: true, runValidators: true },
   ).exec();
   if (!saved) {
@@ -675,6 +683,9 @@ export function toTripDetail(trip: TripDocument): TripDetail {
 
   return {
     ...result,
+    visits: (trip.toObject().visits ?? []).map(record => ({ ...record })),
+    visitRevision: trip.visitRevision ?? 0,
+    pendingVisitExpenseItemIds: (trip.automaticAdmissions ?? []).filter(receipt => receipt.state === "pending").map(receipt => receipt.itineraryItemId),
     quality: trip.itinerary ? assessTripQuality(trip.toObject()) : null,
     budgetData: budgetData(trip.toObject()),
     itineraryVersion: trip.itineraryVersion ?? 0,

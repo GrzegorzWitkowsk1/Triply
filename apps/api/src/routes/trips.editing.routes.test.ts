@@ -12,6 +12,10 @@ import { editTripItinerary } from "../services/tripItineraryEditor.js";
 import { normalizeAdmission } from "../services/admissionPricingService.js";
 import { randomUUID } from "node:crypto";
 import { expenseInputSchema } from "@triply/shared";
+import { ensureItemIdentities } from "../services/itineraryIdentity.js";
+import { ensureTripItemIdentities } from "../services/tripVisits.js";
+import { UserModel } from "../models/User.js";
+import { automaticExpenseWrites, automaticAdmissionExpense } from "../services/automaticVisitExpenses.js";
 import { TripAssistantConversationModel } from "../models/TripAssistantConversation.js";
 const assistantMock = vi.hoisted(() => ({ generate: vi.fn() }));
 vi.mock("../ai/providers/factory.js", () => ({ createAIProvider: () => ({ generate: assistantMock.generate }) }));
@@ -42,7 +46,7 @@ const pool: TripAttraction[] = Array.from({ length: 5 }, (_, index) => ({
 }));
 function makeDay(dayIndex: number, ids: string[]): ItineraryDay {
   const places = ids.map((id) => pool.find((place) => place.placeId === id)!);
-  return {
+  const day: ItineraryDay = {
     dayIndex, date: `2026-06-0${dayIndex}`, timeZone: "Europe/Paris",
     activities: places.map((place, index) => ({ type: "attraction", placeId: place.placeId!, title: place.name,
       startTime: `2026-06-0${dayIndex}T${String(9 + index).padStart(2, "0")}:00:00+02:00`,
@@ -52,6 +56,8 @@ function makeDay(dayIndex: number, ids: string[]): ItineraryDay {
     geometry: null, segments: [], totalVisitMinutes: places.length * 30, totalTravelMinutes: 0,
     totalDistanceMeters: 0, partiallyEstimated: false, warnings: [],
   };
+  ensureItemIdentities([day]);
+  return day;
 }
 let mongod: MongoMemoryServer;
 let app: FastifyInstance;
@@ -87,6 +93,477 @@ async function setup() {
   return { agent, trip, userId, edit };
 }
 const stopIds = (day: ItineraryDay) => day.stops.map((stop) => stop.placeId);
+
+describe("Journey final business rules", () => {
+  async function priced(unit: "person" | "group" = "person") {
+    const context = await setup();
+    context.trip.analysis.travelers = 3;
+    context.trip.attractions[0].admission = normalizeAdmission({ tourism: "museum", fee: "yes", charge: `20 EUR/${unit}` });
+    await context.trip.save();
+    const itemId = context.trip.itinerary!.days[0].activities[0].itineraryItemId!;
+    const mark = (status = "visited") => context.agent.patch(`/api/trips/${context.trip.id}/visits/${itemId}`).set("Origin", env.WEB_ORIGIN).send({ status });
+    return { ...context, itemId, mark };
+  }
+
+  it.each([["person", 6000], ["group", 2000]] as const)("posts %s admission exactly once with correct totals and provenance", async (unit, amount) => {
+    const { trip, mark, itemId, userId } = await priced(unit);
+    await UserModel.updateOne({ _id: userId }, { $set: { "journeyPreferences.promptForExpenseAfterVisit": false } });
+    const result = await mark();
+    expect(result.status, result.body).toBe(200);
+    expect(result.body.expensePromptItemId).toBeUndefined();
+    expect(result.body.automaticExpense).toEqual({ itemId, status: "posted", amountMinor: amount, currency: "EUR" });
+    const expense = result.body.budgetData.expenses[0];
+    expect(expense).toMatchObject({ title: "Same display name", itineraryItemId: itemId, type: "actual", amountMinor: amount, currency: "EUR", dayId: "1", date: "2026-06-01",
+      automaticSource: { type: "visit_admission", itineraryItemId: itemId, unit: unit === "person" ? "per_person" : "per_group", participants: unit === "person" ? 3 : null, postedAmountMinor: amount } });
+    expect(result.body.budgetData.summary.actualSpendingMinor).toBe(amount);
+    expect(result.body.budgetData.summary.plannedSpendingMinor).toBe(0);
+    expect(result.body.budgetData.summary.days[0].totals[0].actualMinor).toBe(amount);
+    const repeat = await mark();
+    expect(repeat.body.automaticExpense).toBeUndefined();
+    expect(repeat.body.budgetData.expenses).toEqual([expense]);
+    expect(repeat.body.visits).toEqual(result.body.visits);
+    await mark("planned");
+    await TripModel.updateOne({ _id: trip._id }, { $set: { "analysis.travelers": 9, "attractions.0.admission.price.amountMinor": 5000 } });
+    const revisit = await mark();
+    expect(revisit.body.budgetData.expenses).toEqual([expense]);
+    expect(revisit.body.expensePromptItemId).toBeUndefined();
+  });
+
+  it.each(["free", "unknown", "estimated", "unknown-unit", "missing-travelers", "invalid-travelers", "adult-price", "negative", "infinite", "fraction", "currency-mismatch", "unknown-currency", "wrong-precision", "ambiguous-evidence", "unverified-official", "conditional"])("requires manual entry for %s pricing", async kind => {
+    const { trip, itemId, mark } = await priced();
+    const admission = trip.attractions[0].admission!;
+    if (kind === "free") admission.status = "free";
+    if (kind === "unknown") admission.status = "unknown";
+    if (kind === "estimated") admission.price!.reliability = "estimated";
+    if (kind === "unknown-unit") admission.price!.unit = "unknown";
+    if (kind === "missing-travelers") trip.analysis.travelers = null;
+    if (kind === "invalid-travelers") trip.analysis.travelers = 0;
+    if (kind === "adult-price") admission.price!.priceType = "adult";
+    if (kind === "negative") admission.price!.amountMinor = -1;
+    if (kind === "infinite") admission.price!.amountMinor = Infinity;
+    if (kind === "fraction") admission.price!.amountMinor = 1.2;
+    if (kind === "currency-mismatch") trip.analysis.budget.currency = "PLN";
+    if (kind === "unknown-currency") trip.analysis.budget.currency = "XXX";
+    if (kind === "wrong-precision") admission.price!.fractionDigits = 0;
+    if (kind === "ambiguous-evidence") admission.rawCharge = "about 20 EUR";
+    if (kind === "unverified-official") { admission.source = "official"; admission.rawCharge = null; }
+    if (kind === "conditional") admission.rawFeeConditional = "yes @ (Mo)";
+    expect(automaticAdmissionExpense(trip, itemId, new Date().toISOString())).toBeNull();
+    if (!["negative", "infinite", "fraction"].includes(kind)) {
+      await trip.save();
+      const result = await mark();
+      expect(result.status, result.body).toBe(200);
+      expect(result.body.budgetData.expenses).toEqual([]);
+      expect(result.body.expensePromptItemId).toBe(itemId);
+    }
+  });
+
+  it("supports explicitly confirmed official group prices without a traveler count", async () => {
+    const { trip, mark } = await priced("group");
+    trip.attractions[0].admission!.source = "official";
+    trip.attractions[0].admission!.rawCharge = null;
+    trip.attractions[0].admission!.price!.reliability = "confirmed";
+    trip.analysis.travelers = null; await trip.save();
+    expect((await mark()).body.automaticExpense.amountMinor).toBe(2000);
+  });
+
+  it("deduplicates simultaneous visits and preserves unrelated Budget records", async () => {
+    const { trip, mark, agent } = await priced();
+    await agent.post(`/api/trips/${trip.id}/expenses`).set("Origin", env.WEB_ORIGIN).send({ requestId: randomUUID(), expectedRevision: 0,
+      expense: expenseInputSchema.parse({ title: "Lunch", category: "food_drinks", amountMinor: 1000, currency: "EUR", type: "actual" }) });
+    const results = await Promise.all([mark(), mark(), mark(), mark()]);
+    expect(results.map(result => result.status)).toEqual([200, 200, 200, 200]);
+    const saved = (await TripModel.findById(trip.id))!;
+    expect(saved.expenses).toHaveLength(2); expect(saved.automaticAdmissions).toHaveLength(1);
+    expect(saved.expenses.filter(expense => expense.automaticSource)).toHaveLength(1);
+    expect((await mark()).body.budgetData.summary.actualSpendingMinor).toBe(7000);
+  });
+
+  it.each(["admission", "ambiguous", "food", "shopping", "transport"])("handles existing %s spending without guessing", async kind => {
+    const { trip, agent, mark, itemId } = await priced();
+    const category = kind === "admission" || kind === "ambiguous" ? "attractions" : kind === "food" ? "food_drinks" : kind as "shopping" | "transport";
+    const result = await agent.post(`/api/trips/${trip.id}/expenses`).set("Origin", env.WEB_ORIGIN).send({ requestId: randomUUID(), expectedRevision: 0,
+      expense: expenseInputSchema.parse({ title: "Existing purchase", category, amountMinor: 1500, currency: "EUR", type: "actual", itineraryItemId: itemId,
+        ...(kind === "admission" ? { replacesAdmission: true, attractionId: "node/1", dayId: "1" } : {}) }) });
+    expect(result.status).toBe(201);
+    const marked = await mark();
+    const suppress = ["admission", "ambiguous"].includes(kind);
+    expect(marked.body.budgetData.expenses).toHaveLength(suppress ? 1 : 2);
+    expect(marked.body.budgetData.expenses[0]).toEqual(result.body.expenses[0]);
+    expect(marked.body.expensePromptItemId).toBe(suppress ? itemId : undefined);
+  });
+
+  it("keeps a failed posting pending across refresh and safely retries its original snapshot", async () => {
+    const { trip, mark, itemId, agent } = await priced();
+    const fault = vi.spyOn(automaticExpenseWrites, "post").mockRejectedValueOnce(new Error("transient"));
+    const first = await mark();
+    fault.mockRestore();
+    expect(first.status).toBe(200); expect(first.body.visits[0].status).toBe("visited");
+    expect(first.body.automaticExpense).toEqual({ itemId, status: "failed" });
+    expect(first.body.budgetData.expenses).toEqual([]);
+    const refreshed = await agent.get(`/api/trips/${trip.id}`);
+    expect(refreshed.body.pendingVisitExpenseItemIds).toEqual([itemId]);
+    await TripModel.updateOne({ _id: trip._id }, { $set: { "analysis.travelers": 8 } });
+    const retry = await mark();
+    expect(retry.body.automaticExpense).toMatchObject({ status: "posted", amountMinor: 6000 });
+    expect(retry.body.pendingVisitExpenseItemIds).toEqual([]);
+    expect(retry.body.visits).toEqual(first.body.visits);
+    expect((await mark()).body.budgetData.expenses).toHaveLength(1);
+  });
+
+  it("allows manual resolution of a pending expense without later posting a second ticket", async () => {
+    const { trip, mark, itemId, agent } = await priced();
+    const fault = vi.spyOn(automaticExpenseWrites, "post").mockRejectedValueOnce(new Error("transient"));
+    await mark(); fault.mockRestore();
+    await agent.post(`/api/trips/${trip.id}/expenses`).set("Origin", env.WEB_ORIGIN).send({ requestId: randomUUID(), expectedRevision: 0,
+      expense: expenseInputSchema.parse({ title: "Confirmed ticket", category: "attractions", amountMinor: 4500, currency: "EUR", type: "actual", itineraryItemId: itemId }) });
+    const retry = await mark();
+    expect(retry.body.pendingVisitExpenseItemIds).toEqual([]);
+    expect(retry.body.budgetData.expenses).toHaveLength(1);
+    expect(retry.body.budgetData.summary.actualSpendingMinor).toBe(4500);
+  });
+
+  it("reconciles a lost acknowledgment only after confirming the persisted expense receipt", async () => {
+    const { mark } = await priced();
+    const post = automaticExpenseWrites.post;
+    const fault = vi.spyOn(automaticExpenseWrites, "post").mockImplementationOnce(async (...args) => { await post(...args); throw new Error("lost acknowledgment"); });
+    const result = await mark(); fault.mockRestore();
+    expect(result.body.automaticExpense).toMatchObject({ status: "posted", amountMinor: 6000 });
+    expect(result.body.budgetData.expenses).toHaveLength(1);
+    expect((await mark()).body.budgetData.expenses).toHaveLength(1);
+  });
+
+  it("preserves corrections, deletions and actual amounts through reset and itinerary removal", async () => {
+    const { trip, mark, agent, edit } = await priced();
+    const marked = await mark(); const posted = marked.body.budgetData.expenses[0];
+    const { automaticSource: _source, id: _id, createdAt: _created, updatedAt: _updated, ...input } = posted;
+    const corrected = await agent.patch(`/api/trips/${trip.id}/expenses/${posted.id}`).set("Origin", env.WEB_ORIGIN)
+      .send({ expectedRevision: 1, expense: { ...input, amountMinor: 5100 } });
+    expect(corrected.status, corrected.body).toBe(200);
+    expect(corrected.body.expenses[0].automaticSource.postedAmountMinor).toBe(6000);
+    await mark("planned");
+    const moved = await edit({ type: "move", sourceDayIndex: 1, targetDayIndex: 3, attractionId: "node/1" });
+    expect(moved.status, moved.body).toBe(200);
+    expect(moved.body.trip.budgetData.expenses[0]).toEqual(corrected.body.expenses[0]);
+    const removed = await edit({ type: "remove", dayIndex: 3, attractionId: "node/1" }, 4);
+    expect(removed.status, removed.body).toBe(200);
+    expect(removed.body.trip.budgetData.expenses[0]).toMatchObject({ amountMinor: 5100, itineraryItemId: null, automaticSource: posted.automaticSource });
+    const deleted = await agent.delete(`/api/trips/${trip.id}/expenses/${posted.id}`).set("Origin", env.WEB_ORIGIN).send({ expectedRevision: 3 });
+    expect(deleted.status, deleted.body).toBe(200);
+    expect((await TripModel.findById(trip.id))!.automaticAdmissions[0].state).toBe("posted");
+  });
+
+  it("does not recreate a deliberately deleted automatic expense on undo/revisit", async () => {
+    const { trip, mark, agent } = await priced(); const first = await mark();
+    await agent.delete(`/api/trips/${trip.id}/expenses/${first.body.budgetData.expenses[0].id}`).set("Origin", env.WEB_ORIGIN).send({ expectedRevision: 1 });
+    await mark("planned");
+    expect((await mark()).body.budgetData.expenses).toEqual([]);
+  });
+
+  it("recovers a pending retired occurrence through an authorized status-independent retry", async () => {
+    const { trip, mark, agent, itemId, edit } = await priced();
+    const fault = vi.spyOn(automaticExpenseWrites, "post").mockRejectedValue(new Error("transient"));
+    await mark(); await mark("planned");
+    expect((await edit({ type: "remove", dayIndex: 1, attractionId: "node/1" })).status).toBe(200);
+    fault.mockRestore();
+    const path = `/api/trips/${trip.id}/visits/${itemId}/expense/retry`;
+    expect((await request(app.server).post(path).set("Origin", env.WEB_ORIGIN)).status).toBe(401);
+    const other = await TripModel.create({ ...trip.toObject(), _id: new mongoose.Types.ObjectId(), user: new mongoose.Types.ObjectId() });
+    expect((await agent.post(`/api/trips/${other.id}/visits/${itemId}/expense/retry`).set("Origin", env.WEB_ORIGIN)).status).toBe(404);
+    expect((await agent.post(`/api/trips/${trip.id}/visits/${randomUUID()}/expense/retry`).set("Origin", env.WEB_ORIGIN)).status).toBe(404);
+    const retried = await agent.post(path).set("Origin", env.WEB_ORIGIN);
+    expect(retried.status, retried.body).toBe(200);
+    expect(retried.body.visits).toEqual([]);
+    expect(retried.body.budgetData.expenses[0]).toMatchObject({ itineraryItemId: null, amountMinor: 6000 });
+    expect((await agent.post(path).set("Origin", env.WEB_ORIGIN)).body.budgetData.expenses).toHaveLength(1);
+  });
+
+  it.each([
+    { type: "reorder", dayIndex: 1, attractionIds: ["node/2", "node/1"] },
+    { type: "move", sourceDayIndex: 1, targetDayIndex: 2, attractionId: "node/1" },
+    { type: "remove", dayIndex: 1, attractionId: "node/1" },
+    { type: "replace", dayIndex: 1, oldAttractionId: "node/1", newAttractionId: "node/4" },
+    { type: "add", dayIndex: 1, attractionId: "node/4", position: 0 },
+    { type: "reroute", dayIndex: 1 },
+  ] as ItineraryEditOperation[])("protects visited occurrences from $type including indirect schedule shifts", async operation => {
+    const { trip, mark, edit } = await priced(); await mark();
+    const result = await edit(operation);
+    expect(result.status, result.body).toBe(409);
+    const saved = (await TripModel.findById(trip.id))!;
+    expect(saved.toObject().itinerary).toEqual(trip.toObject().itinerary);
+    expect(saved.itineraryVersion).toBe(3); expect(saved.expenses).toHaveLength(1);
+  });
+
+  it("blocks full regeneration until visited occurrences are reset", async () => {
+    const { trip, mark, agent } = await priced(); await mark();
+    const response = await agent.patch(`/api/trips/${trip.id}/requirements`).set("Origin", env.WEB_ORIGIN)
+      .send({ answers: { pace: "relaxed" }, confirmedFields: [], regenerate: true });
+    expect(response.status).toBe(409);
+    expect((await TripModel.findById(trip.id))!.toObject().itinerary).toEqual(trip.toObject().itinerary);
+  });
+
+  it("allows planned edits when the visited occurrence's position and saved schedule stay unchanged", async () => {
+    const { trip, agent, edit } = await setup();
+    const normalized = await edit({ type: "reroute", dayIndex: 1 });
+    expect(normalized.status).toBe(200);
+    const itemId = normalized.body.trip.itinerary.days[0].activities.find((item: { type: string }) => item.type === "attraction").itineraryItemId;
+    await agent.patch(`/api/trips/${trip.id}/visits/${itemId}`).set("Origin", env.WEB_ORIGIN).send({ status: "visited" });
+    const result = await edit({ type: "remove", dayIndex: 1, attractionId: "node/2" }, normalized.body.itineraryVersion);
+    expect(result.status, result.body).toBe(200);
+    expect(result.body.trip.itinerary.days[0].activities.find((item: { itineraryItemId: string }) => item.itineraryItemId === itemId)).toMatchObject(
+      normalized.body.trip.itinerary.days[0].activities.find((item: { itineraryItemId: string }) => item.itineraryItemId === itemId));
+  });
+});
+
+describe("Journey linked expenses", () => {
+  const expense = (itineraryItemId?: string | null) => expenseInputSchema.parse({ title: "Paid ticket", category: "attractions", amountMinor: 1250,
+    currency: "EUR", type: "actual", date: "2026-06-01", dayId: "1", ...(itineraryItemId !== undefined ? { itineraryItemId } : {}) });
+  const create = (agent: ReturnType<typeof request.agent>, tripId: string, input: ReturnType<typeof expense>, expectedRevision = 0, requestId = randomUUID()) =>
+    agent.post(`/api/trips/${tripId}/expenses`).set("Origin", env.WEB_ORIGIN).send({ expense: input, expectedRevision, requestId });
+
+  it("keeps manual expenses valid and supports multiple actual expenses for one occurrence", async () => {
+    const { agent, trip } = await setup(); const itemId = trip.itinerary!.days[0].activities[0].itineraryItemId!;
+    const manual = await create(agent, trip.id, expense());
+    expect(manual.status, manual.body).toBe(201);
+    expect(manual.body.expenses[0].itineraryItemId).toBeUndefined();
+    expect((await create(agent, trip.id, expense(itemId), 1)).status).toBe(201);
+    const second = await create(agent, trip.id, expense(itemId), 2);
+    expect(second.status, second.body).toBe(201);
+    expect(second.body.expenses.filter((e: { itineraryItemId?: string }) => e.itineraryItemId === itemId)).toHaveLength(2);
+    expect(second.body.summary.actualSpendingMinor).toBe(3750);
+    expect(second.body.summary.days.find((day: { dayId: string }) => day.dayId === "1").totals[0].actualMinor).toBe(3750);
+  });
+
+  it("rejects foreign/invalid occurrences and mismatched provider IDs", async () => {
+    const { agent, trip } = await setup();
+    const other = await TripModel.create({ ...trip.toObject(), _id: new mongoose.Types.ObjectId(), itinerary: { ...trip.toObject().itinerary!, days: [makeDay(1, ["node/4"])] } });
+    const foreign = other.itinerary!.days[0].activities[0].itineraryItemId!;
+    expect((await create(agent, trip.id, expense(foreign))).status).toBe(400);
+    expect((await create(agent, trip.id, expense(randomUUID()))).status).toBe(400);
+    const invalid = await agent.post(`/api/trips/${trip.id}/expenses`).set("Origin", env.WEB_ORIGIN).send({ expense: { ...expense(), itineraryItemId: "bad" }, expectedRevision: 0, requestId: randomUUID() });
+    expect(invalid.status).toBe(400);
+    expect((await create(agent, trip.id, { ...expense(trip.itinerary!.days[0].activities[0].itineraryItemId!), attractionId: "node/3" })).status).toBe(400);
+    expect((await TripModel.findById(trip.id))!.expenses).toHaveLength(0);
+  });
+
+  it("preserves links on ordinary edits, supports explicit unlink, and deletes through existing CRUD", async () => {
+    const { agent, trip } = await setup(); const itemId = trip.itinerary!.days[0].activities[0].itineraryItemId!;
+    const created = await create(agent, trip.id, expense(itemId)); const id = created.body.expenses[0].id;
+    const update = await agent.patch(`/api/trips/${trip.id}/expenses/${id}`).set("Origin", env.WEB_ORIGIN).send({ expense: { ...expense(), title: "Updated ticket", amountMinor: 1450 }, expectedRevision: 1 });
+    expect(update.status, update.body).toBe(200);
+    expect(update.body.expenses[0]).toMatchObject({ itineraryItemId: itemId, title: "Updated ticket", amountMinor: 1450 });
+    const unlink = await agent.patch(`/api/trips/${trip.id}/expenses/${id}`).set("Origin", env.WEB_ORIGIN).send({ expense: expense(null), expectedRevision: 2 });
+    expect(unlink.body.expenses[0].itineraryItemId).toBeNull();
+    const deleted = await agent.delete(`/api/trips/${trip.id}/expenses/${id}`).set("Origin", env.WEB_ORIGIN).send({ expectedRevision: 3 });
+    expect(deleted.status).toBe(200); expect(deleted.body.expenses).toEqual([]); expect(deleted.body.summary.actualSpendingMinor).toBe(0);
+  });
+
+  it("preserves transactions through visit undo/skip, reorder/time changes and cross-day move, then safely unlinks on removal", async () => {
+    const { agent, trip, edit } = await setup(); const itemId = trip.itinerary!.days[0].activities[0].itineraryItemId!;
+    const created = await create(agent, trip.id, expense(itemId));
+    for (const status of ["visited", "planned", "visited", "skipped"]) {
+      const marked = await agent.patch(`/api/trips/${trip.id}/visits/${itemId}`).set("Origin", env.WEB_ORIGIN).send({ status });
+      expect(marked.status).toBe(200); expect(marked.body.budgetData.expenses).toEqual(created.body.expenses);
+    }
+    const reordered = await edit({ type: "reorder", dayIndex: 1, attractionIds: ["node/2", "node/1"] });
+    expect(reordered.status).toBe(200); expect(reordered.body.trip.budgetData.expenses).toEqual(created.body.expenses);
+    const moved = await edit({ type: "move", sourceDayIndex: 1, targetDayIndex: 2, attractionId: "node/1" }, 4);
+    expect(moved.status).toBe(200); expect(moved.body.trip.budgetData.expenses).toEqual(created.body.expenses);
+    const removed = await edit({ type: "remove", dayIndex: 2, attractionId: "node/1" }, 5);
+    expect(removed.status, removed.body).toBe(200);
+    expect(removed.body.trip.budgetData.expenses).toEqual([{ ...created.body.expenses[0], itineraryItemId: null }]);
+    expect(removed.body.trip.budgetData.summary.actualSpendingMinor).toBe(1250);
+    expect(removed.body.trip.budgetData.revision).toBe(2);
+  });
+
+  it("deduplicates concurrent creation and ambiguous network retries with the same request UUID", async () => {
+    const { agent, trip } = await setup(); const input = expense(trip.itinerary!.days[0].activities[0].itineraryItemId!); const requestId = randomUUID();
+    const results = await Promise.all([create(agent, trip.id, input, 0, requestId), create(agent, trip.id, input, 0, requestId)]);
+    expect(results.every(result => [201, 409].includes(result.status))).toBe(true);
+    expect(results.some(result => result.status === 201)).toBe(true);
+    const retry = await create(agent, trip.id, input, 0, requestId);
+    expect(retry.status).toBe(201); expect(retry.body.expenses).toHaveLength(1); expect(retry.body.summary.actualSpendingMinor).toBe(1250);
+  });
+
+  it("rejects an itinerary write if an expense was created during routing instead of losing its link", async () => {
+    const { agent, trip, edit } = await setup(); let enter!: () => void; let release!: () => void;
+    const started = new Promise<void>(resolve => { enter = resolve; }); const waiting = new Promise<void>(resolve => { release = resolve; });
+    const original = provider.getRoute.getMockImplementation()!;
+    provider.getRoute.mockImplementationOnce(async coordinates => { enter(); await waiting; return original(coordinates); });
+    const editing = edit({ type: "remove", dayIndex: 1, attractionId: "node/1" }).then(result => result);
+    await started;
+    const created = await create(agent, trip.id, expense(trip.itinerary!.days[0].activities[0].itineraryItemId!));
+    release(); expect((await editing).status).toBe(409);
+    expect((await TripModel.findById(trip.id))!.expenses[0].itineraryItemId).toBe(created.body.expenses[0].itineraryItemId);
+    const retried = await edit({ type: "remove", dayIndex: 1, attractionId: "node/1" });
+    expect(retried.status).toBe(200); expect(retried.body.trip.budgetData.expenses[0].itineraryItemId).toBeNull();
+  });
+
+  it("signals only a first persisted visited transition and honors the account preference across trips", async () => {
+    const { agent, trip, userId } = await setup();
+    const [a, b] = trip.itinerary!.days[0].activities;
+    const mark = (itemId: string, status: string) => agent.patch(`/api/trips/${trip.id}/visits/${itemId}`).set("Origin", env.WEB_ORIGIN).send({ status });
+    expect((await mark(a.itineraryItemId!, "skipped")).body.expensePromptItemId).toBeUndefined();
+    expect((await mark(a.itineraryItemId!, "visited")).body.expensePromptItemId).toBe(a.itineraryItemId);
+    expect((await mark(a.itineraryItemId!, "visited")).body.expensePromptItemId).toBeUndefined();
+    expect((await mark(a.itineraryItemId!, "planned")).status).toBe(200);
+    expect((await mark(a.itineraryItemId!, "visited")).body.expensePromptItemId).toBeUndefined();
+    await UserModel.updateOne({ _id: userId }, { $set: { journeyPreferences: { promptForExpenseAfterVisit: false } } });
+    expect((await mark(b.itineraryItemId!, "visited")).body.expensePromptItemId).toBeUndefined();
+    const secondTrip = await TripModel.create({ ...trip.toObject(), _id: new mongoose.Types.ObjectId(), itinerary: { ...trip.toObject().itinerary!, days: [makeDay(1, ["node/4"])] } });
+    const otherVisit = await agent.patch(`/api/trips/${secondTrip.id}/visits/${secondTrip.itinerary!.days[0].activities[0].itineraryItemId}`).set("Origin", env.WEB_ORIGIN).send({ status: "visited" });
+    expect(otherVisit.status).toBe(200); expect(otherVisit.body.expensePromptItemId).toBeUndefined();
+    expect((await agent.get(`/api/trips/${trip.id}`)).body.expensePromptItemId).toBeUndefined();
+    expect((await create(agent, trip.id, expense(b.itineraryItemId!))).status).toBe(201);
+  });
+});
+
+describe("Journey visit persistence", () => {
+  const mark = (agent: ReturnType<typeof request.agent>, tripId: string, itemId: string, status: string) => agent
+    .patch(`/api/trips/${tripId}/visits/${itemId}`).set("Origin", env.WEB_ORIGIN).send({ status });
+
+  it.each(["visited", "skipped"])("sets %s, is idempotent, and resets to planned", async status => {
+    const { agent, trip } = await setup();
+    const itemId = trip.itinerary!.days[0].activities[0].itineraryItemId!;
+    expect(trip.visits).toHaveLength(0);
+    const first = await mark(agent, trip.id, itemId, status);
+    expect(first.status, first.body).toBe(200);
+    expect(first.body.visits).toEqual([expect.objectContaining({ itineraryItemId: itemId, status, [`${status === "visited" ? "visited" : "skipped"}At`]: expect.any(String) })]);
+    const repeated = await mark(agent, trip.id, itemId, status);
+    expect(repeated.body.visits).toEqual(first.body.visits);
+    expect(repeated.body.visitRevision).toBe(1);
+    const undo = await mark(agent, trip.id, itemId, "planned");
+    expect(undo.body.visits).toEqual([]);
+    expect(undo.body.visitRevision).toBe(2);
+    expect((await mark(agent, trip.id, itemId, "planned")).body.visitRevision).toBe(2);
+    expect((await TripModel.findById(trip.id))!.toObject().itinerary).toEqual(trip.toObject().itinerary);
+  });
+
+  it("validates status, IDs, ownership, cross-trip references and authentication", async () => {
+    const { agent, trip } = await setup();
+    const itemId = trip.itinerary!.days[0].activities[0].itineraryItemId!;
+    expect((await mark(agent, trip.id, itemId, "in_progress")).status).toBe(400);
+    expect((await mark(agent, trip.id, "bad-id", "visited")).status).toBe(400);
+    expect((await mark(agent, "bad-id", itemId, "visited")).status).toBe(404);
+    expect((await mark(agent, new mongoose.Types.ObjectId().toHexString(), itemId, "visited")).status).toBe(404);
+    expect((await mark(agent, trip.id, randomUUID(), "visited")).status).toBe(404);
+    const other = await TripModel.create({ ...trip.toObject(), _id: new mongoose.Types.ObjectId(), user: new mongoose.Types.ObjectId() });
+    expect((await mark(agent, other.id, itemId, "visited")).status).toBe(404);
+    const ownedOther = await TripModel.create({ ...trip.toObject(), _id: new mongoose.Types.ObjectId(), itinerary: null });
+    ownedOther.itinerary = { ...trip.toObject().itinerary!, days: [makeDay(1, ["node/4"])] };
+    await ownedOther.save();
+    expect((await mark(agent, ownedOther.id, itemId, "visited")).status).toBe(404);
+    expect((await request(app.server).patch(`/api/trips/${trip.id}/visits/${itemId}`).set("Origin", env.WEB_ORIGIN).send({ status: "visited" })).status).toBe(401);
+  });
+
+  it("backfills legacy occurrences once without regenerating or identifying by name", async () => {
+    const { agent, trip } = await setup();
+    const itinerary = trip.toObject().itinerary!;
+    for (const day of itinerary.days) {
+      day.activities.forEach(item => { delete item.itineraryItemId; });
+      day.stops.forEach(stop => { delete stop.itineraryItemId; });
+    }
+    await TripModel.collection.updateOne({ _id: trip._id }, { $set: { itinerary }, $unset: { visits: "", visitRevision: "", itineraryVersion: "" } });
+    const first = await agent.get(`/api/trips/${trip.id}`);
+    const second = await agent.get(`/api/trips/${trip.id}`);
+    expect(first.status).toBe(200);
+    expect(first.body.visits).toEqual([]);
+    const items = first.body.itinerary.days.flatMap((day: ItineraryDay) => day.activities);
+    expect(new Set(items.map((item: { itineraryItemId: string }) => item.itineraryItemId)).size).toBe(3);
+    expect(second.body.itinerary).toEqual(first.body.itinerary);
+    expect((await mark(agent, trip.id, items[0].itineraryItemId, "visited")).status).toBe(200);
+    expect(fetchAttractions).not.toHaveBeenCalled();
+  });
+
+  it("keeps skipped visit identity through reorder, cross-day move, and schedule recalculation", async () => {
+    const { agent, trip, edit } = await setup();
+    const item = trip.itinerary!.days[0].activities[0];
+    const marked = await mark(agent, trip.id, item.itineraryItemId!, "skipped");
+    const reordered = await edit({ type: "reorder", dayIndex: 1, attractionIds: ["node/2", "node/1"] });
+    expect(reordered.status, reordered.body).toBe(200);
+    expect(reordered.body.trip.itinerary.days[0].activities.find((a: { type: string; placeId: string }) => a.type === "attraction" && a.placeId === "node/1").itineraryItemId).toBe(item.itineraryItemId);
+    const moved = await edit({ type: "move", sourceDayIndex: 1, targetDayIndex: 2, attractionId: "node/1" }, 4);
+    expect(moved.status, moved.body).toBe(200);
+    const movedItem = moved.body.trip.itinerary.days[1].activities.find((a: { type: string; placeId: string }) => a.type === "attraction" && a.placeId === "node/1");
+    expect(movedItem.itineraryItemId).toBe(item.itineraryItemId);
+    expect(movedItem.startTime).not.toBe(item.startTime);
+    expect(moved.body.trip.visits).toEqual(marked.body.visits);
+  });
+
+  it.each(["visited", "skipped"])("gives insertions and replacements new planned identities and keeps retired %s history", async status => {
+    const { agent, trip, edit } = await setup();
+    const old = trip.itinerary!.days[0].activities[0].itineraryItemId!;
+    let marked = await mark(agent, trip.id, old, status);
+    if (status === "visited") {
+      expect((await edit({ type: "remove", dayIndex: 1, attractionId: "node/1" })).status).toBe(409);
+      marked = await mark(agent, trip.id, old, "skipped");
+    }
+    const removed = await edit({ type: "remove", dayIndex: 1, attractionId: "node/1" });
+    expect(removed.status, removed.body).toBe(200);
+    expect(removed.body.trip.visits).toEqual(marked.body.visits);
+    expect((await mark(agent, trip.id, old, "visited")).status).toBe(404);
+    const inserted = await edit({ type: "add", dayIndex: 1, attractionId: "node/1" }, 4);
+    expect(inserted.status, inserted.body).toBe(200);
+    const fresh = inserted.body.trip.itinerary.days[0].activities.find((a: { type: string; placeId: string }) => a.type === "attraction" && a.placeId === "node/1").itineraryItemId;
+    expect(fresh).not.toBe(old);
+    expect(inserted.body.trip.visits.some((v: { itineraryItemId: string }) => v.itineraryItemId === fresh)).toBe(false);
+    const replacement = await edit({ type: "replace", dayIndex: 1, oldAttractionId: "node/1", newAttractionId: "node/4" }, 5);
+    expect(replacement.status, replacement.body).toBe(200);
+    expect(replacement.body.trip.itinerary.days[0].activities.find((a: { type: string; placeId: string }) => a.type === "attraction" && a.placeId === "node/4").itineraryItemId).not.toBe(fresh);
+    expect(replacement.body.trip.visits).toEqual(marked.body.visits);
+  });
+
+  it("serializes concurrent visit updates without losing records or unrelated trip data", async () => {
+    const { agent, trip } = await setup();
+    const [a, b] = trip.itinerary!.days[0].activities;
+    const results = await Promise.all([mark(agent, trip.id, a.itineraryItemId!, "visited"), mark(agent, trip.id, b.itineraryItemId!, "skipped")]);
+    expect(results.map(result => result.status)).toEqual([200, 200]);
+    const saved = (await TripModel.findById(trip.id))!.toObject();
+    expect(saved.visits).toHaveLength(2);
+    expect(saved.visitRevision).toBe(2);
+    expect(saved.itinerary).toEqual(trip.toObject().itinerary);
+    expect(saved.analysis).toEqual(trip.toObject().analysis);
+    const repeated = await Promise.all([mark(agent, trip.id, a.itineraryItemId!, "skipped"), mark(agent, trip.id, a.itineraryItemId!, "skipped")]);
+    expect(repeated.map(result => result.status)).toEqual([200, 200]);
+    const final = (await TripModel.findById(trip.id))!;
+    expect(final.visits).toHaveLength(2);
+    expect(final.visitRevision).toBe(3);
+  });
+
+  it("gives simultaneous legacy reads the same persisted occurrence identities", async () => {
+    const { trip } = await setup();
+    const itinerary = trip.toObject().itinerary!;
+    itinerary.days.forEach(day => {
+      day.activities.forEach(item => { delete item.itineraryItemId; });
+      day.stops.forEach(stop => { delete stop.itineraryItemId; });
+    });
+    await TripModel.collection.updateOne({ _id: trip._id }, { $set: { itinerary }, $unset: { itineraryVersion: "" } });
+    const [a, b] = await Promise.all([TripModel.findById(trip.id).orFail(), TripModel.findById(trip.id).orFail()]);
+    const migrated = await Promise.all([ensureTripItemIdentities(a), ensureTripItemIdentities(b)]);
+    expect(migrated[0].toObject().itinerary).toEqual(migrated[1].toObject().itinerary);
+    expect(migrated[0].itineraryVersion).toBe(0);
+  });
+
+  it("rejects an edit when a visit becomes locked during recalculation", async () => {
+    const { agent, trip, edit } = await setup();
+    let entered!: () => void; let release!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const waiting = new Promise<void>(resolve => { release = resolve; });
+    const originalRoute = provider.getRoute.getMockImplementation()!;
+    provider.getRoute.mockImplementationOnce(async coordinates => { entered(); await waiting; return originalRoute(coordinates); });
+    const editing = edit({ type: "reorder", dayIndex: 1, attractionIds: ["node/2", "node/1"] }).then(response => response);
+    await started;
+    const marked = await mark(agent, trip.id, trip.itinerary!.days[0].activities[0].itineraryItemId!, "visited");
+    release();
+    const edited = await editing;
+    expect(edited.status, edited.body).toBe(409);
+    expect(marked.status).toBe(200);
+    const saved = (await TripModel.findById(trip.id))!;
+    expect(saved.toObject().visits).toEqual(marked.body.visits);
+    expect(saved.itineraryVersion).toBe(3);
+    expect(saved.toObject().itinerary).toEqual(trip.toObject().itinerary);
+  });
+});
 
 it.each(["en", "pl"] as const)("keeps editing constraints and unrelated days intact for %s content", async contentLocale => {
   const { trip, edit } = await setup();

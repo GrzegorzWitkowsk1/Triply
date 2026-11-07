@@ -3,7 +3,11 @@ import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import type { FastifyInstance } from "fastify";
 import type { TripAnalysis, ItineraryDay, RegenerationPreferences } from "@triply/shared";
+import { expenseInputSchema } from "@triply/shared";
+import { randomUUID } from "node:crypto";
 import { TripModel } from "../models/Trip.js";
+import { automaticExpenseWrites } from "../services/automaticVisitExpenses.js";
+import { normalizeAdmission } from "../services/admissionPricingService.js";
 import { UserModel } from "../models/User.js";
 import { env } from "../config/env.js";
 import { reserveGuestDraft, guestOperation, guestUsage, validateGuestDuration } from "../services/guestLimits.js";
@@ -50,6 +54,43 @@ afterEach(async () => { vi.useRealTimers(); vi.clearAllMocks(); for (const colle
 afterAll(async () => { await app?.close(); await mongoose.disconnect(); await db?.stop(); });
 
 describe("guest trip ownership and resource limits", () => {
+  it("posts guest admission costs and restricts status-independent recovery to the owning guest", async () => {
+    const a = await guest(); const b = await guest(); const trip = await seed(a.owner, true);
+    trip.attractions[0].admission = normalizeAdmission({ tourism: "museum", fee: "yes", charge: "20 EUR/person" });
+    await trip.save();
+    const itemId = trip.itinerary!.days[0].activities[0].itineraryItemId!;
+    const path = `/api/trips/${trip.id}/visits/${itemId}`;
+    const fault = vi.spyOn(automaticExpenseWrites, "post").mockRejectedValue(new Error("transient"));
+    const marked = await call(a.cookie, "PATCH", path, { status: "visited" });
+    expect(marked.statusCode, marked.body).toBe(200);
+    expect(marked.json().automaticExpense).toMatchObject({ status: "failed" });
+    expect(marked.json().expensePromptItemId).toBeUndefined();
+    expect((await call(a.cookie, "PATCH", path, { status: "planned" })).json().visits).toEqual([]);
+    fault.mockRestore();
+    expect((await call(b.cookie, "POST", `${path}/expense/retry`)).statusCode).toBe(404);
+    const retried = await call(a.cookie, "POST", `${path}/expense/retry`);
+    expect(retried.statusCode, retried.body).toBe(200);
+    expect(retried.json().automaticExpense).toMatchObject({ status: "posted", amountMinor: 2000 });
+    expect(retried.json().visits).toEqual([]);
+    expect(retried.json().budgetData.expenses).toHaveLength(1);
+  });
+  it("allows visit tracking only for the owning guest and preserves user-only assistant access", async () => {
+    const a = await guest(); const b = await guest(); const trip = await seed(a.owner, true);
+    const itemId = trip.itinerary!.days[0].activities[0].itineraryItemId!;
+    const path = `/api/trips/${trip.id}/visits/${itemId}`;
+    expect((await call(b.cookie, "PATCH", path, { status: "visited" })).statusCode).toBe(404);
+    const marked = await call(a.cookie, "PATCH", path, { status: "visited" });
+    expect(marked.statusCode, marked.body).toBe(200);
+    expect(marked.json().expensePromptItemId).toBeUndefined();
+    const expense = expenseInputSchema.parse({ title: "Manual guest ticket", category: "attractions", amountMinor: 1000, currency: "EUR", type: "actual", itineraryItemId: itemId });
+    const created = await call(a.cookie, "POST", `/api/trips/${trip.id}/expenses`, { expense, requestId: randomUUID(), expectedRevision: 0 });
+    expect(created.statusCode, created.body).toBe(201);
+    expect(created.json().expenses[0].itineraryItemId).toBe(itemId);
+    expect((await call(b.cookie, "GET", `/api/trips/${trip.id}/budget`)).statusCode).toBe(404);
+    expect(marked.json().visits).toEqual([expect.objectContaining({ itineraryItemId: itemId, status: "visited" })]);
+    expect((await call(a.cookie, "POST", `/api/trips/${trip.id}/assistant/messages`, { message: "hi" })).statusCode).toBe(401);
+    expect((await call(a.cookie, "PATCH", path, { status: "planned" })).json().visits).toEqual([]);
+  });
   it("prevents HTTP caching of private trip responses across guest identities", async () => {
     const a = await guest(); const b = await guest(); const trip = await seed(a.owner, true);
     for (const path of ["/api/trips", `/api/trips/${trip.id}`, "/api/guest/usage", `/api/trips/${trip.id}/equipment`]) {

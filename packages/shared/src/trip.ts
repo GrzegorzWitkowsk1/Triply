@@ -127,6 +127,7 @@ export type TripAttraction = z.infer<typeof tripAttractionSchema>;
 
 /** A scheduled attraction as rendered on the timeline and map. */
 export interface ItineraryStop {
+  itineraryItemId?: string;
   /** Server-derived global identity, independent of the itinerary item ID. */
   attractionKey?: string;
   admission?: AttractionAdmission | null;
@@ -324,6 +325,10 @@ export interface TripSummary {
 }
 
 export interface TripDetail extends TripAnalysisResult {
+  /** Sparse visit ledger, including minimal history for retired occurrences. */
+  visits?: import("./visits.js").VisitProgress[];
+  visitRevision?: number;
+  pendingVisitExpenseItemIds?: string[];
   weatherAvailability?: import("./weather.js").WeatherAvailability;
   quality?: import("./quality.js").TripQualityReport | null;
   budgetData?: import("./budget.js").TripBudgetData;

@@ -9,7 +9,7 @@ export const cities = {
   Paris: { country: "France", code: "FR", lat: 48.85, lng: 2.35, zone: "Europe/Paris", names: ["Louvre", "Eiffel Tower", "Notre Dame", "Paris Cafe", "Paris Market", "Pantheon", "Arc de Triomphe", "Sainte Chapelle", "Musee d'Orsay"] },
 } as const;
 export type City = keyof typeof cities;
-export type Scenario = "empty" | "prague" | "weather" | "future" | "editing" | "conflict";
+export type Scenario = "empty" | "prague" | "weather" | "future" | "editing" | "conflict" | "journey";
 
 export function analysis(city: City = "Barcelona", startDate = "2030-06-02"): TripAnalysis {
   const c = cities[city];

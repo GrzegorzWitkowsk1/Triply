@@ -54,7 +54,9 @@ describe("editable timeline", () => {
 
   it("reorders using the real keyboard drag sensor while travel and breaks remain outside the operation", async () => {
     const onReorder = vi.fn();
-    render(<TripTimeline entries={entries} activeStop={0} onSelectStop={() => {}} onReorder={onReorder} onAction={() => {}} />);
+    const onVisit = vi.fn();
+    const tracked = entries.map(entry => entry.kind === "attraction" ? { ...entry, itineraryItemId: entry.key } : entry);
+    render(<TripTimeline entries={tracked} activeStop={0} onSelectStop={() => {}} onReorder={onReorder} onAction={() => {}} onVisit={onVisit} />);
     const handle = screen.getByRole("button", { name: "Reorder Museum" });
     handle.focus();
     fireEvent.keyDown(handle, { key: " ", code: "Space" });
@@ -63,11 +65,43 @@ describe("editable timeline", () => {
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("position 2"));
     fireEvent.keyDown(document, { key: " ", code: "Space" });
     await waitFor(() => expect(onReorder).toHaveBeenCalledWith(["node/2", "node/1"]));
+    expect(onVisit).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Mark Museum as visited" })).toBeTruthy();
   });
 
   it("disables handles and menus during persistence", () => {
     render(<TripTimeline entries={entries} activeStop={0} onSelectStop={() => {}} onReorder={() => {}} onAction={() => {}} saving />);
     expect((screen.getByRole("button", { name: "Reorder Museum" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Edit Park" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("disables completed attraction editing and dragging until the visit is undone", () => {
+    const onReorder = vi.fn();
+    const onAction = vi.fn();
+    const onVisit = vi.fn();
+    const tracked = entries.map(entry => entry.kind === "attraction" ? { ...entry, itineraryItemId: entry.key } : entry);
+    const props = { entries: tracked, activeStop: 0, onSelectStop: vi.fn(), onReorder, onAction, onVisit };
+    const view = render(<TripTimeline {...props} visits={[
+      { itineraryItemId: "a1", status: "visited", updatedAt: "2026-11-05T10:00:00Z" },
+      { itineraryItemId: "a2", status: "skipped", updatedAt: "2026-11-05T10:00:00Z" },
+    ]} />);
+    const handle = screen.getByRole("button", { name: "Reorder Museum" }) as HTMLButtonElement;
+    const more = screen.getByRole("button", { name: "Edit Museum" }) as HTMLButtonElement;
+    expect(handle.disabled).toBe(true);
+    expect(more.disabled).toBe(true);
+    fireEvent.click(more);
+    fireEvent.keyDown(handle, { key: " ", code: "Space" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(onReorder).not.toHaveBeenCalled();
+    expect(onAction).not.toHaveBeenCalled();
+    expect((screen.getByRole("button", { name: "Reorder Park" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Edit Park" }) as HTMLButtonElement).disabled).toBe(false);
+
+    view.rerender(<TripTimeline {...props} visits={[]} />);
+    expect(handle.disabled).toBe(false);
+    expect(more.disabled).toBe(false);
+    fireEvent.click(more);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move later" }));
+    expect(onReorder).toHaveBeenCalledWith(["node/2", "node/1"]);
   });
 });

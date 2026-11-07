@@ -1,0 +1,16 @@
+{
+  "locked": "Edycja zablokowana. Cofnij wizytę do planowanej, aby zmienić jej plan.",
+  "planned": "Zaplanowane",
+  "visited": "Odwiedzone",
+  "skipped": "Pominięte",
+  "visitedAction": "Oznacz jako odwiedzone",
+  "skippedAction": "Pomiń",
+  "plannedAction": "Cofnij",
+  "visitedLabel": "Oznacz {{name}} jako odwiedzone",
+  "skippedLabel": "Oznacz {{name}} jako pominięte",
+  "plannedLabel": "Przywróć {{name}} do zaplanowanych",
+  "saving": "Zapisywanie statusu wizyty…",
+  "error": "Nie udało się zapisać statusu wizyty. Spróbuj ponownie.",
+  "progress": "Odwiedzone {{visited}}/{{total}} ({{percentage}}%) · Pominięte {{skipped}} · Pozostałe {{remaining}}",
+  "empty": "Brak miejsc do odwiedzenia tego dnia"
+}

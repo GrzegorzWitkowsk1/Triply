@@ -1,12 +1,12 @@
 import { useTranslation } from "react-i18next";
 import i18n from "../../i18n";
 import { formatDistance } from "../../i18n/format";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, useSortable, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, useMediaQuery } from "@mui/material";
-import { DragIndicator, MoreVert } from "@mui/icons-material";
+import { DragIndicator, MoreVert, LockOutlined } from "@mui/icons-material";
 import type { TimelineAttraction } from "../../config/itineraryAdapters";
 import {
   DirectionsWalkOutlined,
@@ -19,8 +19,13 @@ import type { TimelineEntry } from "../../config/itineraryAdapters";
 import TripAttractionCard from "./TripAttractionCard";
 import TripBreakCard from "./TripBreakCard";
 import AttractionSaveButton from "../AttractionSaveButton";
+import VisitControls from "./VisitControls";
+import type { VisitProgress, VisitStatus } from "@triply/shared";
 
 interface TripTimelineProps {
+  visits?: VisitProgress[];
+  visitSaving?: boolean;
+  onVisit?: (itemId: string, status: VisitStatus) => void;
   tripId?: string;
   entries: TimelineEntry[];
   activeStop: number;
@@ -31,7 +36,9 @@ interface TripTimelineProps {
   onAction?: (action: "remove" | "replace" | "move", attractionId: string) => void;
 }
 
-function EditableAttraction({ entry, selected, onSelect, saving, onAction, tripId, onStep, canMoveUp, canMoveDown }: {
+function EditableAttraction({ entry, selected, onSelect, saving, onAction, tripId, onStep, canMoveUp, canMoveDown, visitControls, visitStatus }: {
+  visitStatus: VisitStatus;
+  visitControls?: React.ReactNode;
   tripId?: string;
   entry: TimelineAttraction; selected: boolean; onSelect: (index: number) => void;
   saving: boolean; onAction: NonNullable<TripTimelineProps["onAction"]>;
@@ -40,22 +47,26 @@ function EditableAttraction({ entry, selected, onSelect, saving, onAction, tripI
   useTranslation();
   const sortable = useSortable({ id: entry.placeId!, disabled: saving });
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const lockDescriptionId = useId();
   return <li ref={sortable.setNodeRef} data-stop={entry.stopIndex}
     style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition, opacity: sortable.isDragging ? 0.55 : 1, zIndex: sortable.isDragging ? 2 : undefined }}
-    data-dragging={sortable.isDragging || undefined} className={`timeline-item is-attraction${selected ? " is-selected" : ""}`}>
+    data-dragging={sortable.isDragging || undefined} className={`timeline-item is-attraction is-${visitStatus}${selected ? " is-selected" : ""}`}>
     <div className="timeline-rail"><span className="timeline-node">{entry.stopIndex + 1}</span><span className="timeline-time">{entry.time}</span></div>
     <div className="timeline-body itinerary-editable-card">
       <TripAttractionCard entry={entry} selected={selected} onSelect={onSelect} />
+      {visitControls}
+      {visitStatus === "visited" && <p id={lockDescriptionId} className="visit-locked-explanation"><LockOutlined fontSize="small" aria-hidden="true" />{i18n.t("locked", { ns: "itinerary/visits" })}</p>}
       <div className="itinerary-card-controls">
         {tripId && entry.attractionKey && <AttractionSaveButton tripId={tripId} attractionKey={entry.attractionKey} name={entry.name} />}
         <IconButton ref={sortable.setActivatorNodeRef} {...sortable.attributes} {...sortable.listeners}
+          aria-describedby={visitStatus === "visited" ? lockDescriptionId : undefined}
           aria-label={i18n.t("reorder", { ns: "itinerary/editor", value0: entry.name })} disabled={saving} size="small" style={{ touchAction: "none" }}><DragIndicator /></IconButton>
-        <IconButton aria-label={i18n.t("edit", { ns: "itinerary/editor", value0: entry.name })} disabled={saving} size="small" onClick={(event) => setAnchor(event.currentTarget)}><MoreVert /></IconButton>
+        <IconButton aria-label={i18n.t("edit", { ns: "itinerary/editor", value0: entry.name })} aria-describedby={visitStatus === "visited" ? lockDescriptionId : undefined} disabled={saving} size="small" onClick={(event) => setAnchor(event.currentTarget)}><MoreVert /></IconButton>
       </div>
       <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
         <MenuItem disabled={saving || !canMoveUp} onClick={() => { setAnchor(null); onStep(-1); }}>{i18n.t("moveEarlier", { ns: "itinerary/editor" })}</MenuItem>
         <MenuItem disabled={saving || !canMoveDown} onClick={() => { setAnchor(null); onStep(1); }}>{i18n.t("moveLater", { ns: "itinerary/editor" })}</MenuItem>
-        {(["replace", "move", "remove"] as const).map((action) => <MenuItem key={action} onClick={() => { setAnchor(null); onAction(action, entry.placeId!); }}>
+        {(["replace", "move", "remove"] as const).map((action) => <MenuItem key={action} disabled={saving} onClick={() => { setAnchor(null); onAction(action, entry.placeId!); }}>
           {action === "replace" ? i18n.t("replaceAttraction2", { ns: "itinerary/editor" }) : action === "move" ? i18n.t("moveToAnotherDay", { ns: "itinerary/editor" }) : i18n.t("removeAttraction", { ns: "itinerary/editor" })}
         </MenuItem>)}
       </Menu>
@@ -64,6 +75,9 @@ function EditableAttraction({ entry, selected, onSelect, saving, onAction, tripI
 }
 
 export default function TripTimeline({
+  visits = [],
+  visitSaving = false,
+  onVisit,
   tripId,
   entries,
   activeStop,
@@ -174,10 +188,15 @@ export default function TripTimeline({
         }
 
         const selected = entry.stopIndex >= 0 && entry.stopIndex === activeStop;
+        const visitStatus = visits.find(record => record.itineraryItemId === entry.itineraryItemId)?.status ?? "planned";
+        const controls = entry.itineraryItemId && onVisit ? <VisitControls itemId={entry.itineraryItemId} name={entry.name}
+          status={visitStatus}
+          disabled={saving || visitSaving} onChange={onVisit} /> : undefined;
 
         if (onAction && onReorder && entry.placeId) {
           const index = ids.indexOf(entry.placeId);
-          return <EditableAttraction key={entry.placeId} entry={entry} selected={selected} onSelect={onSelectStop} saving={saving}
+          return <EditableAttraction key={entry.itineraryItemId ?? entry.placeId} entry={entry} selected={selected} onSelect={onSelectStop} saving={saving || visitStatus === "visited"}
+            visitControls={controls} visitStatus={visitStatus}
             canMoveUp={index > 0} canMoveDown={index < ids.length - 1} onStep={direction => { if (!saving && index + direction >= 0 && index + direction < ids.length) onReorder(arrayMove(ids, index, index + direction)); }}
             onAction={(action, id) => { if (action === "remove" && coarse) setRemoving({ id, name: entry.name }); else onAction(action, id); }} tripId={tripId} />;
         }
@@ -185,7 +204,7 @@ export default function TripTimeline({
         return (
           <li
             key={entry.key}
-            className={`timeline-item is-attraction${selected ? " is-selected" : ""}`}
+            className={`timeline-item is-attraction is-${visitStatus}${selected ? " is-selected" : ""}`}
             data-stop={entry.stopIndex}
           >
             <div className="timeline-rail">
@@ -199,6 +218,7 @@ export default function TripTimeline({
                 onSelect={onSelectStop}
               />
               {tripId && entry.attractionKey && <AttractionSaveButton tripId={tripId} attractionKey={entry.attractionKey} name={entry.name} />}
+              {controls}
             </div>
           </li>
         );

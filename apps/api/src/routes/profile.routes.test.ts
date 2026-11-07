@@ -29,6 +29,33 @@ async function account(email = "profile@example.com") {
   return { headers: { origin: env.WEB_ORIGIN, cookie }, id: response.json().user.id as string };
 }
 describe("profile API", () => {
+  it("defaults legacy Journey preferences and persists them across session reload and login", async () => {
+    const { headers, id } = await account();
+    await UserModel.collection.updateOne({ _id: new mongoose.Types.ObjectId(id) }, { $unset: { journeyPreferences: "", journeyPreferencesRevision: "" } });
+    const initial = await app.inject({ url: "/api/profile/preferences/journey", headers });
+    expect(initial.json()).toEqual({ preferences: { promptForExpenseAfterVisit: true }, revision: 0 });
+    const saved = await app.inject({ method: "PATCH", url: "/api/profile/preferences/journey", headers, payload: { promptForExpenseAfterVisit: false, expectedRevision: 0 } });
+    expect(saved.statusCode).toBe(200); expect(saved.json()).toEqual({ preferences: { promptForExpenseAfterVisit: false }, revision: 1 });
+    const login = await app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: env.WEB_ORIGIN }, payload: { email: "profile@example.com", password } });
+    const cookie = login.cookies.map(value => `${value.name}=${value.value}`).join("; ");
+    expect((await app.inject({ url: "/api/profile/preferences/journey", headers: { cookie } })).json()).toEqual(saved.json());
+    expect((await UserModel.findById(id))!.preferences?.pace).toBe("balanced");
+  });
+
+  it("isolates Journey preferences, rejects invalid payloads, and guards concurrent saves", async () => {
+    const first = await account(); const second = await account("second@example.com");
+    for (const payload of [{ promptForExpenseAfterVisit: "false", expectedRevision: 0 }, { promptForExpenseAfterVisit: false }, { promptForExpenseAfterVisit: false, expectedRevision: 0, userId: second.id }]) {
+      expect((await app.inject({ method: "PATCH", url: "/api/profile/preferences/journey", headers: first.headers, payload })).statusCode).toBe(400);
+    }
+    const saves = await Promise.all([false, true].map(promptForExpenseAfterVisit => app.inject({ method: "PATCH", url: "/api/profile/preferences/journey", headers: first.headers, payload: { promptForExpenseAfterVisit, expectedRevision: 0 } })));
+    expect(saves.map(value => value.statusCode).sort()).toEqual([200, 409]);
+    expect((await app.inject({ url: "/api/profile/preferences/journey", headers: second.headers })).json()).toEqual({ preferences: { promptForExpenseAfterVisit: true }, revision: 0 });
+    expect((await app.inject({ url: "/api/profile/preferences/journey" })).statusCode).toBe(401);
+    const guest = await app.inject({ method: "POST", url: "/api/auth/guest", remoteAddress: "192.0.2.240", headers: { origin: env.WEB_ORIGIN } });
+    const cookie = guest.cookies.map(value => `${value.name}=${value.value}`).join("; ");
+    expect((await app.inject({ url: "/api/profile/preferences/journey", headers: { cookie } })).statusCode).toBe(401);
+    expect((await app.inject({ method: "PATCH", url: "/api/profile/preferences/journey", headers: { cookie, origin: env.WEB_ORIGIN }, payload: { promptForExpenseAfterVisit: false, expectedRevision: 0 } })).statusCode).toBe(401);
+  });
   it("requires authentication for every profile operation", async () => {
     for (const [method, url] of [["PATCH", "/api/profile"], ["PUT", "/api/profile/avatar"], ["PUT", "/api/profile/preferences"], ["POST", "/api/profile/password"]] as const) {
       expect((await app.inject({ method, url, headers: { origin: env.WEB_ORIGIN }, payload: {} })).statusCode).toBe(401);

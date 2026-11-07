@@ -130,6 +130,14 @@ const control = createServer(async (request, response) => {
       let tripId: string | null = null;
       if (scenario !== "empty") {
         const pool = attractions(base.destination as "Barcelona" | "Prague" | "Rome");
+        if (scenario === "journey") {
+          base.travelers = 3;
+          for (const [index, unit, amount] of [[0, "per_person", 2000], [1, "per_group", 8000]] as const) {
+            pool[index]!.admission = { ...pool[index]!.admission!, status: "paid", source: "official", checkedAt: "2030-06-01",
+              price: { amountMinor: amount, currency: "EUR", fractionDigits: 2, priceType: "general", unit, reliability: "confirmed" } };
+          }
+          pool[2]!.admission = { ...pool[2]!.admission!, status: "unknown", rawFee: null };
+        }
         if (scenario === "conflict" || scenario === "editing") {
           pool[0]!.openingHours = { raw: "Mo-Su 13:30-19:00", source: "osm", checkedAt: "2030-06-01" };
           pool[1]!.openingHours = { raw: "Mo-Su 13:30-19:00", source: "osm", checkedAt: "2030-06-01" };

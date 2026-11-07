@@ -110,3 +110,10 @@ export function applyRegeneratedDay(
     body: JSON.stringify({ previewId }),
   });
 }
+export function updateTripVisit(tripId: string, itemId: string, status: import("@triply/shared").VisitStatus) {
+  return request<import("@triply/shared").VisitMutationResponse>(`/api/trips/${tripId}/visits/${itemId}`, { method: "PATCH", body: JSON.stringify({ status }) });
+}
+
+export function retryTripVisitExpense(tripId: string, itemId: string) {
+  return request<import("@triply/shared").VisitMutationResponse>(`/api/trips/${tripId}/visits/${itemId}/expense/retry`, { method: "POST" });
+}

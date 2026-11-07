@@ -1,4 +1,6 @@
 import { model, Schema, type HydratedDocument, type Types } from "mongoose";
+import { ensureItemIdentities } from "../services/itineraryIdentity.js";
+import { itineraryItemIdSchema, visitProgressSchema } from "@triply/shared";
 import type {
   AskableField,
   DayComparisonMetrics,
@@ -72,6 +74,10 @@ export interface TripRegenerationRecord {
 }
 
 export interface TripRecord {
+  automaticAdmissions: { itineraryItemId: string; state: "pending" | "posted" | "resolved"; expense: import("@triply/shared").TripExpense }[];
+  expensePromptedItemIds: string[];
+  visits: import("@triply/shared").VisitProgress[];
+  visitRevision: number;
   contentLocale?: import("@triply/shared").SupportedLocale;
   sharing?: { enabled: boolean; tokenHash?: string | null; createdAt: Date | null; updatedAt: Date | null };
   createdAt: Date;
@@ -156,6 +162,7 @@ const admissionSchema = new Schema({
     fractionDigits: { type: Number, required: true, min: 0, max: 3, validate: Number.isInteger },
     priceType: { type: String, enum: ["adult", "general"], required: true },
     unit: { type: String, enum: ["per_person", "per_group", "unknown"], required: true },
+    reliability: { type: String, enum: ["confirmed", "estimated"], default: undefined },
   }, { _id: false }), default: null },
   source: { type: String, enum: ["osm", "official", null], default: null },
   sourceUrl: { type: String, default: null, maxlength: 2000 },
@@ -238,6 +245,7 @@ const clusteringSchema = new Schema<ClusteringRecord>(
 
 const itineraryStopSchema = new Schema<ItineraryStop>(
   {
+    itineraryItemId: { type: String },
     admission: { type: admissionSchema, default: undefined },
     placeId: { type: String, default: null, trim: true },
     name: { type: String, required: true, trim: true, maxlength: 200 },
@@ -270,6 +278,7 @@ const routeSegmentSchema = new Schema<RouteSegment>(
 
 const itineraryActivitySchema = new Schema<ScheduledActivity>(
   {
+    itineraryItemId: { type: String, validate: (value: string) => itineraryItemIdSchema.safeParse(value).success },
     type: { type: String, enum: ["attraction", "travel", "break"], required: true },
     schedulingStatus: { type: String, enum: ["unresolved"] },
     startTime: { type: String, required: function (this: ScheduledActivity): boolean { return this.schedulingStatus !== "unresolved"; }, default: "" },
@@ -424,7 +433,32 @@ const analysisSchema = new Schema<TripAnalysis>(
 
 const tripSchema = new Schema<TripRecord>(
   {
+    // Receipts are permanent tombstones even if a user deletes the actual expense.
+    automaticAdmissions: { type: [new Schema({
+      itineraryItemId: { type: String, required: true, validate: (value: string) => itineraryItemIdSchema.safeParse(value).success },
+      state: { type: String, enum: ["pending", "posted", "resolved"], required: true },
+      expense: { type: Schema.Types.Mixed, required: true },
+    }, { _id: false })], default: [], validate: (records: TripRecord["automaticAdmissions"]) => new Set(records.map(record => record.itineraryItemId)).size === records.length },
+    expensePromptedItemIds: { type: [String], default: [] },
+    visits: { type: [new Schema({
+      itineraryItemId: { type: String, required: true },
+      status: { type: String, enum: ["visited", "skipped"], required: true },
+      visitedAt: String, skippedAt: String, updatedAt: { type: String, required: true },
+    }, { _id: false })], default: [], validate: (records: import("@triply/shared").VisitProgress[]) =>
+      new Set(records.map(record => record.itineraryItemId)).size === records.length &&
+      records.every(record => visitProgressSchema.safeParse(record).success) },
+    visitRevision: { type: Number, default: 0, min: 0 },
     expenses: { type: [new Schema({
+      automaticSource: { type: new Schema({
+        type: { type: String, enum: ["visit_admission"], required: true },
+        itineraryItemId: { type: String, required: true },
+        unit: { type: String, enum: ["per_person", "per_group"], required: true },
+        participants: { type: Number, default: null, min: 1, validate: (value: number | null) => value === null || Number.isSafeInteger(value) },
+        unitAmountMinor: { type: Number, required: true, min: 0, validate: Number.isSafeInteger },
+        postedAmountMinor: { type: Number, required: true, min: 0, validate: Number.isSafeInteger },
+        currency: { type: String, required: true },
+      }, { _id: false }), default: undefined },
+      itineraryItemId: { type: String, default: undefined, validate: (value: string | null) => value === null || itineraryItemIdSchema.safeParse(value).success },
       id: { type: String, required: true }, title: { type: String, required: true, maxlength: 120 },
       category: { type: String, required: true, enum: EXPENSE_CATEGORIES },
       amountMinor: { type: Number, required: true, min: 0, max: Number.MAX_SAFE_INTEGER, validate: Number.isSafeInteger },
@@ -493,6 +527,7 @@ const tripSchema = new Schema<TripRecord>(
 );
 
 tripSchema.pre("validate", function () {
+  if (this.itinerary && (this.isNew || this.isModified("itinerary"))) ensureItemIdentities(this.itinerary.days);
   if (Boolean(this.user) === Boolean(this.guestId)) this.invalidate("user", "A trip must have exactly one owner");
   if (this.guestId && (!Number.isInteger(this.guestSlot) || this.guestSlot! < 0)) this.invalidate("guestSlot", "A guest storage slot is required");
 });

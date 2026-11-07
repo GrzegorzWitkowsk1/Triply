@@ -44,6 +44,8 @@ export type DurationSource = "provided" | "estimated";
 export type TravelDurationSource = "provider" | "approximation" | "unavailable";
 
 export interface ScheduledActivity {
+  /** UUID for this attraction occurrence; absent on travel/breaks and legacy data. */
+  itineraryItemId?: string;
   type: ScheduledActivityType;
   /** Local ISO 8601 date-time without offset, e.g. `2026-06-01T10:00:00`. */
   startTime: string;

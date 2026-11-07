@@ -19,7 +19,8 @@ export default function MoveAttractionDialog({ open, sourceDayIndex, days, savin
   const destinations = days.filter((day) => day.dayIndex !== sourceDayIndex);
   const [target, setTarget] = useState(destinations[0]?.dayIndex ?? 0);
   const [position, setPosition] = useState(0);
-  useEffect(() => { if (open) { setTarget(days.find((day) => day.dayIndex !== sourceDayIndex)?.dayIndex ?? 0); setPosition(0); } }, [open, sourceDayIndex, days]);
+  // Background refetches must not reset a destination selected in the open dialog.
+  useEffect(() => { if (open) { setTarget(days.find((day) => day.dayIndex !== sourceDayIndex)?.dayIndex ?? 0); setPosition(0); } }, [open, sourceDayIndex]);
   const count = days.find((day) => day.dayIndex === target)?.activities.filter((activity) => activity.type === "attraction").length ?? 0;
   return <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="xs">
     <DialogTitle>{i18n.t("moveAttraction", { ns: "itinerary/editor" })}</DialogTitle>
