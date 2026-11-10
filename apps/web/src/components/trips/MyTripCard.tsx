@@ -4,6 +4,7 @@ import i18n from "../../i18n";
 import {
   ArrowForwardOutlined,
   CalendarMonthOutlined,
+  DeleteOutlined,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { findCityPhoto } from "../../config/cityPhotos";
@@ -14,9 +15,10 @@ import DestinationImage from "../DestinationImage";
 interface MyTripCardProps {
   trip: TripCardModel;
   isFirst: boolean;
+  onDelete: () => void;
 }
 
-export default function MyTripCard({ trip, isFirst }: MyTripCardProps) {
+export default function MyTripCard({ trip, isFirst, onDelete }: MyTripCardProps) {
   useTranslation();
   const navigate = useNavigate();
   const photo = findCityPhoto(trip.city, trip.country);
@@ -55,13 +57,25 @@ export default function MyTripCard({ trip, isFirst }: MyTripCardProps) {
           )}
         </div>
 
-        <button
-          type="button"
-          className={`trip-btn my-trip-btn${isFirst ? " is-contained" : ""}`}
-          onClick={() => navigate(`/trips/${trip.id}`)}
-        >
-          {i18n.t("viewTrip", { ns: "trips" })}<ArrowForwardOutlined fontSize="small" />
-        </button>
+        <div className="my-trip-actions">
+          <button
+            type="button"
+            className={`trip-btn my-trip-btn${isFirst ? " is-contained" : ""}`}
+            onClick={() => navigate(`/trips/${trip.id}`)}
+          >
+            {i18n.t("viewTrip", { ns: "trips" })}<ArrowForwardOutlined fontSize="small" />
+          </button>
+          <button
+            type="button"
+            className="trip-btn my-trip-delete-btn"
+            onClick={onDelete}
+            aria-label={i18n.t("deleteTrip2", { ns: "trips", value0: trip.city })}
+            title={i18n.t("deleteTrip", { ns: "trips" })}
+          >
+            <DeleteOutlined fontSize="small" />
+            <span className="my-trip-delete-label">{i18n.t("deleteTrip", { ns: "trips" })}</span>
+          </button>
+        </div>
       </div>
     </article>
   );

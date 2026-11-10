@@ -84,9 +84,9 @@ export const TRIPS_LIST: TripsPageTrip[] = [
   },
 ];
 
-export type TripFilter = "All trips" | "Ready" | "Planning";
+export type TripFilter = "All trips" | "Ready" | "Planning" | "Failed";
 
-export const TRIP_FILTERS: TripFilter[] = ["All trips", "Ready", "Planning"];
+export const TRIP_FILTERS: TripFilter[] = ["All trips", "Ready", "Planning", "Failed"];
 
 export const TRIP_SUMMARY = {
   spent: TRIPS_LIST.reduce((sum, trip) => sum + trip.budgetUsed, 0),

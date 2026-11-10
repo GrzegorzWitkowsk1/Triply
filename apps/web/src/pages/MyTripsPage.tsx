@@ -4,11 +4,9 @@ import i18n from "../i18n";
 import {
   AccountBalanceWalletOutlined,
   Add,
-  ArrowForwardOutlined,
 } from "@mui/icons-material";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { TripStatus } from "@triply/shared";
 import MyTripCard from "../components/trips/MyTripCard";
 import { buildTripCards } from "../config/tripCards";
 import { TRIP_FILTERS, type TripFilter } from "../config/trips";
@@ -16,10 +14,11 @@ import { useTrips, useDeleteTrip } from "../hooks/useTrips";
 import { useGuestUsage } from "../hooks/useGuestUsage";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button } from "@mui/material";
 
-const FILTER_STATUS: Record<TripFilter, TripStatus | undefined> = {
-  "All trips": undefined,
-  Ready: "ready",
-  Planning: "draft",
+const FILTER_LABELS: Record<TripFilter, string> = {
+  "All trips": "filterAll",
+  Ready: "filterReady",
+  Planning: "filterPlanning",
+  Failed: "statusFailed",
 };
 
 export default function MyTripsPage() {
@@ -31,12 +30,13 @@ export default function MyTripsPage() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState<TripFilter>("All trips");
 
-  const status = FILTER_STATUS[filter];
-  const tripsQuery = useTrips(status);
+  const tripsQuery = useTrips();
 
   const trips = useMemo(
-    () => buildTripCards(tripsQuery.data ?? []),
-    [tripsQuery.data, i18n.resolvedLanguage],
+    () => buildTripCards(tripsQuery.data ?? []).filter(
+      (trip) => filter === "All trips" || trip.status === filter,
+    ),
+    [tripsQuery.data, filter, i18n.resolvedLanguage],
   );
 
   const spendTotal = trips.reduce(
@@ -72,9 +72,10 @@ export default function MyTripsPage() {
               key={f}
               type="button"
               className={`trip-filter${filter === f ? " is-active" : ""}`}
+              aria-pressed={filter === f}
               onClick={() => setFilter(f)}
             >
-              {f}
+              {t(FILTER_LABELS[f])}
             </button>
           ))}
         </div>
@@ -90,9 +91,12 @@ export default function MyTripsPage() {
           )}
 
           {trips.map((trip, i) => (
-            <div key={trip.id}><MyTripCard trip={trip} isFirst={i === 0} />
-              <button type="button" className="auth-link" onClick={() => { deletion.reset(); setDeleteId(trip.id); }} aria-label={i18n.t("deleteTrip2", { ns: "trips", value0: trip.city })}>{i18n.t("deleteTrip", { ns: "trips" })}</button>
-            </div>
+            <MyTripCard
+              key={trip.id}
+              trip={trip}
+              isFirst={i === 0}
+              onDelete={() => { deletion.reset(); setDeleteId(trip.id); }}
+            />
           ))}
 
           <button
