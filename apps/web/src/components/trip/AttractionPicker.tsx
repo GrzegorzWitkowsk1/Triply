@@ -35,7 +35,8 @@ export default function AttractionPicker({ zIndex, tripId, open, replace, stopCo
     if (open) { setSearch(""); setSelected(null); setPosition(stopCount); setDiscoveryError(null); }
   }, [open, stopCount]);
   const results = candidates.data?.candidates.filter((place) =>
-    `${place.name} ${categoryLabel(place.category)}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())) ?? [];
+    `${place.name} ${categoryLabel(place.category)}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()))
+    .sort((a, b) => Number(a.scheduledDayIndex !== null) - Number(b.scheduledDayIndex !== null)) ?? [];
   const discover = async () => {
     setDiscovering(true); setDiscoveryError(null);
     try {
@@ -46,7 +47,7 @@ export default function AttractionPicker({ zIndex, tripId, open, replace, stopCo
     finally { setDiscovering(false); }
   };
   const selectedCandidate = candidates.data?.candidates.find((place) => place.placeId === selected);
-  return <Dialog sx={zIndex === undefined ? undefined : { zIndex }} open={open} onClose={saving || discovering ? undefined : onClose} fullWidth maxWidth="sm">
+  return <Dialog sx={zIndex === undefined ? undefined : { zIndex }} open={open} onClose={saving || discovering ? undefined : onClose} maxWidth="sm">
     <DialogTitle>{replace ? i18n.t("replaceAttraction", { ns: "itinerary/editor" }) : i18n.t("addAttraction", { ns: "itinerary" })}</DialogTitle>
     <DialogContent>
       <TextField label={i18n.t("searchAttractions", { ns: "itinerary/editor" })} value={search} onChange={(event) => setSearch(event.target.value)} fullWidth margin="dense" />

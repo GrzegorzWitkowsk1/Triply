@@ -44,7 +44,7 @@ export default function TripSharing({ tripId, open: controlledOpen, onClose, hid
       >
         <ShareOutlined /> {t("share")}
       </button>}
-      <Dialog className="trip-sharing-dialog" open={open} onClose={close} fullWidth maxWidth="sm">
+      <Dialog className="trip-sharing-dialog" open={open} onClose={close} maxWidth="sm">
         <DialogTitle>{t("itineraryTitle")}</DialogTitle>
         <DialogContent>
           <p>

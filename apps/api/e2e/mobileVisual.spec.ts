@@ -44,7 +44,7 @@ for (const code of ["en", "pl"] as const) {
       await page.locator(".trip-map").scrollIntoViewIfNeeded(); await expect(page.locator(".trip-map")).toBeVisible();
     });
     await capture(page, info, "expenses", code, async () => {
-      await page.getByRole("link", { name: code === "pl" ? "Zobacz wydatki" : "View expenses", exact: true }).click();
+      if (page.viewportSize()!.width < 1024) await page.getByRole("button", { name: "Plan", exact: true }).click();
       await expect(page.locator(".budget-expense-form")).toBeVisible();
       await page.locator(".budget-expense-form").scrollIntoViewIfNeeded();
     });

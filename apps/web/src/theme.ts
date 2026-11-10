@@ -69,7 +69,7 @@ export const theme = createTheme({
       },
     },
     MuiFormHelperText: { styleOverrides: { root: { fontSize: "0.8125rem", lineHeight: 1.5 } } },
-    MuiDialog: { styleOverrides: { paper: { borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-dialog)", margin: 16, maxWidth: "calc(100% - 32px)" } } },
+    MuiDialog: { styleOverrides: { paper: { borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-dialog)", margin: 16 } } },
     MuiDialogTitle: { styleOverrides: { root: { padding: "24px 24px 12px", fontSize: "1.25rem", fontWeight: 700, lineHeight: 1.4 } } },
     MuiDialogContent: { styleOverrides: { root: { padding: "12px 24px 24px", overflowWrap: "anywhere" } } },
     MuiDialogActions: { styleOverrides: { root: { padding: "16px 24px 24px", gap: 8, flexWrap: "wrap", "& > :not(style) ~ :not(style)": { marginLeft: 0 } } } },

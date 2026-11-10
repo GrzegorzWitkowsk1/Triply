@@ -20,7 +20,7 @@ async function preview(page: Page) {
 test("overview, keyboard day navigation, reload and EN/PL layouts", async ({ page, user, harness }, info) => {
   await login(page, user); await openTrip(page, user.tripId!);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Barcelona");
-  await expect(page.getByRole("link", { name: "View expenses" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View expenses" })).toHaveCount(0);
   await page.getByRole("tab").first().focus(); await page.keyboard.press("ArrowRight");
   await expect(page.getByRole("tab").nth(1)).toHaveAttribute("aria-selected", "true");
   await expect(page).toHaveURL(/day=2/);

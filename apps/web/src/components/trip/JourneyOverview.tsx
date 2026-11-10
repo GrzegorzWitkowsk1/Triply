@@ -19,7 +19,7 @@ export default function JourneyOverview({ days, day, visits, budget, loading, er
       <p className="journey-progress-detail">{t("remainingCounts", progress)}</p>
     </div>)}
     <div className="journey-spending"><h2>{t("actualSpending")}</h2>
-      {loading && !budget ? <p role="status">{t("loadingExpenses")}</p> : <><p>{t("tripSpending", { amount: spending ?? t("noExpenses") })}</p><p>{t("daySpending", { amount: dailySpending ?? t("noExpenses") })}</p></>}
+      {loading && !budget ? <p role="status">{t("loadingExpenses")}</p> : <><p className="journey-spending-total">{t("tripSpending", { amount: spending ?? t("noExpenses") })}</p><p className="journey-spending-total">{t("daySpending", { amount: dailySpending ?? t("noExpenses") })}</p></>}
       {error && <p role="alert">{t("expensesUnavailable")} <button type="button" onClick={onRetry}>{t("retry")}</button></p>}
     </div>
   </section>;

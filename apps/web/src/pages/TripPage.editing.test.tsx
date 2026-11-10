@@ -684,6 +684,11 @@ describe("TripPage manual editing", () => {
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Add Attraction" }));
     const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByRole("button", { name: /Gallery/ });
+    const options = dialog.querySelectorAll<HTMLButtonElement>(".itinerary-picker-results > button");
+    expect(Array.from(options, option => option.querySelector(".activity-name")?.textContent)).toEqual(["Gallery", "Museum", "Park"]);
+    expect(Array.from(options, option => option.disabled)).toEqual([false, true, true]);
+    expect(screen.queryByRole("link", { name: "View expenses" })).toBeNull();
     fireEvent.change(within(dialog).getByLabelText("Search attractions"), { target: { value: "Gallery" } });
     fireEvent.click(await within(dialog).findByRole("button", { name: /Gallery/ }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Add attraction" }));
@@ -710,6 +715,10 @@ describe("TripPage manual editing", () => {
     renderPage();
     await openAction("Replace attraction");
     const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByRole("button", { name: /Gallery/ });
+    const options = dialog.querySelectorAll<HTMLButtonElement>(".itinerary-picker-results > button");
+    expect(Array.from(options, option => option.querySelector(".activity-name")?.textContent)).toEqual(["Gallery", "Museum", "Park"]);
+    expect(Array.from(options, option => option.disabled)).toEqual([false, true, true]);
     fireEvent.click(await within(dialog).findByRole("button", { name: /Gallery/ }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Replace attraction" }));
     await screen.findByText("Itinerary saved.");

@@ -426,9 +426,6 @@ export default function TripPage() {
             </div>
           </div>
           <div className="trip-hero-actions">
-            {status === "ready" && <a className="trip-action" href="#trip-expenses" onClick={event => {
-              event.preventDefault(); setMobileView("plan"); requestAnimationFrame(() => { document.getElementById("trip-expenses")?.focus(); document.getElementById("trip-expenses")?.scrollIntoView({ block: "start" }); });
-            }}>{i18n.t("viewExpenses", { ns: "trips/details" })}</a>}
             <button
               type="button"
               className="trip-action"
@@ -476,7 +473,7 @@ export default function TripPage() {
                   {day.totalDistanceMeters !== null ? ` · ${formatDistance(day.totalDistanceMeters)}` : ` · ${i18n.t("distanceUnavailable", { ns: "trips/details" })}`}
                   {day.partiallyEstimated ? ` · ${i18n.t("estimatedTravel", { ns: "trips/details" })}` : ""}
                 </p>}
-                <button type="button" className="trip-action" disabled={itineraryEdit.isPending || regenerateOpen} onClick={() => { itineraryEdit.reset(); setPicker({}); }}>{t("addAttraction")}</button>
+                <button type="button" className="trip-action trip-add-attraction" disabled={itineraryEdit.isPending || regenerateOpen} onClick={() => { itineraryEdit.reset(); setPicker({}); }}>{t("addAttraction")}</button>
                 {itineraryEdit.isPending && <p role="status">{t("saving")}</p>}
                 {editError && <Alert severity="error">{editError}</Alert>}
                 {editNotice && <Alert role={itineraryEdit.data?.warnings.length || itineraryEdit.variables?.operation.type === "reroute" ? "alert" : "status"} severity={itineraryEdit.data?.warnings.length || itineraryEdit.variables?.operation.type === "reroute" ? "warning" : "success"}>{editNotice()}</Alert>}
@@ -571,7 +568,7 @@ export default function TripPage() {
               )}
               <div className="trip-secondary-panels" hidden={!isJourney && narrow && mobileView === "map"}>
               {(
-                <div id="trip-expenses" tabIndex={-1}>
+                <div>
                 <TripBudgetCard
                   expenseDraft={expenseDraft}
                   tripId={trip.data.id}

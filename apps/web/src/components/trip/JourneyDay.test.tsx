@@ -12,6 +12,26 @@ const day: ItineraryDay = { dayIndex: 1, date: "2026-11-05", timeZone: "Asia/Tok
   geometry: null, segments: [], totalVisitMinutes: 180, totalDistanceMeters: null, totalTravelMinutes: null, partiallyEstimated: false, warnings: [] };
 const visits: VisitProgress[] = [{ itineraryItemId: "item-0", status: "visited", updatedAt: "2026-11-05T00:00:00Z" }, { itineraryItemId: "item-1", status: "skipped", updatedAt: "2026-11-05T00:00:00Z" }];
 
+it("includes meal and coffee breaks in order without adding visit controls or counting breaks in progress", () => {
+  const breakItem = (title: string) => ({ type: "break" as const, title, startTime: "2026-11-05T12:00:00+09:00", endTime: "2026-11-05T12:30:00+09:00", durationMinutes: 30 });
+  const withBreaks = { ...day, activities: [day.activities[0], breakItem("Lunch break"), day.activities[1], breakItem("Coffee break"), day.activities[2], breakItem("Dinner break")] };
+  const view = render(<><JourneyDay day={withBreaks} visits={visits} active={0} saving={false} visible onSelect={() => {}} onVisit={() => {}} />
+    <JourneyOverview days={[withBreaks]} day={withBreaks} visits={visits} loading={false} error={false} onRetry={() => {}} /></>);
+  const entries = Array.from(view.container.querySelectorAll(".journey-list > li"));
+  ["Museum", "Lunch break", "Park", "Coffee break", "Gallery", "Dinner break"].forEach((name, index) => expect(entries[index].textContent).toContain(name));
+  expect(view.container.querySelectorAll(".journey-break")).toHaveLength(3);
+  for (const entry of view.container.querySelectorAll(".journey-break")) expect(within(entry as HTMLElement).queryByRole("button")).toBeNull();
+  expect(screen.getAllByText("1 / 3 visited")).toHaveLength(2);
+  expect(screen.getByRole("button", { name: "Next: Gallery" })).toBeTruthy();
+});
+
+it("shows scheduled breaks even on a day with no attractions", () => {
+  const breaksOnly: ItineraryDay = { ...day, stops: [], activities: [{ type: "break", title: "Coffee break", startTime: "2026-11-05T10:00:00+09:00", endTime: "2026-11-05T10:30:00+09:00", durationMinutes: 30 }] };
+  render(<JourneyDay day={breaksOnly} active={-1} saving={false} visible onSelect={() => {}} onVisit={() => {}} />);
+  expect(screen.getByText(/Coffee break/)).toBeTruthy();
+  expect(screen.queryByText("A day to explore at your own pace")).toBeNull();
+});
+
 it("identifies the next planned occurrence in order and reuses visited/skipped/reset controls", () => {
   const select = vi.fn(); const visit = vi.fn();
   const view = render(<JourneyDay day={day} visits={visits} active={0} saving={false} visible onSelect={select} onVisit={visit} />);

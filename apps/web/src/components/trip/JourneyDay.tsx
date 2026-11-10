@@ -4,9 +4,10 @@ import { Button, Chip } from "@mui/material";
 import { OpenInNewOutlined } from "@mui/icons-material";
 import type { ItineraryDay, TripExpense, VisitProgress, VisitStatus } from "@triply/shared";
 import { journeyItems, navigationUrl } from "../../config/journey";
-import { formatClock, formatDuration } from "../../config/itineraryAdapters";
+import { buildDayTimeline, formatClock, formatDuration } from "../../config/itineraryAdapters";
 import { formatMoney } from "../../i18n/format";
 import VisitControls from "./VisitControls";
+import TripBreakCard from "./TripBreakCard";
 
 export default function JourneyDay({ day, visits = [], expenses = [], active, saving, visible, onSelect, onVisit }: {
   day?: ItineraryDay; visits?: VisitProgress[]; expenses?: TripExpense[]; active: number; saving: boolean; visible: boolean;
@@ -16,6 +17,7 @@ export default function JourneyDay({ day, visits = [], expenses = [], active, sa
   const list = useRef<HTMLOListElement>(null);
   const lastSelection = useRef<number | null>(null);
   const items = day ? journeyItems(day) : [];
+  const timeline = day ? buildDayTimeline(day) : [];
   const status = (id?: string): VisitStatus => visits.find(record => record.itineraryItemId === id)?.status ?? "planned";
   const next = items.find(({ item }) => status(item.itineraryItemId) === "planned");
   useEffect(() => {
@@ -23,7 +25,7 @@ export default function JourneyDay({ day, visits = [], expenses = [], active, sa
     if (!visible || previous === null || previous === active) return;
     list.current?.querySelector<HTMLElement>(`[data-journey-stop="${active}"]`)?.scrollIntoView?.({ block: "nearest", behavior: "instant" });
   }, [active, visible]);
-  if (!items.length) return <div className="trip-empty-day"><h3>{t("emptyDay")}</h3><p>{t("emptyDayHelp")}</p></div>;
+  if (!items.length && !timeline.some(entry => entry.kind === "break")) return <div className="trip-empty-day"><h3>{t("emptyDay")}</h3><p>{t("emptyDayHelp")}</p></div>;
   return <section className="journey-day" aria-label={t("dayJourney")}>
     <div className="journey-next-summary">
       <h2>{t("dayJourney")}</h2>
@@ -34,7 +36,16 @@ export default function JourneyDay({ day, visits = [], expenses = [], active, sa
       }}>{t("goToNext", { name: next.item.title })}</Button> : <p>{t("noRemaining")}</p>}
     </div>
     <ol className="journey-list" ref={list}>
-      {items.map(({ item, stop, stopIndex }, index) => {
+      {day?.activities.map((activity, index) => {
+        if (activity.type === "travel") return null;
+        if (activity.type !== "attraction") {
+          const entry = timeline[index];
+          return entry.kind === "break" ? <li key={entry.key} className="journey-break">
+            <p className="journey-place-time">{entry.time}</p>
+            <TripBreakCard entry={entry} />
+          </li> : null;
+        }
+        const { item, stop, stopIndex } = items.find(entry => entry.item === activity)!;
         const currentStatus = status(item.itineraryItemId);
         const isNext = next?.item === item;
         const url = navigationUrl(stop);

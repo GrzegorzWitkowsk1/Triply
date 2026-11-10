@@ -157,7 +157,7 @@ for (const device of devices) test.describe(device.name, () => {
     const checkbox = page.getByRole("checkbox", { name: "Sunscreen", exact: true });
     await checkbox.tap(); await expect(checkbox).toBeChecked(); await noOverflow(page);
     await page.getByRole("link", { name: "Back to trip", exact: true }).tap();
-    await page.getByRole("link", { name: "View expenses", exact: true }).tap();
+    await page.locator(".budget-expense-form").scrollIntoViewIfNeeded();
     await page.getByRole("textbox", { name: "Expense name", exact: true }).fill("Coffee");
     const amount = page.getByRole("textbox", { name: "Amount", exact: true });
     await expect(amount).toHaveAttribute("inputmode", "decimal"); await amount.fill("12.29");
