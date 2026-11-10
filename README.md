@@ -1,4 +1,4 @@
-﻿# 🧭 Triply
+# 🧭 Triply
 
 **From a travel idea to a plan for every day.**
 
@@ -12,12 +12,16 @@ Triply turns a loose travel idea into an organized itinerary. Describe your trip
 - [How a trip plan is built](#how-a-trip-plan-is-built)
 - [Editing and the trip assistant](#editing-and-the-trip-assistant)
 - [Architecture](#architecture)
+- [External services and AI providers](#external-services-and-ai-providers)
+- [Key architecture decisions](#key-architecture-decisions)
 - [Authentication and access](#authentication-and-access)
 - [Tech stack](#tech-stack)
 - [Running locally](#running-locally)
 - [Tests](#tests)
 - [Building for production](#building-for-production)
 - [Current project scope](#current-project-scope)
+- [AI packing](#ai-packing)
+- [Smart packing](#smart-packing)
 
 ## What you can do with Triply
 
@@ -30,8 +34,12 @@ Triply turns a loose travel idea into an organized itinerary. Describe your trip
 | Trip assistant | Helps you change the plan through a conversation grounded in your trip. |
 | Weather | Shows daily forecasts and explains when forecast data is unavailable. |
 | Budget | Brings together budget summaries, category allocations, admission costs, and personal expenses. |
-| Packing | Provides an equipment checklist with packed-item tracking. |
-| My trips | Keeps drafts and itineraries associated with your account. |
+| Packing | Provides a checklist, reviewable AI suggestions, duplicate hints, and individual or bulk packed-item tracking. |
+| Discovery and saved places | Browse the destination catalog and curated collections; save destinations and attractions for later planning. |
+| My trips | Keeps drafts and itineraries associated with your account or guest session. |
+| During the trip | Track visited places and link visit expenses to the budget. |
+| Sharing and exports | Share a read-only itinerary and download PDF or calendar exports. |
+| Accounts and language | Use Guest Mode or an account, manage your profile and preferences, and switch between English and Polish. |
 
 ## How a trip plan is built
 
@@ -99,7 +107,7 @@ flowchart TD
     API --> Domain[Services: planning, editing, budget, and weather]
     API --> DB[(MongoDB)]
     Domain --> DB
-    Domain --> AI[Gemini / OpenRouter: intent interpretation]
+    Domain --> AI[Selected AI provider: Gemini or OpenRouter]
     Domain --> Places[Overpass / Geoapify: attractions]
     Domain --> Weather[Open-Meteo: location and weather]
     Domain --> Routes[OSRM: routing]
@@ -113,19 +121,61 @@ flowchart TD
 
 **The shared package** contains types, validation schemas, and domain helpers. Both applications use the same planning and editing contracts.
 
-**MongoDB** stores accounts, sessions, trips, assistant conversations, and usage accounting for the fallback attraction provider. Trip data includes preferences, places, weather, daily schedules, equipment, and expenses.
+**MongoDB** stores accounts, sessions, trips, the destination catalog, saved destinations and attractions, guest handoffs, assistant conversations, and fallback-provider usage accounting. Trip data includes preferences, places, weather snapshots, daily schedules, visit state, equipment, and expenses.
 
 ```text
 apps/
   web/       React interface: pages, components, hooks, and API client
   api/       Fastify backend: HTTP routes, models, services, and integrations
+    e2e/     Playwright browser journeys and isolated test server
 packages/
   shared/    Shared TypeScript types, Zod schemas, and domain helpers
 ```
 
 Turborepo coordinates tasks across packages, builds dependencies in order, and caches build outputs. During development, the applications resolve the shared package to its TypeScript sources. Production builds use the compiled package.
 
+## External services and AI providers
+
+Triply combines language understanding with specialist data services. A model can interpret "less walking and more museums," while place coordinates, weather forecasts, and route geometry come from dedicated sources. Keeping these responsibilities separate lets the backend validate inputs, calculate the plan, and explain missing data.
+
+| Integration | Responsibility | Selection and failure behavior |
+| --- | --- | --- |
+| Gemini | Direct AI API for trip-description analysis, regeneration preferences, assistant intent, and packing suggestions. | Selected with `AI_PROVIDER=gemini`; uses `GEMINI_API_KEY` and an optional `AI_MODEL` override. |
+| OpenRouter | Alternative AI gateway using the same application-level request interface. | Selected with `AI_PROVIDER=openrouter`; requires `OPENROUTER_API_KEY` and an explicit `AI_MODEL`. |
+| OpenStreetMap / Overpass | Primary attraction lookup, including available place metadata. | Tries Overpass endpoints with bounded attempts; valid empty results remain empty. |
+| Geoapify | Optional attraction fallback after Overpass provider failures. | Requires its backend key, enabled configuration, and available daily credit budget; MongoDB tracks reservations and consumption. |
+| Open-Meteo | Destination geocoding and weather forecasts. | Weather snapshots have freshness, forecast-window, and retry policies; unavailable weather is shown explicitly. |
+| OSRM | Route geometry, distance, and duration. | The configured endpoint serves walking routes by default; unavailable routing falls back to marked estimates without fabricated geometry. |
+
+Only Gemini and OpenRouter are AI providers. The other integrations supply geographic and weather data. Their separate APIs add failure modes and configuration, but allow each part of the plan to use data suited to that task.
+
+### Why support two AI providers?
+
+The two adapters provide deployment choice without coupling trip features to one vendor's HTTP format. Gemini offers a direct integration; OpenRouter offers an alternative gateway and model selection. This makes it possible to change the configured provider or model when evaluating output quality, latency, availability, or cost, while keeping the planning contracts and frontend unchanged. The repository does not assume that one provider is always cheaper or better.
+
+The backend selects **one provider through configuration**. It does not call both for each request, compare their answers, or automatically switch from Gemini to OpenRouter after an error. Changing providers requires updating server configuration. This differs from the implemented Overpass-to-Geoapify attraction fallback.
+
+Both implement [`AIProvider.generate()`](apps/api/src/ai/types.ts), selected by a [provider factory](apps/api/src/ai/providers/factory.ts). The adapters use plain `fetch` with timeouts and shared error handling, rather than provider SDKs. Gemini requests structured JSON with a response schema; the OpenRouter adapter includes the schema in its prompt and extracts JSON from the response. Feature services normalize and validate the result before using it. Provider output remains untrusted input.
+
+Trip parsing, day-regeneration instructions, assistant intent, and AI packing reuse this provider boundary. They do not each introduce a separate AI vendor or SDK. API keys stay on the backend.
+
+## Key architecture decisions
+
+| Decision | Reason and tradeoff |
+| --- | --- |
+| One TypeScript monorepo with shared Zod contracts | Keeps frontend and backend types, validation, and domain helpers synchronized. Shared code must be built before consumers use its production exports. |
+| Fastify routes, domain services, and provider adapters | Routes enforce access and HTTP contracts; services own planning rules; adapters handle external formats. Provider changes can be tested without rewriting the planner or UI. |
+| AI interprets requests; backend code calculates the itinerary | Clustering, scoring, routing, scheduling, opening-hours checks, budget calculations, and quality repair remain inspectable and testable. AI supports language input and suggestions rather than being the sole source of the saved schedule. |
+| Persist trip state and provider snapshots in MongoDB | Drafts survive failed generation, and saved plans can be reloaded and edited. Weather freshness and source limitations must be tracked explicitly. |
+| MongoDB replica set for guest writes and imports | Transactions protect guest-to-account handoff from partial transfers. Local development therefore uses a single-node replica set rather than standalone MongoDB. |
+| Preview changes before applying them | Assistant edits, regenerated days, and packing suggestions are reviewable. Ownership checks, revisions, generation locks, and packing leases protect writes from stale or competing operations. |
+| Explicit degradation and bounded usage | Missing hours/prices stay unknown, route estimates are labeled, and weather failures preserve the itinerary. Guest quotas, rate limits, and Geoapify credit accounting bound external work. |
+| Session cookies with server-side identity checks | The API checks identity and resource ownership independently of frontend navigation. Client caches and pending work are isolated when switching identity. |
+| English and Polish with separate content locale | Interface translations and AI-generated trip content have explicit language handling. Translation validation catches missing keys and contract mismatches. |
+
 ## Authentication and access
+
+Visitors can browse discovery without an account and enter Guest Mode to plan trips. Guest resources belong to a server-side guest identity with configurable limits; registration or login can transfer guest data through the migration flow. Accounts support profile details, avatars, travel preferences, and password changes.
 
 Users register with an email address and password. After registration or a successful login, the backend creates a session stored in MongoDB. The browser receives a session cookie and includes it in subsequent requests.
 
@@ -167,14 +217,16 @@ Access is checked at two levels: the frontend directs unauthenticated visitors t
 | Accounts and sessions | Argon2, signed cookies, MongoDB session store | Password hashing and persistent user sessions. |
 | API protection | Official Fastify Helmet, CORS, and rate-limit plugins | Security headers, origin restrictions, and request limits. |
 | Time and availability | opening_hours, tz-lookup, date-fns/tz | Opening hours and local time zones. |
-| AI | Gemini / OpenRouter | Description and intent parsing through plain fetch, without provider SDKs. |
-| Tests | Vitest, Testing Library, jsdom, Supertest, mongodb-memory-server | Domain, interface, and API/database integration tests. |
+| AI | Gemini / OpenRouter | Configurable provider adapters for language interpretation and packing suggestions through plain fetch. |
+| Localization | i18next, react-i18next | English/Polish interface resources and content-locale handling. |
+| Exports | PDFKit, ical-generator | PDF itineraries and calendar files. |
+| Tests | Vitest, Testing Library, jsdom, Supertest, mongodb-memory-server, Playwright, axe-core | Domain, interface, API/database, browser, and accessibility checks. |
 
 ## Running locally
 
 ### Prerequisites and setup
 
-You need **Bun** (the repository specifies version 1.3.14) and **Docker with Docker Compose** for the local database. An existing MongoDB instance can also be used. AI features require a key for your chosen provider.
+You need **Bun** (the repository specifies version 1.3.14), **Node.js** (CI uses version 24 for the production and E2E API runtime), and **Docker with Docker Compose** for the local database. An existing MongoDB instance can also be used. AI features require a key for your chosen provider.
 
 Install dependencies from the repository root:
 
@@ -196,7 +248,7 @@ macOS / Linux:
 cp .env.example apps/api/.env
 ```
 
-Follow the comments in the [example configuration](.env.example) to set your own session secret and AI provider key. OpenRouter also requires an explicit model choice. If an API configuration already exists, edit it instead of overwriting it. Integration keys stay on the backend.
+Set your own session secret and selected AI provider key in the copied [example configuration](.env.example). OpenRouter also requires an explicit model choice. If an API configuration already exists, edit it instead of overwriting it. Integration keys stay on the backend.
 
 ### Start the application
 
@@ -229,7 +281,10 @@ Open the application, register an account, and describe your first trip. Vite fo
 | `bun run dev:api` | Start the backend with file watching. |
 | `bun run dev:web` | Start the frontend only. |
 | `bun run typecheck` | Check types across project packages. |
-| `bun run test` | Run API and frontend tests. |
+| `bun run test` | Run API and frontend unit/integration tests through Turborepo. |
+| `bun run test:e2e` | Build shared contracts and run isolated Playwright browser tests. |
+| `bun run typecheck:e2e` | Check browser-test types. |
+| `bun run validate:translations` | Validate English/Polish translation resources and key usage. |
 | `bun run build` | Build the shared package and both applications. |
 | `docker compose down` | Stop the database while preserving its data volume. |
 
@@ -246,14 +301,17 @@ The seed does not create accounts. It adds or updates sample trips, so running i
 
 ## Tests
 
-Tests cover planning rules and application behavior during editing, missing-data scenarios, and provider failures.
+The repository has extensive tests because a trip crosses several boundaries: uncertain AI output, external data, time-zone-dependent schedules, database writes, guest/account ownership, client caches, and browser interactions. A successful response alone does not prove that an edit preserved expenses, a failed weather refresh kept the plan intact, or a guest import moved all resources atomically.
+
+Tests cover these risks at different levels. Unit tests isolate planning rules; API/database integration tests exercise persistence and access control; component tests check interaction and recovery states; browser tests verify complete journeys through the real frontend and backend. Some behaviors appear at multiple levels because each level catches a different failure.
 
 | Level | Coverage |
 | --- | --- |
 | Domain logic | Place selection and grouping, routing, schedules, opening hours, weather, itinerary quality, pricing, and budgets. |
 | Backend integration | Planning, editing, regeneration, weather, database operations, authentication, cookies, CORS, parsing, and HTTP error contracts. |
-| Frontend | Components, hooks, generation states, itinerary editing, map, assistant, and budget. |
-| Providers | AI response interpretation and integration error handling, with mocked external calls. |
+| Frontend | Components, hooks, loading/error recovery, identity isolation, itinerary editing, map, assistant, budget, packing, and localization. |
+| Providers | AI response interpretation, malformed output, timeouts, fallback rules, retry policies, and credit accounting, with mocked external calls. |
+| Browser journeys | Authentication, guest migration, discovery, saved places, planning, editing, recovery, sharing, PDF/calendar exports, packing, mobile layouts, and accessibility/localization scenarios. |
 
 Run the main project checks:
 
@@ -275,7 +333,29 @@ bun run --cwd apps/api test
 bun run --cwd apps/web test
 ```
 
-The repository does not currently define a full browser E2E test script. The shared package has no separate test script; its usage is checked through application tests and type checking.
+### Browser tests and CI
+
+Install Chromium once, then run the browser suite from the repository root:
+
+```bash
+bunx playwright install chromium
+bun run typecheck:e2e
+bun run test:e2e
+```
+
+For a focused run or an interactive report:
+
+```bash
+bun run test:e2e apps/api/e2e/guestMigration.spec.ts
+bun run test:e2e:headed
+bun run test:e2e:report
+```
+
+Playwright starts its own API on port 4001, Vite on 5174, and a disposable MongoDB replica set. It does not reuse development servers or the development database. Browser requests reach real Fastify routes, sessions, planning services, and MongoDB. The test harness replaces external provider HTTP responses with deterministic fixtures; no paid provider keys are required. Unknown provider requests fail the fixture checks instead of silently reaching the network. This verifies application behavior reproducibly; it does not measure live AI quality or upstream availability.
+
+[GitHub Actions](.github/workflows/ci.yml) runs type checks, API/frontend tests, and production builds, plus Chromium E2E tests across four isolated shards. Browser tests use one worker per shard and no automatic retries; failures retain reports, screenshots, and traces. On Linux CI, Chromium is installed with `bunx playwright install --with-deps chromium`.
+
+The shared package has no separate test script; its contracts and helpers are exercised through application tests and type checking. Translation validation also runs as part of the frontend test/build scripts. Test totals change with the implementation, so this README describes coverage rather than treating a historical test count as a current passing result. See the [browser test guide](apps/api/e2e/README.md) and [Playwright configuration](playwright.config.ts) for harness details.
 
 ## Building for production
 
@@ -292,15 +372,15 @@ Docker Compose in this repository starts MongoDB only. Use `bun run --cwd apps/w
 
 ## Current project scope
 
-The main planning flow, accounts, saved trips, itinerary editing, assistant, budget, and equipment use the backend and persistent storage.
+Planning, accounts and guest sessions, guest migration, saved trips, destination discovery, saved destinations and attractions, itinerary editing, visit tracking, assistant conversations, expenses, and packing use the backend and persistent storage. Public sharing and PDF/calendar exports are implemented. Profile details, avatars, password changes, and travel preferences are connected to the API.
 
-The inspiration, saved-ideas, and notification screens currently use demonstration data. Some profile settings, including the password-change form, do not yet save through the API. These views show the intended interface direction but are not complete account features.
+Discovery uses a seeded destination catalog and curated collections rather than live worldwide search. Notifications still use demonstration data and client-side read state. Triply plans and organizes travel; the assistant does not perform bookings or payments. Provider coverage and missing source metadata can limit forecast, routing, opening-hours, and admission-price detail.
 
 Development uses Bun and TypeScript, keeps frontend and backend contracts synchronized, and updates this README as features change. See [AGENTS.md](AGENTS.md) for the repository's contribution rules.
 
-The [Fastify migration report](docs/step-11.3-fastify.md) records the route inventory, compatibility decisions, session persistence, and verification results.
+Implementation and verification notes are kept in [docs/audits](docs/audits). These are historical reports; the source code, package scripts, and current configuration define supported behavior.
 
-## AI Packing (Step 16B)
+## AI packing
 
 The Packing page calls the selected `AI_PROVIDER` (existing Gemini/OpenRouter plain-fetch adapters). No new provider or SDK is required. Configure its existing key/model variables to enable real generation.
 
@@ -316,7 +396,7 @@ The Packing page calls the selected `AI_PROVIDER` (existing Gemini/OpenRouter pl
 
 Deterministic coverage: `bun run --cwd apps/api test`, `bun run --cwd apps/web test --maxWorkers=2`, and `bun run test:e2e apps/api/e2e/packing.spec.ts apps/api/e2e/packingAI.spec.ts`. Browser tests run real Fastify/MongoDB requests and replace external providers only.
 
-## Smart Packing (Step 16C)
+## Smart packing
 
 - Successful generation stores only `packingGeneration.generatedAt`, `contextFingerprint` and `suggestionCount` on the existing trip. A narrow update preserves unrelated data. Existing trips without metadata simply show the initial generation action.
 - `GET /api/trips/:id/equipment/context` is a read-only owned-trip status check. Fingerprints include destination/location, trip dates/duration/travelers, pace, sorted interests, bounded saved activity context, itinerary revision, and forecast snapshot/reliability. Packing contents, checkbox states, source/reason fields, expenses, budget, notes and generic `updatedAt` are excluded. The page checks status on mount/focus and every 30 seconds; it never generates AI automatically.
