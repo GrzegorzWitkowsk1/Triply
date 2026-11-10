@@ -5,6 +5,7 @@ import { INTEREST_FILTERS, type TagValuesFilter } from "./poiCategories.js";
 import { normalizeInterests, normalizePois, type RawPoiCandidate } from "./poiFiltering.js";
 import { scorePois } from "./poiScoring.js";
 import { fetchGeoapifyPlaces } from "./geoapify.js";
+import { checkOperation, generationContext, operationDelay, operationSignal } from "./generationContext.js";
 
 const DEFAULT_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
@@ -179,7 +180,7 @@ function toAttractions(
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return operationDelay(ms);
 }
 
 async function attemptRequest(
@@ -195,7 +196,7 @@ async function attemptRequest(
         "User-Agent": USER_AGENT,
       },
       body: new URLSearchParams({ data: query }).toString(),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: operationSignal(timeoutMs),
     });
 
     if (!response.ok) {
@@ -224,6 +225,7 @@ async function attemptRequest(
 
     return { ok: true, payload };
   } catch (error) {
+    checkOperation();
     const name = error instanceof Error ? error.name : String(error);
 
     return { ok: false, retryable: classifyExternalFailure(undefined, error) !== "cancelled", reason: `request failed (${name})` };
@@ -236,6 +238,7 @@ async function fetchAttractionsFromProviders(
   interests: readonly string[],
   options: FetchAttractionsOptions = {},
 ): Promise<TripAttraction[] | null> {
+  checkOperation();
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return null;
   }
@@ -252,12 +255,16 @@ async function fetchAttractionsFromProviders(
   let lastReason = "not attempted";
   const notBefore = new Map<string, number>();
   let providerFailed = false;
-  const fallback = () => providerFailed
-    ? fetchGeoapifyPlaces(lat, lng, normalized, { locale: contentLocale(options.locale), weather, radiusMeters: ATTRACTIONS_RADIUS_M, limit: ATTRACTIONS_RESULT_CAP })
-    : Promise.resolve(null);
+  const fallback = () => {
+    checkOperation();
+    return providerFailed
+      ? fetchGeoapifyPlaces(lat, lng, normalized, { signal: generationContext.getStore()?.signal, locale: contentLocale(options.locale), weather, radiusMeters: ATTRACTIONS_RADIUS_M, limit: ATTRACTIONS_RESULT_CAP })
+      : Promise.resolve(null);
+  };
 
   // Give every provider a chance before retrying any of them.
   for (let attempt = 0; attempt <= backoffMs.length; attempt += 1) {
+    checkOperation();
     if (attempt > 0) {
       const delay = backoffMs[attempt - 1] ?? 0;
       if (Date.now() - startedAt + delay >= totalBudgetMs) break;
@@ -280,6 +287,7 @@ async function fetchAttractionsFromProviders(
 
       const providerBudget = Math.max(1, Math.floor(remaining / (endpoints.length - endpointIndex)));
       const outcome = await attemptRequest(endpoint, query, Math.min(timeoutMs, providerBudget));
+      checkOperation();
 
       if (outcome.ok) {
         if (endpointIndex > 0 || attempt > 0) {
@@ -332,6 +340,9 @@ export function fetchAttractions(
   interests: readonly string[],
   options: FetchAttractionsOptions = {},
 ): Promise<TripAttraction[] | null> {
+  checkOperation();
+  // Independent cancellation authority must not be inherited by another request.
+  if (generationContext.getStore()) return fetchAttractionsFromProviders(lat, lng, interests, options);
   // Explicit transport options are used by isolated provider tests and callers.
   if (options.endpoints || options.timeoutMs !== undefined || options.backoffMs || options.totalBudgetMs !== undefined) {
     return fetchAttractionsFromProviders(lat, lng, interests, options);

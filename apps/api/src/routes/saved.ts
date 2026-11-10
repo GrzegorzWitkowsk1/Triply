@@ -1,3 +1,4 @@
+import { guestWrite } from "../middleware/guestActivity.js";
 import type { FastifyInstance } from "fastify";
 import { catalogDestinationSchema, destinationIdSchema, saveDestinationSchema } from "@triply/shared";
 import { DestinationModel } from "../models/Destination.js";
@@ -26,7 +27,7 @@ export function registerSavedRoutes(app: FastifyInstance): void {
     if (!catalogDestinationSchema.safeParse(await DestinationModel.findOne({ id: destinationId }).lean().exec()).success) return reply.code(404).send({ code: "DESTINATION_NOT_FOUND", error: "Destination is no longer available." });
     const filter = { ...owner(req), destinationId };
     try {
-      await SavedDestinationModel.updateOne(filter, { $setOnInsert: { ...filter, createdAt: new Date() } }, { upsert: true }).exec();
+      await guestWrite(session => SavedDestinationModel.updateOne(filter, { $setOnInsert: { ...filter, createdAt: new Date() } }, { upsert: true }).session(session).exec());
     } catch (error) {
       if (!(error && typeof error === "object" && "code" in error && error.code === 11000)) throw error;
     }
@@ -35,7 +36,7 @@ export function registerSavedRoutes(app: FastifyInstance): void {
   app.delete<{ Params: { destinationId: string } }>("/saved/destinations/:destinationId", async (req, reply) => {
     const parsed = destinationIdSchema.safeParse(req.params.destinationId);
     if (!parsed.success) return reply.code(400).send({ code: "INVALID_DESTINATION_ID", error: "Provide a canonical destination ID." });
-    await SavedDestinationModel.deleteOne({ ...owner(req), destinationId: parsed.data }).exec();
+    await guestWrite(session => SavedDestinationModel.deleteOne({ ...owner(req), destinationId: parsed.data }).session(session).exec());
     return reply.code(204).send();
   });
 }

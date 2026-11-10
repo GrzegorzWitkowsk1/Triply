@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import request from "supertest";
 import { createHmac, createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
@@ -9,7 +9,7 @@ import { createApp } from "./app.js";
 import { env } from "./config/env.js";
 import { UserModel } from "./models/User.js";
 
-let mongod: MongoMemoryServer;
+let mongod: MongoMemoryReplSet;
 let app: Awaited<ReturnType<typeof createApp>>;
 const origin = env.WEB_ORIGIN;
 const credentials = { email: "contract@example.com", password: "Password123!Aa" };
@@ -26,7 +26,7 @@ const sessions = () => mongoose.connection.getClient().db().collection<{ _id: st
   }
 
 beforeAll(async () => {
-  mongod = await MongoMemoryServer.create();
+  mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(mongod.getUri());
   app = await createApp();
 }, 120_000);
@@ -73,7 +73,7 @@ describe("HTTP framework compatibility", () => {
   it("preserves health and security headers without creating an anonymous session", async () => {
     const result = await request(app.server).get("/health");
     expect(result.status).toBe(200);
-    expect(result.body).toEqual({ status: "ok", db: "connected", uptime: expect.any(Number), timestamp: expect.any(String), version: "0.1.0" });
+    expect(result.body).toEqual({ status: "ok", db: "connected" });
     expect(result.headers["x-content-type-options"]).toBe("nosniff");
     expect(result.headers["x-powered-by"]).toBeUndefined();
     expect(result.headers["set-cookie"]).toBeUndefined();

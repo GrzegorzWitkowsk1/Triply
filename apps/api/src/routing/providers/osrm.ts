@@ -59,7 +59,7 @@ function readNumberOrNull(value: unknown): number | null {
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return operationDelay(ms);
 }
 
 function parseMatrix(value: unknown, size: number): (number | null)[][] | null {
@@ -148,7 +148,7 @@ export function createOsrmProvider(config: OsrmConfig): RoutingProvider {
     try {
       const response = await fetch(url, {
         headers: { "User-Agent": USER_AGENT },
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: operationSignal(timeoutMs),
       });
 
       if (!response.ok) {
@@ -169,6 +169,7 @@ export function createOsrmProvider(config: OsrmConfig): RoutingProvider {
 
       return { ok: true, payload };
     } catch (error) {
+      checkOperation();
       const name = error instanceof Error ? error.name : String(error);
 
       return { ok: false, retryable: classifyExternalFailure(undefined, error) !== "cancelled", reason: `request failed (${name})`, error };
@@ -182,6 +183,7 @@ export function createOsrmProvider(config: OsrmConfig): RoutingProvider {
     let retryAfterMs = 0;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      checkOperation();
       if (attempt > 0) {
         const delay = Math.max(backoffMs[attempt - 1] ?? 0, retryAfterMs);
         if (Date.now() - startedAt + delay >= totalBudgetMs) break;
@@ -199,6 +201,7 @@ export function createOsrmProvider(config: OsrmConfig): RoutingProvider {
       const requestBudget = totalBudgetMs - (Date.now() - startedAt);
       if (requestBudget <= 0) throw routingConnectionError(new Error("Request budget exhausted"), "osrm", mode);
       const outcome = await attemptRequest(url, Math.min(config.timeoutMs, requestBudget));
+      checkOperation();
 
       if (outcome.ok) {
         return outcome.payload;
@@ -303,3 +306,4 @@ export function createOsrmProvider(config: OsrmConfig): RoutingProvider {
     },
   };
 }
+import { checkOperation, operationDelay, operationSignal } from "../../services/generationContext.js";

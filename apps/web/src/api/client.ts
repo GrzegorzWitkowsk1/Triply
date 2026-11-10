@@ -1,6 +1,4 @@
-interface ErrorResponse {
-  error?: string;
-}
+import type { z } from "zod";
 
 export class ApiError extends Error {
   readonly code?: string;
@@ -16,7 +14,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function parseResponse<T>(response: Response): Promise<T> {
+export async function parseResponse<T>(response: Response, schema?: z.ZodType<T>): Promise<T> {
   const body =
     response.status === 204 ? null : await response.json().catch(() => null);
 
@@ -24,7 +22,7 @@ export async function parseResponse<T>(response: Response): Promise<T> {
     if (response.status === 401) window.dispatchEvent(new CustomEvent("triply:session-expired", { detail: body?.code }));
     const message =
       body && typeof body === "object" && "error" in body
-        ? (body as ErrorResponse).error
+        ? typeof body.error === "string" ? body.error : undefined
         : undefined;
     throw new ApiError(
       message ?? "The request could not be completed.",
@@ -33,10 +31,13 @@ export async function parseResponse<T>(response: Response): Promise<T> {
     );
   }
 
+  if (schema && !schema.safeParse(body).success) {
+    throw new ApiError("The server returned an invalid response.", 502, { code: "invalid-response" });
+  }
   return body as T;
 }
 
-export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, init: RequestInit = {}, schema?: z.ZodType<T>): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
 
@@ -50,7 +51,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     credentials: init.credentials ?? "include",
   });
 
-  return parseResponse<T>(response);
+  return parseResponse<T>(response, schema);
 }
 
 /** Bound short catalog/Saved requests without changing long-running generation requests. */

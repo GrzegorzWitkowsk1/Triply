@@ -318,7 +318,9 @@ export default function TripPage() {
   });
   const visitStatus = (itemId?: string) => trip.data.visits?.find(record => record.itineraryItemId === itemId)?.status ?? "planned";
   const nextJourneyItem = journeyEntries.find(({ item }) => visitStatus(item.itineraryItemId) === "planned");
-  const budgetData = journeyBudget.query.data ?? trip.data.budgetData;
+  const embeddedBudget = trip.data.budgetData;
+  const budgetData = embeddedBudget && embeddedBudget.revision > (journeyBudget.query.data?.revision ?? -1)
+    ? embeddedBudget : journeyBudget.query.data ?? embeddedBudget;
   const editError = itineraryEdit.error ? localizedError(itineraryEdit.error) : null;
   const submitEdit = (operation: ItineraryEditOperation) => {
     if (!id || editLock.current || itineraryEdit.isPending || regenerateOpen || regenerate.isPending || applyRegeneration.isPending) return;

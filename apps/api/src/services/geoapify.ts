@@ -50,6 +50,7 @@ export function normalizeGeoapifyPlaces(payload: PlacesResponse, lat: number, ln
 }
 
 export async function fetchGeoapifyPlaces(lat: number, lng: number, interests: readonly string[], options: GeoapifyOptions = {}): Promise<TripAttraction[] | null> {
+  checkOperation();
   if (!env.GEOAPIFY_ENABLED || !env.GEOAPIFY_API_KEY || options.signal?.aborted) return null;
   const limit = options.limit ?? 60;
   const radius = options.radiusMeters ?? 5000;
@@ -64,6 +65,7 @@ export async function fetchGeoapifyPlaces(lat: number, lng: number, interests: r
   console.info({ event: "geoapify-fallback", date: new Date().toISOString().slice(0, 10), dailyLimit: env.GEOAPIFY_DAILY_CREDIT_LIMIT });
   // At most two attempts; no quota/auth retries, redirects, pagination, or unmetered attempts.
   for (let attempt = 0; attempt < 2; attempt++) {
+    checkOperation();
     if (options.signal?.aborted) return null;
     const reservation = await reserveGeoapifyCredits(credits, env.GEOAPIFY_DAILY_CREDIT_LIMIT);
     if (!reservation) return null;
@@ -97,7 +99,8 @@ export async function fetchGeoapifyPlaces(lat: number, lng: number, interests: r
     await settleGeoapifyCredits(reservation, payload ? estimateGeoapifyCredits(Math.max(1, payload.features.length)) : credits);
     if (payload) return normalizeGeoapifyPlaces(payload, lat, lng, interests, options);
     if (retryDelay === null || attempt === 1 || options.signal?.aborted) return null;
-    await new Promise(resolve => setTimeout(resolve, retryDelay));
+    await operationDelay(retryDelay);
   }
   return null;
 }
+import { checkOperation, operationDelay } from "./generationContext.js";

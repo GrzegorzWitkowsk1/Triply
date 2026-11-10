@@ -11,6 +11,7 @@ import { TripModel } from "../models/Trip.js";
 import { getSessionGuest, newSession, regenerateSession, saveSession, setSessionUserId, storageId } from "../config/session.js";
 import { sessionContents } from "../config/mongoSession.js";
 import { currentUserId } from "../middleware/auth.js";
+import { recoverGuestActivity } from "../middleware/guestActivity.js";
 
 export const MIGRATION_WINDOW_MS = 15 * 60_000;
 const hashSession = (id: string) => createHash("sha256").update(id).digest("hex");
@@ -88,6 +89,10 @@ export async function migrationStatus(request: FastifyRequest): Promise<GuestMig
   if (!filter) return { status: "none" };
   let context = await handoffs().findOne(filter);
   if (!context) return { status: "expired" };
+  if (context.state === "pending") {
+    await recoverGuestActivity(context._id);
+    context = (await handoffs().findOne(filter))!;
+  }
   if (context.state === "completed") return { status: "completed", ...receipt(context) };
   if (context.state === "discarded") return { status: context.empty ? "none" : "discarded" };
   if (context.state === "expired" || !context.expiresAt || context.expiresAt.getTime() <= Date.now()) {
@@ -115,6 +120,8 @@ export async function confirmMigration(request: FastifyRequest): Promise<GuestMi
   if (!filter) throw new MigrationError("There is no guest import available in this sign-in session.", 403);
   const transaction = await mongoose.startSession();
   try {
+    const source = await handoffs().findOne(filter);
+    if (source?.state === "pending") await recoverGuestActivity(source._id);
     for (let attempt = 0; ; attempt++) {
       try {
         return await transaction.withTransaction(async () => {

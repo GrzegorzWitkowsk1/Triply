@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import type { ItineraryDay, ItineraryEditRequest, TripDetail, TripExpense } from "@triply/shared";
 import TripPage from "./TripPage";
+import { installTripRecovery } from "../query/recovery";
 
 vi.mock("../components/trip/TripAssistant", () => ({ default: () => null }));
 vi.mock("../components/trip/TripMap", () => ({ default: ({ stops, geometry, active, statuses, stopNames, stopIndexes, onSelect }: { stops: number[][]; geometry: number[][] | null; active: number; statuses?: string[]; stopNames?: string[]; stopIndexes?: number[]; onSelect: (index: number) => void }) =>
@@ -133,7 +134,8 @@ beforeEach(() => {
       const itemId = input.split("/visits/")[1].split("/")[0];
       const { status } = input.endsWith("/expense/retry") ? { status: trip.visits?.find(record => record.itineraryItemId === itemId)?.status ?? "planned" } : JSON.parse(String(init?.body));
       trip.visits = (trip.visits ?? []).filter(record => record.itineraryItemId !== itemId);
-      if (status !== "planned") trip.visits.push({ itineraryItemId: itemId, status, updatedAt: "2026-11-05T12:00:00Z" });
+      if (status !== "planned") trip.visits.push({ itineraryItemId: itemId, status, updatedAt: "2026-11-05T12:00:00Z",
+        ...(status === "visited" ? { visitedAt: "2026-11-05T12:00:00Z" } : { skippedAt: "2026-11-05T12:00:00Z" }) });
       trip.visitRevision = (trip.visitRevision ?? 0) + 1;
       if (automaticAmount && status === "visited") {
         trip.pendingVisitExpenseItemIds = automaticFailure ? [itemId] : [];
@@ -157,7 +159,7 @@ beforeEach(() => {
       return Response.json({ candidates, warnings: [] });
     }
     if (input.endsWith("/budget")) return Response.json(budgetResponse());
-    if (input === "/api/trips/trip-1") return Response.json(structuredClone(trip));
+    if (input.split("?")[0] === "/api/trips/trip-1") return Response.json(structuredClone(trip));
     return Response.json([]);
   }));
   client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -186,6 +188,71 @@ function enableJourneyAccount() {
   client.setQueryData(["journey-preferences", "user-1"], { preferences: { promptForExpenseAfterVisit: journeyEnabled }, revision: journeyRevision });
 }
 const promptRegion = () => screen.queryByRole("region", { name: "Add an expense for this visit?" });
+
+describe("tab recovery with the real Trip and Budget views", () => {
+  it.each(["deleted", "malformed"])("hides cached authoritative controls when recovery reports a %s trip", async failure => {
+    renderPage(); await waitFor(() => expect(client.isFetching()).toBe(0));
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) => String(input).includes("snapshot=true")
+      ? failure === "deleted" ? Response.json({ error: "Trip not found" }, { status: 404 }) : Response.json({ id: "trip-1", itinerary: {} })
+      : original(input, init));
+    const stop = installTripRecovery(client);
+    try {
+      window.dispatchEvent(new Event("focus"));
+      await screen.findByText(failure === "deleted" ? "This trip couldn't be found" : "The server returned an invalid response. Please try again.");
+      expect(screen.queryByRole("button", { name: "Edit Museum" })).toBeNull();
+      if (failure === "malformed") {
+        expect(client.getQueryData<TripDetail>(["trips", "trip-1"])!.itinerary!.days).toHaveLength(2);
+      }
+    } finally { stop(); }
+  });
+
+  it("A/C/D: focus recovers visits, editing locks, automatic expenses and Journey totals together", async () => {
+    budgetCurrency = "EUR";
+    renderPage();
+    await screen.findByRole("button", { name: "Edit Museum" });
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    const initialSnapshots = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes("snapshot=true")).length;
+    const stop = installTripRecovery(client);
+    try {
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+      trip.visitRevision = 1;
+      const itemId = trip.itinerary!.days[0].activities[0].itineraryItemId!;
+      trip.visits = [{ itineraryItemId: itemId, status: "visited", visitedAt: "2026-11-07T12:00:00Z", updatedAt: "2026-11-07T12:00:00Z" }];
+      budgetExpenses = [{ id: "automatic-ticket", itineraryItemId: itemId, title: "Admission elsewhere", category: "attractions",
+        amountMinor: 2500, currency: "EUR", type: "actual", date: null, dayId: "1", attractionId: "node/1", replacesAdmission: false,
+        note: null, createdAt: "2026-11-07T12:00:00Z", updatedAt: "2026-11-07T12:00:00Z",
+        automaticSource: { type: "visit_admission", itineraryItemId: itemId, unit: "per_person", participants: 1, unitAmountMinor: 2500, postedAmountMinor: 2500, currency: "EUR" } }];
+      budgetRevision = 1; trip.budgetData = budgetResponse();
+      window.dispatchEvent(new Event("focus")); document.dispatchEvent(new Event("visibilitychange"));
+      await waitFor(() => expect((screen.getByRole("button", { name: "Edit Museum" }) as HTMLButtonElement).disabled).toBe(true));
+      expect((screen.getByRole("button", { name: "Reorder Museum" }) as HTMLButtonElement).disabled).toBe(true);
+      await screen.findByText("Admission elsewhere");
+      expect(client.getQueryData<{ revision: number; expenses: unknown[] }>(["trips", "trip-1", "budget"])).toMatchObject({ revision: 1, expenses: [expect.objectContaining({ id: "automatic-ticket" })] });
+      fireEvent.click(screen.getByRole("button", { name: "Journey mode" }));
+      await screen.findByRole("button", { name: "Next: Park" });
+      expect(screen.getByText("Trip: €25.00")).toBeTruthy();
+      expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes("snapshot=true"))).toHaveLength(initialSnapshots + 1);
+    } finally { stop(); }
+  });
+
+  it("B/C: a storage notification refreshes Budget without duplicate expenses and retains the authoritative revision", async () => {
+    vi.stubGlobal("BroadcastChannel", undefined);
+    budgetCurrency = "EUR";
+    renderPage(); await screen.findByRole("heading", { name: "Trip budget & expenses" });
+    const stop = installTripRecovery(client);
+    try {
+      budgetExpenses = [{ id: "external", title: "External ticket", category: "attractions", amountMinor: 1200, currency: "EUR", type: "actual",
+        date: null, dayId: null, attractionId: null, replacesAdmission: false, note: null, createdAt: "2026-11-07T12:00:00Z", updatedAt: "2026-11-07T12:00:00Z" }];
+      budgetRevision = 9;
+      window.dispatchEvent(new StorageEvent("storage", { key: "triply:mutable-data:v1", newValue: "nonce" }));
+      await screen.findByText("External ticket");
+      expect(screen.getAllByText("External ticket")).toHaveLength(1);
+      expect(screen.getByLabelText("Total expenses and budget").textContent).toContain("€12.00");
+      expect(client.getQueryData<{ revision: number }>(["trips", "trip-1", "budget"])!.revision).toBe(9);
+    } finally { stop(); }
+  });
+});
 
 describe("Plan / Journey execution", () => {
   it("corrects an automatic expense through Budget and preserves entered values on save failure", async () => {
@@ -688,7 +755,7 @@ describe("TripPage manual editing", () => {
     expect(await screen.findByRole("button", { name: /Museum.*Culture/ })).toBeTruthy();
     expect(JSON.parse(screen.getByTestId("map").textContent!).stops).toHaveLength(2);
     expect(screen.queryByText("Itinerary saved.")).toBeNull();
-    if (failure.status === 409) await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([input]) => input === "/api/trips/trip-1").length).toBeGreaterThan(0));
+    if (failure.status === 409) await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).split("?")[0] === "/api/trips/trip-1").length).toBeGreaterThan(0));
   });
 
   it("searches candidate metadata, prevents selecting scheduled places and discovers more", async () => {

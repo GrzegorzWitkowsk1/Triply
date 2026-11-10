@@ -5,6 +5,7 @@ import type { TripDetail } from "@triply/shared";
 import { ApiError } from "../api/client";
 import { confirmTrip, generateTrip, getTrip } from "../api/trips";
 import { TRIPS_KEY, tripQueryKey } from "./useTrips";
+import { cacheConfirmedTrip } from "../query/confirmedTrip";
 
 export function useConfirmTrip() {
   const queryClient = useQueryClient();
@@ -12,8 +13,8 @@ export function useConfirmTrip() {
   return useMutation({
     onSettled: () => { void queryClient.invalidateQueries({ queryKey: GUEST_USAGE_KEY }); },
     mutationFn: (id: string) => confirmTrip(id),
-    onSuccess: (trip) => {
-      queryClient.setQueryData(tripQueryKey(trip.id), trip);
+    onSuccess: async (trip) => {
+      if (!await cacheConfirmedTrip(queryClient, trip)) return;
       void queryClient.invalidateQueries({ queryKey: TRIPS_KEY });
     },
   });
@@ -25,8 +26,8 @@ export function useGenerateTrip() {
   return useMutation({
     onSettled: () => { void queryClient.invalidateQueries({ queryKey: GUEST_USAGE_KEY }); },
     mutationFn: generateTripOnce,
-    onSuccess: (trip) => {
-      queryClient.setQueryData(tripQueryKey(trip.id), trip);
+    onSuccess: async (trip) => {
+      if (!await cacheConfirmedTrip(queryClient, trip)) return;
       void queryClient.invalidateQueries({ queryKey: TRIPS_KEY });
     },
     onError: (_error, id) => {

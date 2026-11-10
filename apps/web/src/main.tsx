@@ -8,15 +8,20 @@ import App from "./App";
 import { queryClient } from "./query/queryClient";
 import "./styles.css";
 import { ToastProvider } from "./components/ToastProvider";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
+import { TripRecovery } from "./query/TripRecovery";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <LocaleTheme>
-        <AuthProvider>
-          <ToastProvider><App /></ToastProvider>
-        </AuthProvider>
-      </LocaleTheme>
+      <TripRecovery />
+      <AppErrorBoundary>
+        <LocaleTheme>
+          <AuthProvider>
+            <ToastProvider><App /></ToastProvider>
+          </AuthProvider>
+        </LocaleTheme>
+      </AppErrorBoundary>
     </QueryClientProvider>
   </StrictMode>
 );

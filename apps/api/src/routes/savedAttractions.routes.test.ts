@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { createHash } from "node:crypto";
 import { createApp } from "../app.js";
 import { env } from "../config/env.js";
@@ -11,7 +11,7 @@ import { toTripDetail } from "../services/tripDraft.js";
 import { savedAttractionSnapshotSchema, type TripAttraction } from "@triply/shared";
 import { SEED_FIXTURES } from "../seed/fixtures.js";
 vi.mock("../middleware/rateLimit.js", () => ({ createLimiters: () => ({ auth: async () => {}, planning: async () => {} }) }));
-let mongo: MongoMemoryServer;
+let mongo: MongoMemoryReplSet;
 let app: Awaited<ReturnType<typeof createApp>>;
 let address = 0;
 const origin = env.WEB_ORIGIN;
@@ -34,7 +34,7 @@ async function trip(owner: Identity, places: TripAttraction[] = [place]) {
       stops: places.map(p => ({ ...p, score: null })), segments: [], totalVisitMinutes: 60, totalTravelMinutes: 0, totalDistanceMeters: 0, partiallyEstimated: false, warnings: [] }], unscheduled: [] } });
 }
 const save = (owner: Identity, tripId: string, attractionKey = "osm:node:123") => app.inject({ method: "POST", url, headers: owner.headers, payload: { tripId, attractionKey } });
-beforeAll(async () => { mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri()); app = await createApp(); vi.stubGlobal("fetch", vi.fn(() => { throw new Error("External requests forbidden"); })); }, 120_000);
+beforeAll(async () => { mongo = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: "wiredTiger" } }); await mongoose.connect(mongo.getUri()); app = await createApp(); vi.stubGlobal("fetch", vi.fn(() => { throw new Error("External requests forbidden"); })); }, 120_000);
 afterAll(async () => { vi.unstubAllGlobals(); await app?.close(); await mongoose.disconnect(); await mongo?.stop(); });
 describe("saved attractions", () => {
   it.each(["user", "guest"] as const)("%s persists trusted snapshots, batches status, and safely removes", async kind => {

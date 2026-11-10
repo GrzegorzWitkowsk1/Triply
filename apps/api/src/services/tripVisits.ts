@@ -1,3 +1,4 @@
+import { guestWrite } from "../middleware/guestActivity.js";
 import { itineraryItemIdSchema, updateVisitSchema, type VisitStatus, type VisitProgress, type AutomaticExpenseResult } from "@triply/shared";
 import { automaticAdmissionExpense, reconcileVisitExpense } from "./automaticVisitExpenses.js";
 import { TripModel, type TripDocument } from "../models/Trip.js";
@@ -30,10 +31,10 @@ export async function ensureTripItemIdentities(trip: TripDocument): Promise<Trip
     break;
   }
   const version = trip.itineraryVersion ?? 0;
-  const updated = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
+  const updated = await guestWrite(session => TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
     ...identityGuard,
     $or: [{ itineraryVersion: version }, ...(version === 0 ? [{ itineraryVersion: { $exists: false } }] : [])],
-  }, { $set: { itinerary, itineraryVersion: version } }, { new: true, runValidators: true }).exec();
+  }, { $set: { itinerary, itineraryVersion: version } }, { new: true, runValidators: true }).session(session).exec());
   if (updated) return updated;
   const current = await TripModel.findOne({ _id: trip._id, ...ownerFilter(storedOwner(trip)) }).exec();
   if (!current) throw new ItineraryEditError("Trip not found", 404);
@@ -64,13 +65,13 @@ export async function updateTripVisit(tripId: string, owner: string, itemId: str
     if (status !== "planned") visits.push({ itineraryItemId: itemId, status, updatedAt: now,
       ...(status === "visited" ? { visitedAt: now } : { skippedAt: now }) });
     const revision = trip.visitRevision ?? 0;
-    const updated = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(owner), status: "ready",
+    const updated = await guestWrite(session => TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(owner), status: "ready",
       itineraryVersion: trip.itineraryVersion,
       $or: [{ visitRevision: revision }, ...(revision === 0 ? [{ visitRevision: { $exists: false } }] : [])],
       $and: [{ $or: [{ budgetRevision: trip.budgetRevision ?? 0 }, ...(!trip.budgetRevision ? [{ budgetRevision: { $exists: false } }] : [])] }],
     }, { $set: { visits, automaticAdmissions }, $inc: { visitRevision: 1 },
       ...(status === "visited" || existing?.status === "visited" ? { $addToSet: { expensePromptedItemIds: itemId } } : {}),
-    }, { new: true, runValidators: true }).exec();
+    }, { new: true, runValidators: true }).session(session).exec());
     if (updated) {
       if (automaticAdmissions.some(receipt => receipt.itineraryItemId === itemId && receipt.state === "pending")) return reconcileVisitExpense(tripId, owner, itemId);
       return { trip: updated, ...(firstVisit && offerExpense && !automatic ? { expensePromptItemId: itemId } : {}) };

@@ -20,6 +20,9 @@ it("fails closed on a standalone database without partial ownership changes", as
   await SavedDestinationModel.create({ ...owner, destinationId: "city-001" });
   await SavedAttractionModel.create({ ...owner, attractionKey: "osm:node:1", provider: "overpass", snapshot: { name: "Museum", category: "culture", coordinates: { lat: 1, lng: 2 } } });
   const before = await TripModel.collection.find({}).toArray();
+  const deletion = await app.inject({ method: "DELETE", url: `/api/trips/${before[0]!._id}`, headers: { origin: env.WEB_ORIGIN, cookie } });
+  expect(deletion.statusCode).toBe(503);
+  expect(await TripModel.collection.find({}).toArray()).toEqual(before);
   const registered = await app.inject({ method: "POST", url: "/api/auth/register", headers: { origin: env.WEB_ORIGIN, cookie }, payload: { email: "standalone@example.com", password: "Password123!Aa" } });
   expect(registered.statusCode).toBe(201);
   const authenticated = String(registered.headers["set-cookie"]).split(";")[0];

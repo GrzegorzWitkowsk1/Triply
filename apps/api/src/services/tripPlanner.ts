@@ -47,6 +47,7 @@ export interface PlanTripResult<T extends SchedulablePoi = SchedulablePoi>
 export async function planTrip<T extends SchedulablePoi = SchedulablePoi>(
   input: PlanTripInput<T>,
 ): Promise<PlanTripResult<T>> {
+  checkOperation();
   const clustering = clusterPois<T>(input.pois, {
     days: input.durationDays,
     pace: input.pace,
@@ -55,6 +56,7 @@ export async function planTrip<T extends SchedulablePoi = SchedulablePoi>(
   const routing = await buildTripRouting<T>(clustering, input.routing ?? {});
   const openingConflicts: DailySchedulingResult<T>["unscheduledPlaces"] = [];
   for (let index = 0; index < routing.dayRoutes.length; index++) {
+    checkOperation();
     const improved = await improveOpeningHoursRoute(routing.dayRoutes[index], {
       ...input, travelMode: routing.mode, start: input.routing?.start,
     }, { ...input.routing, mode: routing.mode, returnToStart: input.routing?.returnToStart ?? routing.dayRoutes[index].returnsToStart,
@@ -100,3 +102,4 @@ export async function planTrip<T extends SchedulablePoi = SchedulablePoi>(
     routing,
   };
 }
+import { checkOperation } from "./generationContext.js";

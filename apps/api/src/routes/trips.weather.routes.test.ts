@@ -174,18 +174,24 @@ describe("POST /api/trips/:id/weather/refresh", () => {
   });
 
   it("generates a real itinerary after Prague coordinate recovery and supports subsequent manual editing", async () => {
+    // Generation commit expiry is also checked by MongoDB's real server clock.
+    const generationNow = new Date(vi.getRealSystemTime() + 60_000);
+    vi.setSystemTime(generationNow);
+    const today = generationNow.toISOString().slice(0, 10);
+    const tomorrow = addDays(today, 1);
     const { agent, trip } = await setup();
     const places = stops.map((p, index) => ({ ...p, lat: 50.08 + index * .001, lng: 14.43, visitDurationMinutes: 30 }));
     await TripModel.collection.updateOne({ _id: trip._id }, { $set: {
       status: "draft", itinerary: null, "analysis.destination": "Prague", "analysis.country": "Czech Republic", "analysis.location": {},
-      attractions: places, attractionsFetchedAt: NOW, attractionsQuery: { lat: 50.08, lng: 14.43, interests: ["culture"] },
+      "analysis.startDate": today, "analysis.endDate": tomorrow,
+      attractions: places, attractionsFetchedAt: generationNow, attractionsQuery: { lat: 50.08, lng: 14.43, interests: ["culture"] },
     } });
     const actual = await vi.importActual<typeof import("../services/tripPlanner.js")>("../services/tripPlanner.js");
     vi.mocked(planTrip).mockImplementationOnce(actual.planTrip);
     const fetch = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(String(input));
       if (url.hostname === "geocoding-api.open-meteo.com") return Response.json({ results: [{ name: "Prague", country: "Czechia", country_code: "CZ", latitude: 50.08, longitude: 14.43 }] });
-      if (url.hostname === "api.open-meteo.com") return forecast();
+      if (url.hostname === "api.open-meteo.com") return forecast(22, [today, tomorrow]);
       throw new Error(`Unexpected provider request: ${url.hostname}`);
     });
     vi.stubGlobal("fetch", fetch);

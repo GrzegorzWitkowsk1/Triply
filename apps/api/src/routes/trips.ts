@@ -1,3 +1,5 @@
+import { guestWrite } from "../middleware/guestActivity.js";
+import { checkOperation, OperationStoppedError } from "../services/generationContext.js";
 import { contentLocale } from "@triply/shared";
 import { ensureTripItemIdentities, updateTripVisit, retryTripVisitExpense } from "../services/tripVisits.js";
 import { updateVisitSchema } from "@triply/shared";
@@ -97,7 +99,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
   app.delete<HttpRoute>("/trips/:id", async (req, res) => {
     const id = tripIdParam(req);
     if (!id) return res.code(404).send({ error: "Trip not found" });
-    const deleted = await TripModel.findOneAndDelete({ _id: id, ...ownerFilter(currentTripOwner(req)) }).exec();
+    const deleted = await guestWrite(session => TripModel.findOneAndDelete({ _id: id, ...ownerFilter(currentTripOwner(req)) }).session(session).exec());
     if (!deleted) return res.code(404).send({ error: "Trip not found" });
     return res.code(204).send();
   });
@@ -218,7 +220,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
 
       return res.send(toTripAnalysisResult(draft));
       } catch (error) {
-        if (reservation) await TripModel.deleteOne({ _id: reservation._id, ...ownerFilter(owner) });
+        if (reservation) await guestWrite(session => TripModel.deleteOne({ _id: reservation._id, ...ownerFilter(owner) }).session(session));
         throw error;
       }
     },
@@ -298,7 +300,7 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         return res.code(404).send({ error: "Trip not found" });
       }
 
-      const trip = await TripModel.findOne({
+      let trip = await TripModel.findOne({
         _id: new Types.ObjectId(id),
         ...ownerFilter(currentTripOwner(req)),
       }).exec();
@@ -307,9 +309,11 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         return res.code(404).send({ error: "Trip not found" });
       }
 
-      if (trip.status === "draft" || trip.status === "ready") {
+      // Frontend recovery reads persisted state without invoking provider enrichment.
+      const snapshot = (req.query as Record<string, unknown>).snapshot === "true";
+      if (!snapshot && (trip.status === "draft" || trip.status === "ready")) {
         await backfillTripWeather(trip);
-        await backfillTripAttractions(trip);
+        trip = await backfillTripAttractions(trip);
       }
 
       return res.send(toTripDetail(await ensureTripItemIdentities(trip)));
@@ -495,7 +499,6 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
 
   app.post<HttpRoute>(
     "/trips/:id/generate",
-    { preHandler: async (req, res) => { if (guestOwnerId(currentTripOwner(req))) await aiLimiter.call(app, req, res); } },
     async (req, res) => {
       const id = tripIdParam(req);
 
@@ -525,27 +528,41 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         return res.send(await guestOperation(req, "generation", async start => {
           // Claim first: a concurrent duplicate cannot start providers or consume a second allowance.
           const claimed = await claimTripForGeneration(id, userId, existing.updatedAt);
-          if (!claimed) throw Object.assign(new Error("The trip changed or is already being generated. Reload it and try again."), { status: 409, expose: true });
+          if (!claimed) throw Object.assign(new GenerationSupersededError(), { code: "GENERATION_IN_PROGRESS" });
           try {
             await start();
             const resolved = await recoverTripDestination(claimed);
             validateGenerationRequirements(resolved);
             return toTripDetail(await runTripGeneration(resolved));
           } catch (error) {
-            await markGenerationFailed(id, userId, GENERIC_GENERATION_ERROR, claimed.generation.startedAt);
-            if (error instanceof GenerationSupersededError) throw Object.assign(new Error("The trip changed during generation."), { status: 409, expose: true });
+            await markGenerationFailed(id, userId, GENERIC_GENERATION_ERROR, claimed.generation.startedAt, claimed.generation.runId);
+            checkOperation();
+            if (error instanceof OperationStoppedError) throw error;
+            if (error instanceof GenerationSupersededError) throw error;
             if (error && typeof error === "object" && "expose" in error) throw error;
             throw Object.assign(new Error(error instanceof GenerationUnavailableError ? error.message : GENERIC_GENERATION_ERROR), { status: 502, expose: true });
           }
         }));
       }
-      const resolved = await recoverTripDestination(existing);
-      // Validate the fresh snapshot too if another process completed recovery.
-      validateGenerationRequirements(resolved);
-      const claimed = await claimTripForGeneration(id, userId, resolved.updatedAt);
+      // An abandoned generating trip needs fresh authority before coordinate persistence.
+      const recoveryClaim = existing.status === "generating" ? await claimTripForGeneration(id, userId, existing.updatedAt) : null;
+      if (existing.status === "generating" && !recoveryClaim) {
+        return res.code(409).send({ code: "GENERATION_IN_PROGRESS", error: "This itinerary is already being generated." });
+      }
+      let resolved;
+      try {
+        resolved = await recoverTripDestination(recoveryClaim ?? existing);
+        // Validate the fresh snapshot too if another process completed recovery.
+        validateGenerationRequirements(resolved);
+      } catch (error) {
+        if (recoveryClaim) await markGenerationFailed(id, userId, GENERIC_GENERATION_ERROR, recoveryClaim.generation.startedAt, recoveryClaim.generation.runId);
+        throw error;
+      }
+      const claimed = recoveryClaim ? resolved : await claimTripForGeneration(id, userId, resolved.updatedAt);
 
       if (!claimed) {
         return res.code(409).send({
+          code: "GENERATION_IN_PROGRESS",
           error: "The trip changed or its itinerary is already being generated. Reload it and try again.",
         });
       }
@@ -554,13 +571,19 @@ export function registerTripRoutes(app: FastifyInstance, aiLimiter: preHandlerAs
         const generated = await runTripGeneration(claimed);
         return res.send(toTripDetail(generated));
       } catch (error) {
+        if (error instanceof OperationStoppedError) {
+          await markGenerationFailed(id, userId, error.message, claimed.generation.startedAt, claimed.generation.runId);
+          throw error;
+        }
+        checkOperation();
         if (error instanceof GenerationSupersededError) {
-          return res.code(409).send({ error: "This itinerary is being generated by another request." });
+          return res.code(409).send({ error: "This itinerary is being generated by another request.", code: error.code });
         }
         logGenerationFailure(error);
         const message = error instanceof GenerationUnavailableError ? error.message : GENERIC_GENERATION_ERROR;
-        const marked = await markGenerationFailed(id, userId, message, claimed.generation.startedAt);
+        const marked = await markGenerationFailed(id, userId, message, claimed.generation.startedAt, claimed.generation.runId);
         return res.code(marked ? 502 : 409).send({
+          ...(!marked ? { code: "GENERATION_SUPERSEDED" } : {}),
           error: marked ? message : "This itinerary is being generated by another request.",
         });
       }

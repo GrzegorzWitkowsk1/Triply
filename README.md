@@ -205,14 +205,19 @@ docker compose up -d
 bun run dev
 ```
 
-The local MongoDB service runs as a single-node replica set (`rs0`) on port 27018 so guest-to-account imports can use transactions. Its health check initializes the replica set without deleting the existing data volume. If using another MongoDB deployment, imports require a replica set or sharded cluster; standalone deployments keep trips unchanged and return a retryable import error.
+The development-only MongoDB service publishes `127.0.0.1:27018:27018` and runs as a single-node replica set (`rs0`) so guest writes and imports can use transactions. Its health check initializes the replica set without deleting the existing data volume. The advertised member address `127.0.0.1:27018` works both inside MongoDB and for the API running on the Windows host because the published and container ports match. No other Compose services connect to MongoDB. An API moved into another container would require a topology reachable from that container; its loopback address would refer to itself. Production requires separately secured MongoDB infrastructure.
+
+`GET /health` is readiness: HTTP 200 with `{"status":"ok","db":"connected"}` only when MongoDB reports a writable, session-capable replica-set primary; otherwise HTTP 503 with `{"status":"unavailable","db":"disconnected"}`. The metadata check has a one-second deadline, coalesces concurrent probes, and does not cache success. `GET /health/live` is process liveness: HTTP 200 with `{"status":"ok"}`, independent of MongoDB. Both bypass session storage and disable HTTP caching. Use `/health` for traffic/startup gates (including Playwright) and `/health/live` for process restart probes. Startup connects and initializes database resources before listening; shutdown closes readiness before draining requests.
+
+Changing Compose does not update an already running container. Check its published ports and replica-set status before relying on these guarantees. Applying the new mapping to an existing container requires an explicitly scheduled container replacement; preserve its volumes and data. Do not reset a database to reconcile an older standalone container with this configuration.
 
 | Service | Local address |
 | --- | --- |
 | Application | http://localhost:5173 |
 | API | http://localhost:4000 |
-| API and database health | http://localhost:4000/health |
-| MongoDB | Local port 27018 |
+| API readiness | http://localhost:4000/health |
+| API liveness | http://localhost:4000/health/live |
+| MongoDB | 127.0.0.1:27018 |
 
 Open the application, register an account, and describe your first trip. Vite forwards API requests to the backend, allowing both applications to work together without a separate browser-side API address. The app and account features can run without an AI key, but trip-description analysis will not work.
 

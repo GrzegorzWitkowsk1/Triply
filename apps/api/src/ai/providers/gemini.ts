@@ -74,7 +74,7 @@ export function createGeminiProvider(config: GeminiConfig): AIProvider {
                 temperature: 0.2,
               },
             }),
-            signal: request.signal ? AbortSignal.any([request.signal, AbortSignal.timeout(config.timeoutMs)]) : AbortSignal.timeout(config.timeoutMs),
+            signal: operationSignal(config.timeoutMs, request.signal),
           },
         );
       } catch (error) {
@@ -106,3 +106,4 @@ export function createGeminiProvider(config: GeminiConfig): AIProvider {
     },
   };
 }
+import { operationSignal } from "../../services/generationContext.js";

@@ -1,4 +1,5 @@
 import { tripLocationSchema, type TripLocation } from "@triply/shared";
+import { checkOperation, generationContext, operationSignal } from "./generationContext.js";
 
 const GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search";
 
@@ -17,19 +18,41 @@ function countryName(value: string): string {
   return normalized === "czech republic" ? "czechia" : normalized;
 }
 
-const pending = new Map<string, Promise<TripLocation>>();
+const pending = new Map<string, { request: Promise<TripLocation>; controller: AbortController; users: number }>();
 
 /** Search city names, then verify country and uniqueness rather than taking the first hit. */
-export function resolveDestination(city: string, country?: string | null): Promise<TripLocation> {
+export async function resolveDestination(city: string, country?: string | null): Promise<TripLocation> {
+  checkOperation();
   const key = JSON.stringify([normalize(city), countryName(country ?? "")]);
-  const existing = pending.get(key);
-  if (existing) return existing;
-  const request = lookup(city.trim(), country?.trim() || null).finally(() => pending.delete(key));
-  pending.set(key, request);
-  return request;
+  let entry = pending.get(key);
+  if (!entry) {
+    const controller = new AbortController();
+    const request = generationContext.exit(() => lookup(city.trim(), country?.trim() || null, controller.signal));
+    entry = { request, controller, users: 0 };
+    pending.set(key, entry);
+  }
+  const shared = entry;
+  shared.users++;
+  const signal = generationContext.getStore()?.signal;
+  let abort: (() => void) | undefined;
+  try {
+    return await new Promise<TripLocation>((resolve, reject) => {
+      abort = () => reject(signal?.reason);
+      signal?.addEventListener("abort", abort, { once: true });
+      shared.request.then(resolve, reject);
+      if (signal?.aborted) abort();
+    });
+  } finally {
+    if (abort) signal?.removeEventListener("abort", abort);
+    if (--shared.users === 0) {
+      shared.controller.abort();
+      if (pending.get(key) === shared) pending.delete(key);
+    }
+    checkOperation();
+  }
 }
 
-async function lookup(city: string, country: string | null): Promise<TripLocation> {
+async function lookup(city: string, country: string | null, signal?: AbortSignal): Promise<TripLocation> {
   if (!city) throw new DestinationResolutionError("Please select a destination before generating your trip.");
   const url = new URL(GEOCODING_URL);
   url.searchParams.set("name", city);
@@ -37,7 +60,7 @@ async function lookup(city: string, country: string | null): Promise<TripLocatio
   url.searchParams.set("language", "en");
   let results: unknown[];
   try {
-    const response = await fetch(url.toString(), { signal: AbortSignal.timeout(5_000) });
+    const response = await fetch(url.toString(), { signal: operationSignal(5_000, signal) });
     if (!response.ok) throw new Error("Provider unavailable");
     const payload: unknown = await response.json();
     if (!payload || typeof payload !== "object") throw new Error("Invalid response");
@@ -45,9 +68,11 @@ async function lookup(city: string, country: string | null): Promise<TripLocatio
     if (raw !== undefined && !Array.isArray(raw)) throw new Error("Invalid response");
     results = raw ?? [];
   } catch {
+    checkOperation();
     throw new DestinationResolutionError("Destination lookup is temporarily unavailable. Please try again.", 503);
   }
   const countryNames = new Intl.DisplayNames(["en"], { type: "region" });
+  checkOperation();
   const matches = results.filter((candidate): candidate is Record<string, unknown> => {
     if (!candidate || typeof candidate !== "object") return false;
     const row = candidate as Record<string, unknown>;

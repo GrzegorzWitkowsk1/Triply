@@ -60,6 +60,8 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
   app.decorateRequest("triplySession", null);
   app.decorate("triplySessionStore", store);
   app.addHook("preValidation", async (request) => {
+    // Probes must remain bounded and independent of cookie-backed DB access.
+    if (request.routeOptions.config.healthProbe) return;
     const cookie = request.cookies[SESSION_COOKIE_NAME];
     const unsigned = cookie?.startsWith("s:") ? signer.unsign(cookie.slice(2)) : null;
     let data = unsigned?.valid && unsigned.value ? await store.get(storageId(unsigned.value)) : null;
@@ -69,6 +71,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       : newSession();
   });
   app.addHook("onSend", async (request, reply, payload) => {
+    if (request.routeOptions.config.healthProbe) return payload;
     const session = request.triplySession;
     if (!session) return payload;
     const modified = sessionContents(session.data) !== session.savedContents;

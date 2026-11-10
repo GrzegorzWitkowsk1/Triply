@@ -4,7 +4,7 @@ services:
     container_name: triply-mongo
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27018"]
     ports:
-      - "27018:27018"
+      - "127.0.0.1:27018:27018"
     volumes:
       - mongo_data:/data/db
     restart: unless-stopped

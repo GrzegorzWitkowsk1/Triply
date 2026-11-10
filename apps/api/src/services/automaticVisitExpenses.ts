@@ -1,3 +1,4 @@
+import { guestWrite } from "../middleware/guestActivity.js";
 import { randomUUID } from "node:crypto";
 import { admissionPriceSchema, expenseCurrencySchema, currencyPrecision, LIMITS, type TripExpense, type AutomaticExpenseResult } from "@triply/shared";
 import { TripModel, type TripDocument } from "../models/Trip.js";
@@ -9,9 +10,9 @@ import { visitRevisionGuard } from "./visitedProtection.js";
 export const automaticExpenseWrites = {
   async post(trip: TripDocument, owner: string, expenses: TripExpense[], receipts: TripDocument["automaticAdmissions"]) {
     const revision = trip.budgetRevision ?? 0;
-    return TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(owner), itineraryVersion: trip.itineraryVersion,
+    return guestWrite(session => TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(owner), itineraryVersion: trip.itineraryVersion,
       $and: [visitRevisionGuard(trip), { $or: [{ budgetRevision: revision }, ...(revision === 0 ? [{ budgetRevision: { $exists: false } }] : [])] }],
-    }, { $set: { expenses, automaticAdmissions: receipts }, $inc: { budgetRevision: 1 } }, { new: true, runValidators: true }).exec();
+    }, { $set: { expenses, automaticAdmissions: receipts }, $inc: { budgetRevision: 1 } }, { new: true, runValidators: true }).session(session).exec());
   },
 };
 

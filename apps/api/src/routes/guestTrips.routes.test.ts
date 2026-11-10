@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import type { FastifyInstance } from "fastify";
 import type { TripAnalysis, ItineraryDay, RegenerationPreferences } from "@triply/shared";
 import { expenseInputSchema } from "@triply/shared";
@@ -30,7 +30,7 @@ const pool = [0, 1, 2].map(i => ({ placeId: `node/${i}`, name: `Museum ${i}`, ca
 const analysis: TripAnalysis = { destination: "Paris", country: "France", startDate: "2030-06-02", endDate: "2030-06-02", durationDays: 1, travelers: 1, budget: { amount: 500, currency: "EUR", type: "total" }, interests: ["culture"], pace: "relaxed", maxWalkingDistanceKm: 5, notes: null, location: { lat: 48.85, lng: 2.35 } };
 const day: ItineraryDay = { dayIndex: 1, date: "2030-06-02", timeZone: "Europe/Paris", activities: pool.slice(0, 2).map((p, i) => ({ type: "attraction", placeId: p.placeId, title: p.name, startTime: `2030-06-02T${9 + i}:00:00+02:00`, endTime: `2030-06-02T${9 + i}:30:00+02:00`, durationMinutes: 30 })), stops: pool.slice(0, 2), segments: [], geometry: null, warnings: [], totalVisitMinutes: 60, totalTravelMinutes: 0, totalDistanceMeters: 0, partiallyEstimated: false };
 const preferences: RegenerationPreferences = { lessWalking: false, moreFood: false, relaxedPace: true, preferIndoor: false, surpriseMe: false };
-let db: MongoMemoryServer;
+let db: MongoMemoryReplSet;
 let app: FastifyInstance;
 const origin = env.WEB_ORIGIN;
 let counter = 0;
@@ -48,7 +48,7 @@ async function seed(owner: string, ready = false) {
   draft.set({ analysis, attractions: pool, attractionsFetchedAt: new Date(), attractionsQuery: { lat: 48.85, lng: 2.35, interests: ["culture"] }, status: ready ? "ready" : "draft", ...(ready ? { itinerary: { timeZone: "Europe/Paris", routingSource: "approximation", days: [day], unscheduled: [] }, itineraryVersion: 1 } : {}) });
   return draft.save();
 }
-beforeAll(async () => { db = await MongoMemoryServer.create(); await mongoose.connect(db.getUri()); app = await (await import("../app.js")).createApp(); await TripModel.init(); }, 120_000);
+beforeAll(async () => { db = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: "wiredTiger" } }); await mongoose.connect(db.getUri()); app = await (await import("../app.js")).createApp(); await TripModel.init(); }, 120_000);
 beforeEach(() => { network++; vi.mocked(aiService.parseTrip).mockResolvedValue(analysis); vi.mocked(aiService.parseRegeneration).mockResolvedValue(preferences); });
 afterEach(async () => { vi.useRealTimers(); vi.clearAllMocks(); for (const collection of Object.values(mongoose.connection.collections)) await collection.deleteMany({}); await mongoose.connection.db!.collection("guest_usage").deleteMany({}); });
 afterAll(async () => { await app?.close(); await mongoose.disconnect(); await db?.stop(); });
@@ -160,9 +160,10 @@ describe("guest trip ownership and resource limits", () => {
     const a = await guest(); const trips = [await seed(a.owner), await seed(a.owner), await seed(a.owner)];
     expect((await call(a.cookie, "POST", `/api/trips/${trips[0].id}/generate`)).statusCode).toBe(200);
     const concurrent = await Promise.all(trips.slice(1).map(t => call(a.cookie, "POST", `/api/trips/${t.id}/generate`)));
-    expect(concurrent.map(r => r.statusCode).sort()).toEqual([200, 429]);
+    // Account-wide admission now rejects overlapping drafts before quota reservation.
+    expect(concurrent.map(r => r.statusCode).sort()).toEqual([200, 409]);
     expect(runTripGeneration).toHaveBeenCalledTimes(2);
-    const blockedTrip = trips.slice(1)[concurrent.findIndex(r => r.statusCode === 429)];
+    const blockedTrip = trips.slice(1)[concurrent.findIndex(r => r.statusCode === 409)];
     const denied = await call(a.cookie, "POST", `/api/trips/${blockedTrip.id}/generate`);
     expect(denied.json()).toMatchObject({ code: "GUEST_AI_LIMIT_REACHED", resetsAt: expect.any(String) });
     expect(denied.headers["retry-after"]).toBeDefined();

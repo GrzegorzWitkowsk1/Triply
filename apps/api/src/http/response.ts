@@ -4,6 +4,8 @@ import type { FastifyInstance } from "fastify";
 /** Preserve Express's default weak ETags and conditional GET/HEAD responses. */
 export function registerResponseCompatibility(app: FastifyInstance): void {
   app.addHook("onSend", async (request, reply, payload) => {
+    // Readiness must report its current 200/503 result, never a cached 304.
+    if (request.routeOptions.config.healthProbe) return payload;
     if (typeof payload !== "string" && !Buffer.isBuffer(payload)) return payload;
     // Express's finalhandler writes HTML directly, bypassing res.send/ETag.
     if (reply.statusCode === 404 && reply.getHeader("content-type") === "text/html; charset=utf-8") return payload;

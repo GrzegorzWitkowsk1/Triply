@@ -1,5 +1,6 @@
 {
   "networkError": "Check your connection and try again.",
+  "renderRecovery": "This view could not be displayed. Try again or return to Home. Your saved trips are still available.",
   "unexpected": "Something went wrong. Please try again.",
   "unauthorized": "Your session has expired. Sign in or enter Guest Mode again.",
   "forbidden": "You do not have permission to perform this action.",

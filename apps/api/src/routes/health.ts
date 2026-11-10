@@ -1,16 +1,22 @@
 import type { FastifyInstance } from "fastify";
 import type { HttpRoute } from "../http/types.js";
-import { isDbConnected } from "../db.js";
+import { createDbReadinessCheck } from "../db.js";
+
+declare module "fastify" {
+  interface FastifyContextConfig { healthProbe?: boolean; }
+}
 
 export function registerHealthRoutes(app: FastifyInstance): void {
-
-  app.get<HttpRoute>("/health", (_req, res) => {
-    return res.send({
-      status: "ok",
-      db: isDbConnected() ? "connected" : "disconnected",
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString(),
-      version: process.env.npm_package_version ?? "0.1.0",
+  const checkDb = createDbReadinessCheck();
+  let closing = false;
+  app.addHook("preClose", async () => { closing = true; });
+  app.get<HttpRoute>("/health", { config: { healthProbe: true } }, async (_req, res) => {
+    const ready = !closing && await checkDb() && !closing;
+    return res.header("Cache-Control", "no-store").code(ready ? 200 : 503).send({
+      status: ready ? "ok" : "unavailable", db: ready ? "connected" : "disconnected",
     });
+  });
+  app.get<HttpRoute>("/health/live", { config: { healthProbe: true } }, (_req, res) => {
+    return res.header("Cache-Control", "no-store").send({ status: "ok" });
   });
 }

@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { startServer } from "./server.js";
 
-let mongod: MongoMemoryServer;
-beforeAll(async () => { mongod = await MongoMemoryServer.create(); }, 120_000);
+let mongod: MongoMemoryReplSet;
+beforeAll(async () => { mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } }); }, 120_000);
 afterAll(async () => { await mongoose.disconnect(); await mongod?.stop(); });
 
 describe("server lifecycle", () => {

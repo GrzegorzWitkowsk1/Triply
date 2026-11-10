@@ -1,3 +1,4 @@
+import { guestWrite } from "../middleware/guestActivity.js";
 import type { FastifyInstance } from "fastify";
 import { attractionKeySchema, saveAttractionSchema, savedAttractionSnapshotSchema } from "@triply/shared";
 import { currentSavedOwner } from "../middleware/savedOwner.js";
@@ -31,7 +32,7 @@ export function registerSavedAttractionRoutes(app: FastifyInstance): void {
     if (!snapshot.success) return reply.code(400).send({ code: "INVALID_ATTRACTION_DATA", error: "This attraction has invalid saved-place data." });
     const filter = { ...currentSavedOwner(req), attractionKey: identity.attractionKey };
     try {
-      await SavedAttractionModel.updateOne(filter, { $setOnInsert: { ...filter, ...identity, snapshot: snapshot.data, createdAt: new Date() } }, { upsert: true, runValidators: true }).exec();
+      await guestWrite(session => SavedAttractionModel.updateOne(filter, { $setOnInsert: { ...filter, ...identity, snapshot: snapshot.data, createdAt: new Date() } }, { upsert: true, runValidators: true }).session(session).exec());
     } catch (error) {
       if (!(error && typeof error === "object" && "code" in error && error.code === 11000)) throw error;
     }
@@ -40,7 +41,7 @@ export function registerSavedAttractionRoutes(app: FastifyInstance): void {
   app.delete<{ Params: { attractionKey: string } }>("/saved/attractions/:attractionKey", async (req, reply) => {
     const key = attractionKeySchema.safeParse(req.params.attractionKey);
     if (!key.success) return reply.code(400).send({ code: "INVALID_ATTRACTION_KEY", error: "Provide a canonical attraction key." });
-    await SavedAttractionModel.deleteOne({ ...currentSavedOwner(req), attractionKey: key.data }).exec();
+    await guestWrite(session => SavedAttractionModel.deleteOne({ ...currentSavedOwner(req), attractionKey: key.data }).session(session).exec());
     return reply.code(204).send();
   });
 }

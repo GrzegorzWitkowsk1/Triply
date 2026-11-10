@@ -19,6 +19,7 @@ import { preparePacking } from "./services/packing.js";
 import { prepareGuestLimits } from "./services/guestLimits.js";
 import { prepareGuestHandoffs } from "./models/GuestHandoff.js";
 import { registerGuestActivity } from "./middleware/guestActivity.js";
+import { prepareResourceAdmission, registerResourceAdmission } from "./services/resourceAdmission.js";
 import { registerGuestMigrationRoutes } from "./routes/guestMigration.js";
 import { notFoundHandler } from "./middleware/notFound.js";
 import { createLimiters } from "./middleware/rateLimit.js";
@@ -66,6 +67,7 @@ export async function createApp(options: { configure?: (app: FastifyInstance) =>
       await reply.code(403).send({ error: "Request origin is not allowed" });
     }
   });
+  registerHealthRoutes(app);
   registerBodyParsing(app);
   registerResponseCompatibility(app);
   await app.register(cookie);
@@ -76,10 +78,11 @@ export async function createApp(options: { configure?: (app: FastifyInstance) =>
   await SavedDestinationModel.createIndexes();
   await SavedAttractionModel.createIndexes();
   registerGuestActivity(app);
+  await prepareResourceAdmission();
+  registerResourceAdmission(app);
   await app.register(rateLimit, { global: false, store: FixedWindowStore });
   const limits = createLimiters(app);
   options.configure?.(app);
-  registerHealthRoutes(app);
   registerDestinationRoutes(app);
   registerPublicTripRoutes(app);
   registerPublicPdfRoutes(app);

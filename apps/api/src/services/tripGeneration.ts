@@ -1,3 +1,6 @@
+import { guestWrite } from "../middleware/guestActivity.js";
+import { randomUUID } from "node:crypto";
+import { checkOperation, generationContext, GENERATION_DEADLINE_MS, OperationStoppedError } from "./generationContext.js";
 import { localizeGeneratedDay, localizeExplanation } from "./contentLanguage.js";
 import { expenseLinksForItinerary } from "./expenseLinks.js";
 import { assertNoVisited } from "./visitedProtection.js";
@@ -25,13 +28,16 @@ import { resolvePoiTimeZone } from "./openingHoursService.js";
 import { repairItinerary } from "./itineraryRepairService.js";
 import { assessTripQuality } from "./tripQualityService.js";
 
-/** A generation that has been running longer than this is considered abandoned. */
-export const STALE_GENERATION_MS = 2 * 60 * 1000;
+/** Legacy runs drain for the same bounded budget; new runs have explicit expiry. */
+export const STALE_GENERATION_MS = GENERATION_DEADLINE_MS;
 
 export const GENERIC_GENERATION_ERROR =
   "We couldn't finish generating your itinerary. Your trip details are saved, so you can try again.";
 
 export class GenerationSupersededError extends Error {
+  readonly status = 409;
+  readonly expose = true;
+  readonly code = "GENERATION_SUPERSEDED";
   constructor() {
     super("Another request has taken over itinerary generation.");
   }
@@ -59,28 +65,33 @@ export async function claimTripForGeneration(
   userId: string,
   expectedUpdatedAt?: Date,
 ): Promise<TripDocument | null> {
+  checkOperation();
   const staleBefore = new Date(Date.now() - STALE_GENERATION_MS);
+  const expiresAt = generationContext.getStore()?.deadline ?? new Date(Date.now() + GENERATION_DEADLINE_MS);
 
-  return TripModel.findOneAndUpdate(
+  return guestWrite(session => TripModel.findOneAndUpdate(
     {
       _id: new Types.ObjectId(tripId),
       ...ownerFilter(userId),
       ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
       $or: [
         { status: { $in: ["draft", "failed"] } },
-        { status: "generating", "generation.startedAt": null },
-        { status: "generating", "generation.startedAt": { $lt: staleBefore } },
+        { status: "generating", "generation.expiresAt": { $lte: new Date(Date.now()) } },
+        { status: "generating", "generation.expiresAt": null, "generation.startedAt": null },
+        { status: "generating", "generation.expiresAt": null, "generation.startedAt": { $lte: staleBefore } },
       ],
     },
     {
       $set: {
         status: "generating",
-        "generation.startedAt": new Date(),
+        "generation.startedAt": new Date(Date.now()),
+        "generation.runId": randomUUID(),
+        "generation.expiresAt": expiresAt,
         "generation.error": null,
       },
     },
     { new: true },
-  ).exec();
+  ).session(session).exec());
 }
 
 export async function markGenerationFailed(
@@ -88,14 +99,18 @@ export async function markGenerationFailed(
   userId: string,
   message: string,
   startedAt: Date | null,
+  runId: string | null | undefined,
 ): Promise<boolean> {
-  const result = await TripModel.updateOne(
+  const result = await guestWrite(session => TripModel.updateOne(
     {
       _id: new Types.ObjectId(tripId), ...ownerFilter(userId),
       status: "generating", "generation.startedAt": startedAt,
+      "generation.runId": runId ?? null,
+      $or: [{ "generation.expiresAt": null }, { "generation.expiresAt": { $gt: new Date(Date.now()) } }],
+      $expr: { $or: [{ $eq: [{ $ifNull: ["$generation.expiresAt", null] }, null] }, { $gt: ["$generation.expiresAt", "$$NOW"] }] },
     },
     { $set: { status: "failed", "generation.error": message } },
-  ).exec();
+  ).session(session).exec());
   return result.matchedCount > 0;
 }
 
@@ -200,6 +215,14 @@ export function toItineraryRecord(
 }
 
 export async function runTripGeneration(trip: TripDocument): Promise<TripDocument> {
+  const deadline = trip.generation.expiresAt ?? new Date((trip.generation.startedAt?.getTime() ?? 0) + GENERATION_DEADLINE_MS);
+  if (deadline.getTime() <= Date.now()) throw new OperationStoppedError("GENERATION_DEADLINE_EXCEEDED", 504);
+  if (!generationContext.getStore()) return generationContext.run({ deadline, signal: AbortSignal.timeout(Math.max(1, deadline.getTime() - Date.now())) }, () => generate(trip));
+  return generate(trip);
+}
+
+async function generate(trip: TripDocument): Promise<TripDocument> {
+  checkOperation();
   assertNoVisited(trip);
   const started = performance.now();
   const analysis = trip.analysis;
@@ -211,6 +234,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
 
   let stageStarted = performance.now();
   const weather = await ensureWeather(analysis, trip.weather, trip.weatherFetchedAt, trip.weatherAvailability);
+  checkOperation();
   console.info({ event: "trip-generation", stage: "weather", provider: "open-meteo", durationMs: Math.round(performance.now() - stageStarted), status: weather.availability?.status ?? (weather.days.length ? "available" : "temporarily_unavailable") });
   stageStarted = performance.now();
   const attractions = await ensureAttractions(
@@ -224,6 +248,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
   console.info({ event: "trip-generation", stage: "attractions", provider: "overpass-or-cache", durationMs: Math.round(performance.now() - stageStarted), status: attractions.query === null ? "unavailable" : "available", count: attractions.attractions.length });
 
   if (attractions.attractions.length === 0) {
+    checkOperation();
     throw new GenerationUnavailableError(
       attractions.query === null
         ? "The places service is temporarily unavailable. Your trip details are saved. Please try again in a moment."
@@ -232,6 +257,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
   }
 
   const start: Coordinates = { lat: location.lat, lng: location.lng };
+  checkOperation();
 
   stageStarted = performance.now();
   const result = await planTrip({
@@ -251,6 +277,7 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
   console.info({ event: "trip-generation", stage: "planning", durationMs: Math.round(performance.now() - stageStarted), status: "completed", routingSource: result.routing.source });
 
   const now = new Date();
+  checkOperation();
   if (!result.days.some((day) => day.activities.some((activity) => activity.type === "attraction"))) {
     throw new GenerationUnavailableError(
       "We couldn't fit any places into this itinerary. Adjust your trip details, then try again.",
@@ -266,9 +293,14 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
   let saved: TripDocument | null = null;
   // Retry only persistence when spending changes during planning; never rerun providers.
   for (let attempt = 0; attempt < 8 && !saved; attempt++) {
+    checkOperation();
     const links = expenseLinksForItinerary(expenseSnapshot, repaired.trip.itinerary?.days ?? []);
-    saved = await TripModel.findOneAndUpdate(
-      { _id: trip._id, ...ownerFilter(storedOwner(trip)), ...links.filter, status: "generating", "generation.startedAt": trip.generation.startedAt },
+    saved = await guestWrite(session => {
+      checkOperation();
+      return TripModel.findOneAndUpdate(
+      { _id: trip._id, ...ownerFilter(storedOwner(trip)), ...links.filter, status: "generating", "generation.startedAt": trip.generation.startedAt,
+        "generation.runId": trip.generation.runId, "generation.expiresAt": { $gt: new Date(Date.now()) },
+        $expr: { $gt: ["$generation.expiresAt", "$$NOW"] } },
       {
         $set: {
           weather: weather.days,
@@ -287,9 +319,12 @@ export async function runTripGeneration(trip: TripDocument): Promise<TripDocumen
         $inc: { itineraryVersion: 1, ...links.increment },
       },
       { new: true, runValidators: true },
-    ).exec();
+      ).session(session).exec();
+    });
     if (!saved) {
-      const latest = await TripModel.findOne({ _id: trip._id, ...ownerFilter(storedOwner(trip)), status: "generating", "generation.startedAt": trip.generation.startedAt });
+      const latest = await TripModel.findOne({ _id: trip._id, ...ownerFilter(storedOwner(trip)), status: "generating", "generation.startedAt": trip.generation.startedAt,
+        "generation.runId": trip.generation.runId, "generation.expiresAt": { $gt: new Date(Date.now()) },
+        $expr: { $gt: ["$generation.expiresAt", "$$NOW"] } });
       if (!latest) throw new GenerationSupersededError();
       expenseSnapshot = latest;
     }

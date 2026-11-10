@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { createApp } from "../app.js";
 import { env } from "../config/env.js";
 import { SavedDestinationModel } from "../models/SavedDestination.js";
 import { DESTINATIONS } from "@triply/shared";
 import { seedDestinations } from "../seed/destinations.js";
 vi.mock("../middleware/rateLimit.js", () => ({ createLimiters: () => ({ auth: async () => {}, planning: async () => {} }) }));
-let mongo: MongoMemoryServer;
+let mongo: MongoMemoryReplSet;
 let app: Awaited<ReturnType<typeof createApp>>;
 let address = 0;
 const origin = env.WEB_ORIGIN;
@@ -20,7 +20,7 @@ async function identity(kind: "guest" | "user") {
   expect(response.statusCode).toBe(kind === "guest" ? 200 : 201);
   return { origin, cookie: response.cookies.map(c => `${c.name}=${c.value}`).join("; ") };
 }
-beforeAll(async () => { mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri()); await seedDestinations(); app = await createApp(); }, 120_000);
+beforeAll(async () => { mongo = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: "wiredTiger" } }); await mongoose.connect(mongo.getUri()); await seedDestinations(); app = await createApp(); }, 120_000);
 afterAll(async () => { await app?.close(); await mongoose.disconnect(); await mongo?.stop(); });
 describe("saved destinations", () => {
   it.each(["guest", "user"] as const)("%s saves, persists, lists, batches, deduplicates, and removes", async kind => {

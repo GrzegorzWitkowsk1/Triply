@@ -1,3 +1,4 @@
+import { guestWrite } from "../middleware/guestActivity.js";
 import { localizeGeneratedDay, localizeExplanation } from "./contentLanguage.js";
 import { expenseLinksForItinerary } from "./expenseLinks.js";
 import { assertNoVisited, assertVisitedUnchanged, visitRevisionGuard } from "./visitedProtection.js";
@@ -644,11 +645,11 @@ export async function createDayRegenerationPreview(
     expiresAt,
   };
 
-  const updated = await TripModel.findOneAndUpdate(
+  const updated = await guestWrite(session => TripModel.findOneAndUpdate(
     { _id: input.trip._id, itineraryVersion: baseItineraryVersion, $and: [visitRevisionGuard(input.trip)] },
     { $set: { regeneration: record } },
     { new: true },
-  ).exec();
+  ).session(session).exec());
 
   if (!updated) {
     throw new RegenerationConflictError();
@@ -724,7 +725,7 @@ export async function applyDayRegeneration(
     update.$addToSet = { attractions: { $each: preview.newAttractions } };
   }
 
-  const updated = await TripModel.findOneAndUpdate(
+  const updated = await guestWrite(session => TripModel.findOneAndUpdate(
     {
       _id: trip._id,
       itineraryVersion: base,
@@ -735,7 +736,7 @@ export async function applyDayRegeneration(
     },
     update,
     { new: true, arrayFilters: [{ "day.dayIndex": dayIndex }] },
-  ).exec();
+  ).session(session).exec());
 
   if (!updated) {
     throw new RegenerationConflictError();

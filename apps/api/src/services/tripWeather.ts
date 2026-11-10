@@ -1,3 +1,4 @@
+import { guestWrite } from "../middleware/guestActivity.js";
 import { ownerFilter, storedOwner } from "../middleware/tripIdentity.js";
 import { type TripWeatherRefresh } from "@triply/shared";
 import { TripModel, type TripDocument } from "../models/Trip.js";
@@ -51,15 +52,15 @@ async function refresh(trip: TripDocument, options: WeatherOptions & { force?: b
   const availability = describeWeather(trip.analysis, trip.weather, trip.weatherAvailability, now);
   if (options.force && availability.retryAfter && Date.parse(availability.retryAfter) > now.getTime()) {
     // Persist computed future availability for legacy trips too.
-    await TripModel.updateOne({ _id: trip._id, updatedAt: trip.updatedAt }, { $set: { weatherAvailability: availability } }).exec();
+    await guestWrite(session => TripModel.updateOne({ _id: trip._id, ...ownerFilter(storedOwner(trip)), updatedAt: trip.updatedAt }, { $set: { weatherAvailability: availability } }).session(session).exec());
     trip.set("weatherAvailability", availability);
     return trip;
   }
   if (options.force) {
     // Reserve the next attempt atomically so multiple tabs or API instances cannot bypass the limit.
-    const claimed = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)), updatedAt: trip.updatedAt,
+    const claimed = await guestWrite(session => TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)), updatedAt: trip.updatedAt,
       $or: [{ "weatherAvailability.retryAfter": null }, { "weatherAvailability.retryAfter": { $lte: now.toISOString() } }] },
-    { $set: { weatherAvailability: { ...availability, retryAfter: new Date(now.getTime() + WEATHER_POLICY.failureCooldownMs).toISOString() } } }, { new: true }).exec();
+    { $set: { weatherAvailability: { ...availability, retryAfter: new Date(now.getTime() + WEATHER_POLICY.failureCooldownMs).toISOString() } } }, { new: true }).session(session).exec());
     if (!claimed) return await TripModel.findById(trip._id).exec() ?? trip;
     // The reservation is for concurrent callers; this caller may perform the request.
     const previous = availability;
@@ -73,7 +74,7 @@ async function refresh(trip: TripDocument, options: WeatherOptions & { force?: b
   if (JSON.stringify(resolved.toObject().weather) === JSON.stringify(result.days) &&
       JSON.stringify(resolved.toObject().weatherAvailability) === JSON.stringify(result.availability) &&
       resolved.weatherFetchedAt?.getTime() === result.fetchedAt?.getTime()) return resolved;
-  const saved = await TripModel.findOneAndUpdate({
+  const saved = await guestWrite(session => TripModel.findOneAndUpdate({
     _id: resolved._id, ...ownerFilter(storedOwner(resolved)), updatedAt: resolved.updatedAt,
     status: { $ne: "generating" },
     "analysis.startDate": resolved.analysis.startDate, "analysis.endDate": resolved.analysis.endDate,
@@ -82,7 +83,7 @@ async function refresh(trip: TripDocument, options: WeatherOptions & { force?: b
     weatherFetchedAt: resolved.weatherFetchedAt,
     "weatherAvailability.checkedAt": resolved.weatherAvailability?.checkedAt ?? null,
   }, { $set: { weather: result.days, weatherFetchedAt: result.fetchedAt, weatherAvailability: result.availability } },
-  { new: true, runValidators: true }).exec();
+  { new: true, runValidators: true }).session(session).exec());
   if (!saved) throw new DestinationResolutionError("The trip changed while retrieving weather. Reload it and try again.", 409);
   return saved;
 }

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { DESTINATIONS, findDestination, normalizeDestinationText, catalogDestinationSchema } from "@triply/shared";
 import { createApp } from "../app.js";
 import { DestinationModel } from "../models/Destination.js";
@@ -8,10 +8,10 @@ import { seedDestinations } from "../seed/destinations.js";
 import { env } from "../config/env.js";
 
 vi.mock("../middleware/rateLimit.js", () => ({ createLimiters: () => ({ auth: async () => {}, planning: async () => {} }) }));
-let mongo: MongoMemoryServer;
+let mongo: MongoMemoryReplSet;
 let app: Awaited<ReturnType<typeof createApp>>;
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri());
+  mongo = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: "wiredTiger" } }); await mongoose.connect(mongo.getUri());
   await seedDestinations(); app = await createApp();
 }, 120_000);
 afterAll(async () => { await app?.close(); await mongoose.disconnect(); await mongo?.stop(); });

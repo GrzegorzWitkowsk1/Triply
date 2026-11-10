@@ -3,7 +3,8 @@ import mongoose from "mongoose";
 export interface GuestHandoff {
   _id: string;
   state: "active" | "pending" | "completed" | "discarded" | "expired";
-  activeRequests: string[];
+  activeRequests: (string | { id: string; expiresAt: Date })[];
+  writeRevision?: number;
   contextId?: string;
   userId?: string;
   sessionHash?: string;

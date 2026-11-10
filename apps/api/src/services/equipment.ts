@@ -1,3 +1,4 @@
+import { guestWrite } from "../middleware/guestActivity.js";
 import { ownerFilter } from "../middleware/tripIdentity.js";
 import { Types } from "mongoose";
 import type { CreateTripEquipmentItem, TripEquipmentItem, UpdateTripEquipmentItem } from "@triply/shared";
@@ -58,11 +59,11 @@ export async function addEquipmentItem(
   input: CreateTripEquipmentItem,
 ): Promise<TripEquipmentItem> {
   const itemId = new Types.ObjectId();
-  const trip = await TripModel.findOneAndUpdate({
+  const trip = await guestWrite(session => TripModel.findOneAndUpdate({
     _id: new Types.ObjectId(tripId), ...ownerFilter(userId),
     $expr: { $lt: [{ $size: "$equipment" }, LIMITS.equipment] },
   }, { $push: { equipment: { _id: itemId, name: input.name, count: input.count, category: input.category ?? "other", packed: false } },
-    $inc: { __v: 1 } }, { new: true, runValidators: true }).exec();
+    $inc: { __v: 1 } }, { new: true, runValidators: true }).session(session).exec());
   if (!trip) {
     if (!await findOwnedTrip(tripId, userId)) throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
     throw new EquipmentError("list-full", LIST_FULL, 400);
@@ -80,8 +81,8 @@ export async function updateEquipmentItem(
 ): Promise<TripEquipmentItem> {
   const fields = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)
     .map(([key, value]) => [`equipment.$.${key}`, value]));
-  const trip = await TripModel.findOneAndUpdate({ _id: new Types.ObjectId(tripId), ...ownerFilter(userId),
-    "equipment._id": new Types.ObjectId(itemId) }, { $set: fields, $inc: { __v: 1 } }, { new: true, runValidators: true }).exec();
+  const trip = await guestWrite(session => TripModel.findOneAndUpdate({ _id: new Types.ObjectId(tripId), ...ownerFilter(userId),
+    "equipment._id": new Types.ObjectId(itemId) }, { $set: fields, $inc: { __v: 1 } }, { new: true, runValidators: true }).session(session).exec());
   if (!trip) {
     if (!await findOwnedTrip(tripId, userId)) throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
     throw new EquipmentError("item-not-found", ITEM_NOT_FOUND, 404);
@@ -96,8 +97,8 @@ export async function deleteEquipmentItem(
   userId: string,
   itemId: string,
 ): Promise<void> {
-  const result = await TripModel.updateOne({ _id: new Types.ObjectId(tripId), ...ownerFilter(userId),
-    "equipment._id": new Types.ObjectId(itemId) }, { $pull: { equipment: { _id: new Types.ObjectId(itemId) } }, $inc: { __v: 1 } }).exec();
+  const result = await guestWrite(session => TripModel.updateOne({ _id: new Types.ObjectId(tripId), ...ownerFilter(userId),
+    "equipment._id": new Types.ObjectId(itemId) }, { $pull: { equipment: { _id: new Types.ObjectId(itemId) } }, $inc: { __v: 1 } }).session(session).exec());
   if (!result.matchedCount) {
     if (!await findOwnedTrip(tripId, userId)) throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
     throw new EquipmentError("item-not-found", ITEM_NOT_FOUND, 404);
@@ -108,9 +109,9 @@ export async function deleteEquipmentItem(
 export async function bulkPackingItems(tripId: string, owner: string, input: import("@triply/shared").BulkPackingInput): Promise<import("@triply/shared").BulkPackingResult> {
   if (!Types.ObjectId.isValid(tripId)) throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
   const ids = input.itemIds.map(id => new Types.ObjectId(id));
-  const trip = await TripModel.findOneAndUpdate({ _id: new Types.ObjectId(tripId), ...ownerFilter(owner), "equipment._id": { $all: ids } },
+  const trip = await guestWrite(session => TripModel.findOneAndUpdate({ _id: new Types.ObjectId(tripId), ...ownerFilter(owner), "equipment._id": { $all: ids } },
     { $set: { "equipment.$[selected].packed": input.packed }, $inc: { __v: 1 } },
-    { new: true, runValidators: true, arrayFilters: [{ "selected._id": { $in: ids } }] }).exec();
+    { new: true, runValidators: true, arrayFilters: [{ "selected._id": { $in: ids } }] }).session(session).exec());
   if (!trip) {
     if (!await findOwnedTrip(tripId, owner)) throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
     throw new EquipmentError("item-not-found", "Some selected items changed or no longer belong to this checklist. Reload and try again.", 409);

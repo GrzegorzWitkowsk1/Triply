@@ -298,6 +298,38 @@ describe("POST /api/trips/:id/generate", () => {
 });
 
 describe("generation ownership", () => {
+  it("does not adopt a replacement run's ownership after destination recovery loses its write", async () => {
+    const owner = new mongoose.Types.ObjectId().toString();
+    const trip = await seedTrip(owner, { analysis: { ...COMPLETE_ANALYSIS, location: null } });
+    const claimed = (await claimTripForGeneration(trip.id, owner))!;
+    const replacement = randomUUID();
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      await TripModel.updateOne({ _id: trip._id }, { $set: { "generation.runId": replacement, "analysis.location": { lat: 48.85, lng: 2.35 } } });
+      return Response.json({ results: [{ name: "Paris", country: "France", latitude: 48.85, longitude: 2.35 }] });
+    }));
+    await expect(recoverTripDestination(claimed)).rejects.toMatchObject({ status: 409 });
+    expect((await TripModel.findById(trip.id))?.generation.runId).toBe(replacement);
+  });
+
+  it("protects a bounded active lease beyond the old two-minute threshold", async () => {
+    const userId = new mongoose.Types.ObjectId().toString();
+    const trip = await seedTrip(userId);
+    const claimed = await claimTripForGeneration(trip.id, userId);
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 130_000);
+    expect(await claimTripForGeneration(trip.id, userId)).toBeNull();
+    expect((await TripModel.findById(trip.id))?.generation.startedAt).toEqual(claimed!.generation.startedAt);
+  });
+
+  it("rejects an expired worker even when no replacement has claimed the trip", async () => {
+    const userId = new mongoose.Types.ObjectId().toString();
+    const trip = await seedTrip(userId);
+    const claimed = await claimTripForGeneration(trip.id, userId);
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 241_000);
+    await expect(runTripGeneration(claimed!)).rejects.toThrow();
+    expect((await TripModel.findById(trip.id))?.itinerary).toBeNull();
+  });
+
   it("preserves spending added during generation without rerunning the planner", async () => {
     const userId = new mongoose.Types.ObjectId().toString(); const trip = await seedTrip(userId);
     const claimed = await claimTripForGeneration(trip.id, userId);
@@ -320,7 +352,7 @@ describe("generation ownership", () => {
     const replacementStartedAt = new Date(claimed!.generation.startedAt!.getTime() + 1_000);
     await TripModel.updateOne({ _id: trip._id }, { $set: { "generation.startedAt": replacementStartedAt } });
     await expect(runTripGeneration(claimed!)).rejects.toBeInstanceOf(GenerationSupersededError);
-    expect(await markGenerationFailed(trip.id, userId, "Old failure", claimed!.generation.startedAt)).toBe(false);
+    expect(await markGenerationFailed(trip.id, userId, "Old failure", claimed!.generation.startedAt, claimed!.generation.runId)).toBe(false);
     const stored = await TripModel.findById(trip._id);
     expect(stored?.status).toBe("generating");
     expect(stored?.itinerary).toBeNull();

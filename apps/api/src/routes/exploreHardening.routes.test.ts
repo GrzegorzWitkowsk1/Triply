@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { DESTINATIONS, catalogDestinationSchema, destinationQuerySchema } from "@triply/shared";
 import { createApp } from "../app.js";
 import { seedDestinations } from "../seed/destinations.js";
@@ -10,12 +10,12 @@ import { discoveryFilter, discoverySort } from "../services/destinationDiscovery
 import { env } from "../config/env.js";
 
 vi.mock("../middleware/rateLimit.js", () => ({ createLimiters: () => ({ auth: async () => {}, planning: async () => {} }) }));
-let mongo: MongoMemoryServer;
+let mongo: MongoMemoryReplSet;
 let app: Awaited<ReturnType<typeof createApp>>;
 let address = 0;
 const get = (url: string) => app.inject({ url, remoteAddress: `192.0.2.${++address}` });
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri()); await seedDestinations(); app = await createApp();
+  mongo = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: "wiredTiger" } }); await mongoose.connect(mongo.getUri()); await seedDestinations(); app = await createApp();
   vi.stubGlobal("fetch", vi.fn(() => { throw new Error("No external providers permitted"); }));
 }, 120_000);
 afterAll(async () => { vi.unstubAllGlobals(); await app?.close(); await mongoose.disconnect(); await mongo?.stop(); });

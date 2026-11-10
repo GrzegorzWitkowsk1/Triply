@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { createApp } from "../app.js";
 import { seedDestinations } from "../seed/destinations.js";
 import { DestinationModel } from "../models/Destination.js";
@@ -15,9 +15,9 @@ vi.mock("../ai/index.js", () => ({ aiService: { parseTrip: vi.fn(async () => ({ 
 vi.mock("../services/location.js", async original => ({ ...await original<typeof import("../services/location.js")>(), resolveDestination: vi.fn(async (city: string, country: string) => ({ lat: 41.3874, lng: 2.1686, city, country })) }));
 vi.mock("../services/weather.js", async original => ({ ...await original<typeof import("../services/weather.js")>(), ensureWeatherData: vi.fn(async () => ({ days: [], fetchedAt: new Date() })) }));
 vi.mock("../services/attractions.js", () => ({ fetchAttractions: vi.fn(async () => []) }));
-let mongo: MongoMemoryServer;
+let mongo: MongoMemoryReplSet;
 let app: Awaited<ReturnType<typeof createApp>>;
-beforeAll(async () => { mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri()); await seedDestinations(); app = await createApp(); }, 120_000);
+beforeAll(async () => { mongo = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: "wiredTiger" } }); await mongoose.connect(mongo.getUri()); await seedDestinations(); app = await createApp(); }, 120_000);
 afterAll(async () => { await app?.close(); await mongoose.disconnect(); await mongo?.stop(); });
 it("resolves the canonical city and country publicly without geocoding, sessions, trips or quota consumption", async () => {
   const response = await app.inject({ url: "/api/destinations/city-003?lat=0&lng=0" });

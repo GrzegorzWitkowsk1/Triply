@@ -1,3 +1,4 @@
+import { guestWrite } from "../middleware/guestActivity.js";
 import { localizeExplanation } from "./contentLanguage.js";
 import { contentLocale, supportedLocaleSchema, type SupportedLocale } from "@triply/shared";
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
@@ -163,9 +164,9 @@ export async function generatePacking(tripId: string, owner: string, start: () =
     else if (context.weather.status === "partial_forecast") warnings.push("Saved forecasts cover some trip days only; weather for other days is unknown.");
     if (contextVersion !== packingContextVersion(current, context.locale)) warnings.push("Your trip or packing list changed during generation. Review these suggestions carefully.");
     warnings.push("Suggestions are per traveler. Review quantities and any seasonal guidance before adding items.");
-    const saved = await TripModel.updateOne({ _id: trip._id, ...ownerFilter(owner) }, { $set: {
+    const saved = await guestWrite(session => TripModel.updateOne({ _id: trip._id, ...ownerFilter(owner) }, { $set: {
       packingGeneration: { locale: context.locale, generatedAt, contextFingerprint: contextVersion, suggestionCount: output.suggestions.length },
-    } }).exec();
+    } }).session(session).exec());
     if (!saved.matchedCount) throw new EquipmentError("trip-not-found", TRIP_NOT_FOUND, 404);
     return { ...output, warnings: warnings.map(warning => localizeExplanation(warning, context.locale)), generatedAt, expiresAt: new Date(expiresAt).toISOString(), contextVersion,
       token: previewToken({ version: 1, tripId, owner, expiresAt, generatedAt, locale: context.locale, contextVersion, suggestions: output.suggestions }) };
@@ -189,8 +190,8 @@ export async function applyPacking(tripId: string, owner: string, input: ApplyPa
     const stale = preview.contextVersion !== packingContextVersion(TripModel.hydrate(current), preview.locale);
     if (stale && !input.allowStale) throw new PackingError("Your trip has changed since these suggestions were generated. Refresh suggestions or confirm that you want to use this outdated preview.");
     if (!additions.length) return { added: [], skipped, stale };
-    const result = await trips().updateOne({ _id: current._id, ...ownerFilter(owner), equipment: current.equipment, updatedAt: current.updatedAt },
-      { $push: { equipment: { $each: additions } }, $set: { updatedAt: new Date() }, $inc: { __v: 1 } });
+    const result = await guestWrite(session => trips().updateOne({ _id: current._id, ...ownerFilter(owner), equipment: current.equipment, updatedAt: current.updatedAt },
+      { $push: { equipment: { $each: additions } }, $set: { updatedAt: new Date() }, $inc: { __v: 1 } }, { session: session ?? undefined }));
     if (result.modifiedCount) return { added: additions.map(item => tripEquipmentItemSchema.parse({ ...item, id: item._id.toString() })), skipped, stale };
   }
   throw new PackingError("The checklist is changing in another tab. Please try adding the selected items again.");

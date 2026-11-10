@@ -1,3 +1,6 @@
+import { isDeepStrictEqual } from "node:util";
+import { guestWrite, GuestActivityError } from "../middleware/guestActivity.js";
+import { checkOperation, generationContext } from "./generationContext.js";
 import { contentLocale, type SupportedLocale } from "@triply/shared";
 import { expenseLinksForItinerary } from "./expenseLinks.js";
 import { assertNoVisited, visitRevisionGuard } from "./visitedProtection.js";
@@ -247,7 +250,7 @@ export async function ensureWeather(
   fetchedAt: Date | null,
   previous?: WeatherAvailability | null,
 ): Promise<WeatherState> {
-  return ensureWeatherData(analysis, current, fetchedAt, previous);
+  return ensureWeatherData(analysis, current, fetchedAt, previous, { signal: generationContext.getStore()?.signal });
 }
 
 export async function backfillTripWeather(trip: TripDocument): Promise<void> {
@@ -380,12 +383,27 @@ export async function ensureAttractions(
   return { attractions: [], fetchedAt: null, query: null };
 }
 
-export async function backfillTripAttractions(trip: TripDocument): Promise<void> {
-  if (!tripLocationSchema.safeParse(trip.analysis.location).success) return;
+export async function backfillTripAttractions(input: TripDocument): Promise<TripDocument> {
+  const identity = { _id: input._id, ...ownerFilter(storedOwner(input)) };
+  // Keep the persisted shape for CAS: hydration supplies defaults that may not
+  // actually exist in legacy records. Never save the caller's dirty document.
+  const snapshot = await TripModel.findOne(identity).lean().exec();
+  if (!snapshot) throw new DestinationResolutionError("Trip not found", 404);
+  const trip = TripModel.hydrate(snapshot);
+  if (trip.status !== "draft" && trip.status !== "ready") return trip;
+  if (!tripLocationSchema.safeParse(trip.analysis.location).success) return trip;
   // Generated itineraries retain their authoritative candidate pool. Additional
   // discoveries are explicitly merged by editing/regeneration, never replaced
   // by a page refresh (which could race an edit or discard its saved options).
-  if (trip.status === "ready" && trip.itinerary && trip.attractions.length > 0) return;
+  if (trip.status === "ready" && trip.itinerary && trip.attractions.length > 0) return trip;
+  // updatedAt alone is not enough: two writes can share a millisecond, and
+  // explicit discovery does not advance itineraryVersion or Mongoose's __v.
+  // $literal compares raw persisted values without casting in legacy defaults.
+  const unchanged = ["analysis", "contentLocale", "weather", "attractions",
+    "attractionsFetchedAt", "attractionsQuery", "clustering", "itineraryVersion"] as const;
+  const guard = { $and: unchanged.map(field => ({
+    $eq: [{ $ifNull: [`$${field}`, null] }, { $literal: snapshot[field] ?? null }],
+  })) };
   const attractions = await ensureAttractions(
     trip.analysis,
     trip.attractions,
@@ -402,17 +420,23 @@ export async function backfillTripAttractions(trip: TripDocument): Promise<void>
   const staleClustering = isClusteringStale(trip.clustering, trip.analysis);
 
   if (attractionsUnchanged && !staleClustering) {
-    return;
+    return trip;
   }
 
-  if (!attractionsUnchanged) {
-    trip.set("attractions", attractions.attractions);
-    trip.set("attractionsFetchedAt", attractions.fetchedAt);
-    trip.set("attractionsQuery", attractions.query);
-  }
-
-  trip.set("clustering", buildClustering(trip.analysis, attractions.attractions));
-  await trip.save();
+  const saved = await guestWrite(session => TripModel.findOneAndUpdate({
+    ...identity, status: trip.status, updatedAt: snapshot.updatedAt ?? null, $expr: guard,
+  }, { $set: {
+    ...(!attractionsUnchanged ? {
+      attractions: attractions.attractions,
+      attractionsFetchedAt: attractions.fetchedAt,
+      attractionsQuery: attractions.query,
+    } : {}),
+    clustering: buildClustering(trip.analysis, attractions.attractions),
+  } }, { new: true, runValidators: true }).session(session).exec());
+  // Normal concurrency is a discarded enrichment, not an error or a reason to
+  // call providers again. Return current owned data, never the rejected result.
+  return saved ?? TripModel.findOne(identity)
+    .orFail(() => new DestinationResolutionError("Trip not found", 404)).exec();
 }
 
 export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<TripDocument> {
@@ -452,7 +476,10 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
     contentLocale(input.locale),
   );
 
-  const draft = await TripModel.findOneAndUpdate(
+  checkOperation();
+  const draft = await guestWrite(session => {
+    checkOperation();
+    return TripModel.findOneAndUpdate(
     { ...ownerFilter(input.userId), status: "draft",
       ...(existing ? { _id: existing._id, updatedAt: existing.updatedAt } : input.draftId ? { _id: input.draftId } : {}) },
     {
@@ -473,7 +500,8 @@ export async function upsertTripDraft(input: UpsertTripDraftInput): Promise<Trip
       },
     },
     { new: true, upsert: !existing, setDefaultsOnInsert: true, runValidators: true },
-  ).exec();
+    ).session(session).exec();
+  });
 
   if (!draft) {
     throw Object.assign(new Error("The trip changed while saving. Reload it and try again."), { status: 409, expose: true });
@@ -516,7 +544,7 @@ export async function saveTripRequirements(
 
   const gaps = missingFields(analysis, confirmed);
   const links = expenseLinksForItinerary(draft, regenerate ? [] : draft.itinerary?.days ?? []);
-  const saved = await TripModel.findOneAndUpdate(
+  const saved = await guestWrite(session => TripModel.findOneAndUpdate(
     {
       _id: draft._id,
       ...ownerFilter(storedOwner(draft)),
@@ -534,7 +562,7 @@ export async function saveTripRequirements(
       ...links.set,
     }, ...(regenerate || Object.keys(links.increment).length ? { $inc: { ...(regenerate ? { itineraryVersion: 1 } : {}), ...links.increment } } : {}) },
     { new: true, runValidators: true },
-  ).exec();
+  ).session(session).exec());
   if (!saved) {
     const error = new Error("The trip changed while saving. Reload it and try again.");
     throw Object.assign(error, { status: 409, expose: true });
@@ -564,12 +592,34 @@ export async function confirmTripRequirements(trip: TripDocument): Promise<TripD
     throw new TripRequirementsIncompleteError(missing);
   }
 
-  trip.confirmedFields = ASKABLE_FIELDS.filter((field) => !missing.includes(field));
-  trip.missingFields = [];
-  // Legacy malformed locations must not prevent confirmation of otherwise complete requirements.
-  trip.set("analysis.location", analysis.location ?? null);
+  const conflict = () => new GuestActivityError("The trip changed while confirming. Reload it and try again.");
+  const identity = { _id: trip._id, ...ownerFilter(storedOwner(trip)) };
+  // Compare hydrated requirements with the caller, but retain raw persisted values
+  // for CAS: legacy documents may omit fields supplied by Mongoose defaults.
+  const snapshot = await TripModel.findOne(identity).lean().exec();
+  if (!snapshot || snapshot.status !== trip.status) throw conflict();
+  const current = TripModel.hydrate(snapshot).toObject();
+  const expected = trip.toObject();
+  const fields = ["analysis", "confirmedFields", "missingFields"] as const;
+  if (fields.some(field => !isDeepStrictEqual(current[field], expected[field]))) throw conflict();
 
-  return trip.save();
+  return guestWrite(async session => {
+    const saved = await TripModel.findOneAndUpdate({
+      ...identity, status: trip.status,
+      $expr: { $and: fields.map(field => ({
+        $eq: [{ $ifNull: [`$${field}`, null] }, { $literal: snapshot[field] ?? null }],
+      })) },
+    }, { $set: {
+      confirmedFields: ASKABLE_FIELDS.filter(field => !missing.includes(field)),
+      missingFields: [],
+      // Normalize legacy coordinates only while these exact requirements remain current.
+      "analysis.location": analysis.location ?? null,
+    } }, { new: true, runValidators: true }).session(session).exec();
+    // Throw inside the transaction so a rejected guest confirmation also rolls
+    // back its handoff revision. Preserve the existing exposed 409 conflict.
+    if (!saved) throw conflict();
+    return saved;
+  });
 }
 
 export function toTripAnalysisResult(draft: TripDocument): TripAnalysisResult {

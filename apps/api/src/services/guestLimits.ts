@@ -1,3 +1,4 @@
+import { guestWrite } from "../middleware/guestActivity.js";
 import { createHash, randomUUID } from "node:crypto";
 import mongoose from "mongoose";
 import type { FastifyRequest } from "fastify";
@@ -55,11 +56,11 @@ export async function reserveGuestDraft(owner: string, prompt: string, badges: s
   }
   for (let guestSlot = 0; guestSlot < availableRange; guestSlot++) {
     try {
-      return await TripModel.create({ guestId, guestSlot, prompt, badges, status: "draft", analysis: {
+      return await guestWrite(async session => (await TripModel.create([{ guestId, guestSlot, prompt, badges, status: "draft", analysis: {
         destination: null, country: null, startDate: null, endDate: null, durationDays: null, travelers: null,
         budget: { amount: null, currency: null, type: null }, interests: badges, pace: null,
         maxWalkingDistanceKm: null, notes: null, location: null,
-      } });
+      } }], { session }))[0]!);
     } catch (error) {
       if (!(error && typeof error === "object" && "code" in error && error.code === 11000)) throw error;
     }

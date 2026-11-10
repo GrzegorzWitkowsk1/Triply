@@ -1,3 +1,4 @@
+import { guestWrite } from "../middleware/guestActivity.js";
 import { contentLocale } from "@triply/shared";
 import { createHash, randomBytes } from "node:crypto";
 import { Types } from "mongoose";
@@ -78,11 +79,11 @@ export function registerSharingRoutes(app: FastifyInstance): void {
         const token = randomBytes(32).toString("base64url");
         const now = new Date();
         // One atomic transition: concurrent requests are ordered by MongoDB.
-        const trip = await TripModel.findOneAndUpdate({ ...filter,
+        const trip = await guestWrite(session => TripModel.findOneAndUpdate({ ...filter,
           ...(operation === "rotate" ? { "sharing.enabled": true } : {}),
           ...(operation === "enable" ? { "sharing.enabled": { $ne: true } } : {}),
         }, { $set: { sharing: { enabled: operation !== "disable", tokenHash: operation === "disable" ? null : hashShareToken(token),
-          createdAt: operation === "disable" ? null : now, updatedAt: now } } }, { new: true }).exec();
+          createdAt: operation === "disable" ? null : now, updatedAt: now } } }, { new: true }).session(session).exec());
         if (!trip) {
           if (!await TripModel.exists(filter)) return reply.code(404).send({ error: "Trip not found" });
           return reply.code(409).send({ error: "Sharing state changed. Refresh its status and try again." });

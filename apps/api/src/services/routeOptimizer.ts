@@ -276,6 +276,7 @@ export async function optimizeClusterRoute<T extends ClusterablePoi>(
   if (providerUsable && provider) {
     try {
       matrix = await provider.getTravelMatrix(coordinates, mode);
+      checkOperation();
       cost = costFromMatrix(matrix);
 
       if (cost) {
@@ -284,6 +285,7 @@ export async function optimizeClusterRoute<T extends ClusterablePoi>(
         matrix = null;
       }
     } catch (error) {
+      checkOperation();
       console.error(
         `[routing] travel matrix failed: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -317,12 +319,14 @@ export async function optimizeClusterRoute<T extends ClusterablePoi>(
   if (source === "provider" && provider && sequence.length <= maxMatrixPoints) {
     try {
       const route = await provider.getRoute(sequence.map((index) => nodes[index].coord), mode);
+      checkOperation();
       geometry = route.geometry;
 
       if (route.legs.length === sequence.length - 1) {
         legs = route.legs;
       }
     } catch (error) {
+      checkOperation();
       console.error(
         `[routing] route geometry failed: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -396,3 +400,4 @@ export async function optimizeClusterRoute<T extends ClusterablePoi>(
     returnsToStart: returnToStart,
   };
 }
+import { checkOperation } from "./generationContext.js";

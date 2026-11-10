@@ -4429,6 +4429,7 @@ body:has(.assistant-panel[aria-modal="true"]) {
   border-radius: var(--radius-card);
   background: var(--color-primary-tint);
   margin: 16px;
+  max-width: min(600px, calc(100% - 32px));
 }
 
 .requirements-form {

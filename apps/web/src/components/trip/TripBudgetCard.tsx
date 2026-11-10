@@ -60,7 +60,7 @@ export default function TripBudgetCard(props: TripBudgetCardProps) {
 function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex, expenseDraft }: TripBudgetCardProps & { tripId: string }) {
   const { t } = useTranslation("expenses", { i18n });
   const { query, mutation } = useTripBudget(tripId);
-  const data = query.data ?? budgetData;
+  const data = budgetData && budgetData.revision > (query.data?.revision ?? -1) ? budgetData : query.data ?? budgetData;
   const summary = data?.summary;
   const currency = summary?.currency;
   const defaultDayId = String(days.find(day => day.dayIndex === activeDayIndex)?.dayIndex ?? days[0]?.dayIndex ?? "");

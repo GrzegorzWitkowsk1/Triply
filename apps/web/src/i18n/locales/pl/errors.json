@@ -1,4 +1,5 @@
 {
+  "renderRecovery": "Nie udało się wyświetlić tego widoku. Spróbuj ponownie lub wróć do strony głównej. Zapisane podróże są nadal dostępne.",
   "networkError": "Sprawdź połączenie i spróbuj ponownie.",
   "unexpected": "Coś poszło nie tak. Spróbuj ponownie.",
   "unauthorized": "Sesja wygasła. Zaloguj się lub ponownie włącz tryb gościa.",

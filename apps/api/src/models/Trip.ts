@@ -46,6 +46,8 @@ export interface ClusteringRecord {
 }
 
 export interface TripGenerationRecord {
+  runId?: string | null;
+  expiresAt?: Date | null;
   startedAt: Date | null;
   generatedAt: Date | null;
   error: string | null;
@@ -356,6 +358,8 @@ const itinerarySchema = new Schema<TripItineraryRecord>(
 
 const generationSchema = new Schema<TripGenerationRecord>(
   {
+    runId: { type: String, default: null },
+    expiresAt: { type: Date, default: null },
     startedAt: { type: Date, default: null },
     generatedAt: { type: Date, default: null },
     error: { type: String, default: null },

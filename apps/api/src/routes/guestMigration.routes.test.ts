@@ -16,10 +16,14 @@ import { hashShareToken } from "./sharing.js";
 import { SavedDestinationModel } from "../models/SavedDestination.js";
 import { SavedAttractionModel } from "../models/SavedAttraction.js";
 import { mergeSnapshot, earliestSavedAt } from "../services/savedMigration.js";
+import { acquireGuestActivity, releaseGuestActivity, recoverGuestActivity, guestActivityWrites, GUEST_ACTIVITY_MS } from "../middleware/guestActivity.js";
+import type { FastifyRequest } from "fastify";
+import { claimTripForGeneration, runTripGeneration } from "../services/tripGeneration.js";
 
 vi.mock("../middleware/rateLimit.js", () => ({ createLimiters: () => ({ auth: async () => {}, planning: async () => {} }) }));
 vi.mock("../services/weather.js", async original => ({ ...await original<typeof import("../services/weather.js")>(), ensureWeatherData: vi.fn(async () => ({ days: [], fetchedAt: new Date() })) }));
 vi.mock("../services/attractions.js", () => ({ fetchAttractions: vi.fn(async () => []) }));
+vi.mock("../routing/index.js", () => ({ createRoutingProvider: () => null }));
 const analysis: TripAnalysis = { destination: "Paris", country: "France", startDate: "2030-06-02", endDate: "2030-06-02", durationDays: 1, travelers: 1, budget: { amount: 100, currency: "EUR", type: "total" }, interests: ["culture"], pace: "balanced", maxWalkingDistanceKm: 5, notes: "Manually edited notes", location: { lat: 48.85, lng: 2.35 } };
 const day: ItineraryDay = { dayIndex: 1, date: "2030-06-02", timeZone: "Europe/Paris", activities: [{ type: "attraction", placeId: "node/1", title: "Edited museum", startTime: "2030-06-02T09:00:00+02:00", endTime: "2030-06-02T10:00:00+02:00", durationMinutes: 60 }], stops: [{ name: "Edited museum", placeId: "node/1", category: "culture", lat: 48.85, lng: 2.35, score: 90 }], geometry: null, segments: [], totalVisitMinutes: 60, totalTravelMinutes: 0, totalDistanceMeters: 0, partiallyEstimated: false, warnings: ["Saved diagnostic"] };
 const credentials = { email: "migration@example.com", password: "Password123!Aa" };
@@ -74,6 +78,147 @@ afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGl
 afterAll(async () => { await app?.close(); await mongoose.disconnect(); await mongo?.stop(); });
 
 describe("session-bound guest import", () => {
+  it("recovers an orphaned request without completion hooks after a bounded lifetime", async () => {
+    const source = await guest(); await seed(source.id);
+    const abandoned = { guestActivity: null } as FastifyRequest;
+    expect(await acquireGuestActivity(abandoned, source.id)).toBe(true);
+    const account = await register(source.cookie);
+    expect((await confirm(account.cookie)).statusCode).toBe(409);
+    // Simulated process death: no release hook, same durable MongoDB state.
+    const now = Date.now(); vi.spyOn(Date, "now").mockReturnValue(now + 6 * 60_000);
+    expect((await confirm(account.cookie)).statusCode).toBe(200);
+    expect(await TripModel.countDocuments({ user: account.user.id })).toBe(1);
+  });
+  it("recovers legacy bare markers once without extending their drain deadline", async () => {
+    const source = await guest(); await seed(source.id);
+    await handoffs().insertOne({ _id: source.id, state: "active", activeRequests: ["legacy-crash"], cleanupAt: new Date(Date.now() + 86400_000) });
+    const account = await register(source.cookie);
+    expect((await confirm(account.cookie)).statusCode).toBe(409);
+    const leases = (await handoffs().findOne({ _id: source.id }))!.activeRequests;
+    await status(account.cookie);
+    expect((await handoffs().findOne({ _id: source.id }))!.activeRequests).toEqual(leases);
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + GUEST_ACTIVITY_MS + 1);
+    expect((await confirm(account.cookie)).statusCode).toBe(200);
+  });
+  it("makes late and repeated release harmless to a newer lease", async () => {
+    const source = await guest();
+    const old = { guestActivity: null } as FastifyRequest;
+    const fresh = { guestActivity: null } as FastifyRequest;
+    await acquireGuestActivity(old, source.id);
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + GUEST_ACTIVITY_MS + 1);
+    await recoverGuestActivity(source.id);
+    expect(await acquireGuestActivity(fresh, source.id)).toBe(true);
+    await releaseGuestActivity(old); await releaseGuestActivity(old);
+    expect((await handoffs().findOne({ _id: source.id }))!.activeRequests).toEqual([
+      { id: fresh.guestActivity!.id, expiresAt: new Date(Date.now() + GUEST_ACTIVITY_MS) },
+    ]);
+    await releaseGuestActivity(fresh); await releaseGuestActivity(fresh);
+    expect((await handoffs().findOne({ _id: source.id }))!.activeRequests).toEqual([]);
+  });
+  it.each(["create", "save", "saved-upsert", "delete", "packing", "generation"] as const)("rejects an expired paused %s after import across API instances", async operation => {
+    const source = await guest(); const [trip] = await seed(source.id);
+    if (operation === "generation") await TripModel.updateOne({ _id: trip!._id }, { $set: {
+      status: "draft", attractionsFetchedAt: new Date(), attractionsQuery: { lat: 48.85, lng: 2.35, interests: ["culture"] },
+    } });
+    const claimed = operation === "generation" ? await claimTripForGeneration(trip!.id, `guest:${source.id}`) : null;
+    let entered!: () => void; let release!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const original = guestActivityWrites.check;
+    vi.spyOn(guestActivityWrites, "check").mockImplementationOnce(async (...args) => { entered(); await gate; return original(...args); });
+    // A second app shares only MongoDB, not request objects or locks.
+    const instance = await createApp({ configure: server => {
+      server.post("/test/paused-guest-write", { preHandler: async req => {
+        if (!await acquireGuestActivity(req, source.id)) throw new Error("Guest fenced");
+      } }, async () => {
+        if (operation === "generation") return runTripGeneration(claimed!);
+        if (operation === "create") return reserveGuestDraft(`guest:${source.id}`, "late", []);
+        if (operation === "save") {
+          const stale = (await TripModel.findById(trip!._id))!;
+          stale.status = "draft";
+          const { guestWrite } = await import("../middleware/guestActivity.js");
+          return guestWrite(session => stale.save({ session }));
+        }
+        const { guestWrite } = await import("../middleware/guestActivity.js");
+        if (operation === "saved-upsert") return guestWrite(session => SavedDestinationModel.updateOne(
+          { ownerType: "guest", ownerId: source.id, destinationId: "city-001" },
+          { $setOnInsert: { createdAt: new Date() } }, { upsert: true }).session(session).exec());
+        if (operation === "delete") return guestWrite(session => TripModel.deleteOne({ _id: trip!._id }).session(session).exec());
+        return guestWrite(session => TripModel.collection.updateOne({ _id: trip!._id }, { $set: { equipment: [] } }, { session: session ?? undefined }));
+      });
+    } });
+    const writer = instance.inject({ method: "POST", url: "/test/paused-guest-write", headers: { origin } }).then(r => r);
+    try {
+      await started;
+      const account = await register(source.cookie);
+      expect((await confirm(account.cookie)).statusCode).toBe(409);
+      vi.spyOn(Date, "now").mockReturnValue(Date.now() + GUEST_ACTIVITY_MS + 1);
+      const restarted = await createApp();
+      try {
+        const imported = await restarted.inject({ method: "POST", url: "/api/auth/guest-migration/confirm", headers: { origin, cookie: account.cookie } });
+        expect(imported.statusCode, imported.body).toBe(200);
+      } finally { await restarted.close(); }
+      const before = await TripModel.collection.findOne({ _id: trip!._id });
+      release();
+      expect((await writer).statusCode).toBe(409);
+      expect(await TripModel.collection.findOne({ _id: trip!._id })).toEqual(before);
+      expect(await TripModel.countDocuments()).toBe(1);
+      expect(await SavedDestinationModel.countDocuments({ ownerType: "guest" })).toBe(0);
+      expect(await acquireGuestActivity({ guestActivity: null } as FastifyRequest, source.id)).toBe(false);
+      expect((await call(source.cookie, "DELETE", `/api/trips/${trip!.id}`)).statusCode).toBe(401);
+      expect((await confirm(account.cookie)).json()).toMatchObject({ importedCount: 1, alreadyImported: true });
+    } finally { release(); await writer; await instance.close(); }
+  });
+  it("rejects an expired operation even before migration and fails closed on fence database errors", async () => {
+    const source = await guest(); const [trip] = await seed(source.id);
+    const original = guestActivityWrites.check;
+    vi.spyOn(guestActivityWrites, "check").mockImplementationOnce(async (...args) => {
+      vi.spyOn(Date, "now").mockReturnValue(Date.now() + GUEST_ACTIVITY_MS + 1);
+      return original(...args);
+    });
+    expect((await call(source.cookie, "DELETE", `/api/trips/${trip!.id}`)).statusCode).toBe(409);
+    expect(await TripModel.countDocuments()).toBe(1);
+    vi.mocked(guestActivityWrites.check).mockRejectedValueOnce(new Error("database unavailable"));
+    expect((await call(source.cookie, "DELETE", `/api/trips/${trip!.id}`)).statusCode).toBe(503);
+    expect(await TripModel.countDocuments()).toBe(1);
+  });
+  it.each(["rollback", "retry"] as const)("keeps document saves and fence atomic during transaction %s", async mode => {
+    const source = await guest(); const [trip] = await seed(source.id);
+    const before = await TripModel.collection.findOne({ _id: trip!._id });
+    let attempts = 0;
+    const instance = await createApp({ configure: server => {
+      server.post("/test/transaction-save", { preHandler: async req => {
+        expect(await acquireGuestActivity(req, source.id)).toBe(true);
+      } }, async () => {
+        const stale = (await TripModel.findById(trip!._id))!;
+        stale.prompt = "transactionally saved";
+        const { guestWrite } = await import("../middleware/guestActivity.js");
+        return guestWrite(async session => {
+          await stale.save({ session });
+          if (mode === "rollback") throw new Error("Interrupted after resource write");
+          if (!attempts++) {
+            const error = new mongoose.mongo.MongoServerError({ message: "Injected transaction interruption" });
+            error.addErrorLabel("TransientTransactionError");
+            throw error;
+          }
+          return { saved: true };
+        });
+      });
+    } });
+    try {
+      const result = await instance.inject({ method: "POST", url: "/test/transaction-save", headers: { origin } });
+      expect(result.statusCode).toBe(mode === "rollback" ? 503 : 200);
+      const fence = await handoffs().findOne({ _id: source.id });
+      if (mode === "rollback") {
+        expect(await TripModel.collection.findOne({ _id: trip!._id })).toEqual(before);
+        expect(fence!.writeRevision).toBeUndefined();
+      } else {
+        expect(attempts).toBe(2);
+        expect((await TripModel.findById(trip!._id))!.prompt).toBe("transactionally saved");
+        expect(fence!.writeRevision).toBe(1);
+      }
+    } finally { await instance.close(); }
+  });
   it.each([0, 1, 6])("registers and atomically imports %i trips without changing saved content", async count => {
     const source = await guest(); const trips = await seed(source.id, count);
     const before = await TripModel.collection.find({ guestId: source.id }).sort({ _id: 1 }).toArray();
@@ -241,14 +386,14 @@ describe("session-bound guest import", () => {
     expect(await mongoose.connection.db!.collection("guest_usage").findOne({ _id: source.id } as never)).toEqual(before);
   });
   it("waits for in-flight guest creation and fences new guest mutations", async () => {
-    const source = await guest(); const context = { _id: source.id, state: "active" as const, activeRequests: ["in-flight"], cleanupAt: new Date(Date.now() + 86400_000) };
-    await handoffs().insertOne(context);
+    const source = await guest(); const active = { guestActivity: null } as FastifyRequest;
+    await acquireGuestActivity(active, source.id);
     const account = await register(source.cookie);
     expect((await status(account.cookie)).json()).toMatchObject({ status: "pending", busy: true });
     expect((await confirm(account.cookie)).statusCode).toBe(409);
     // Represents an already admitted creation finishing before its lease is released.
     await seed(source.id, 1);
-    await handoffs().updateOne({ _id: source.id }, { $pull: { activeRequests: "in-flight" } });
+    await releaseGuestActivity(active);
     expect((await call(source.cookie, "POST", "/api/trips/analyze", { prompt: "blocked" })).statusCode).toBe(401);
     expect((await confirm(account.cookie)).json()).toEqual({ ...emptySavedReceipt, importedCount: 1, alreadyImported: false });
   });
@@ -443,10 +588,8 @@ describe("unified Saved migration", () => {
     if (unsave) await seedSaved("guest", source.id);
     let entered!: () => void; let release!: () => void;
     const started = new Promise<void>(resolve => { entered = resolve; }); const gate = new Promise<void>(resolve => { release = resolve; });
-    const collection = attraction ? SavedAttractionModel.collection : SavedDestinationModel.collection;
-    const method = unsave ? "deleteOne" : "updateOne";
-    const original = collection[method].bind(collection);
-    vi.spyOn(collection, method).mockImplementationOnce(async (...args: unknown[]) => { entered(); await gate; return Reflect.apply(original, collection, args); });
+    const original = guestActivityWrites.check;
+    vi.spyOn(guestActivityWrites, "check").mockImplementationOnce(async (...args) => { entered(); await gate; return original(...args); });
     const path = `/api/saved/${attraction ? "attractions" : "destinations"}`;
     const request = call(source.cookie, unsave ? "DELETE" : "POST", unsave ? `${path}/${attraction ? "osm%3Anode%3A1" : "city-001"}` : path,
       unsave ? undefined : attraction ? { tripId: trip.id, attractionKey: "osm:node:1" } : { destinationId: "city-001" }).then(response => response);

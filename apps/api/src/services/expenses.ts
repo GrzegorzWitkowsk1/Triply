@@ -1,3 +1,4 @@
+import { guestWrite } from "../middleware/guestActivity.js";
 import { ownerFilter, storedOwner, guestOwnerId } from "../middleware/tripIdentity.js";
 import { expenseInputSchema, budgetAllocationsSchema, type BudgetAllocations, type ExpenseInput, type ExpenseOperation } from "@triply/shared";
 import { TripModel, type TripDocument } from "../models/Trip.js";
@@ -61,10 +62,10 @@ export async function mutateExpense(tripId: string, userId: string, operation: E
   }
   if (current.length > 2000) throw new ItineraryEditError("Expense limit reached");
   try { summarizeBudget({ ...trip.toObject(), expenses: current }); } catch { throw new ItineraryEditError("Combined expenses exceed the supported money range"); }
-  const updated = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
+  const updated = await guestWrite(session => TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
     $and: [visitRevisionGuard(trip), { $or: [{ budgetRevision: revision }, ...(revision === 0 ? [{ budgetRevision: { $exists: false } }] : [])] },
       { $or: [{ itineraryVersion: trip.itineraryVersion ?? 0 }, ...(!trip.itineraryVersion ? [{ itineraryVersion: { $exists: false } }] : [])] }],
-  }, { $set: { expenses: current, automaticAdmissions: receipts }, $inc: { budgetRevision: 1 } }, { new: true, runValidators: true });
+  }, { $set: { expenses: current, automaticAdmissions: receipts }, $inc: { budgetRevision: 1 } }, { new: true, runValidators: true }).session(session));
   if (!updated) throw new ItineraryEditError("Trip changed. Refresh and try again.", 409);
   return updated;
 }
@@ -75,10 +76,10 @@ export async function updateBudgetAllocations(tripId: string, userId: string, al
   const sum = Object.values(parsed.data).reduce((total, value) => total + BigInt(value!), 0n);
   const budget = totalBudgetMinor(trip);
   if (sum > BigInt(Number.MAX_SAFE_INTEGER) || (sum > 0 && (budget === null || sum > BigInt(budget)))) throw new ItineraryEditError("Allocations must fit a known trip budget");
-  const updated = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
+  const updated = await guestWrite(session => TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
     $or: [{ budgetRevision: revision }, ...(revision === 0 ? [{ budgetRevision: { $exists: false } }] : [])],
     "analysis.budget": trip.analysis.budget, "analysis.travelers": trip.analysis.travelers,
-  }, { $set: { budgetAllocations: parsed.data, budgetAllocationCurrency: trip.analysis.budget.currency }, $inc: { budgetRevision: 1 } }, { new: true, runValidators: true });
+  }, { $set: { budgetAllocations: parsed.data, budgetAllocationCurrency: trip.analysis.budget.currency }, $inc: { budgetRevision: 1 } }, { new: true, runValidators: true }).session(session));
   if (!updated) throw new ItineraryEditError("Budget changed. Refresh and try again.", 409);
   return updated;
 }

@@ -35,7 +35,7 @@ export function useTrip(id: string | undefined) {
   return useQuery({
     structuralSharing: (old, incoming) => mergeConfirmedTrip(old as TripDetail | undefined, incoming as TripDetail),
     queryKey: tripQueryKey(id ?? ""),
-    queryFn: () => getTrip(id as string),
+    queryFn: ({ signal, client, queryKey }) => getTrip(id as string, { signal, snapshot: client.getQueryData(queryKey) !== undefined }),
     enabled: Boolean(id),
     refetchInterval: (query) =>
       (query.state.data as TripDetail | undefined)?.status === "generating"

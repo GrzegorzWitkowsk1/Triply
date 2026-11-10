@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import type { FastifyInstance } from "fastify";
 import { addDays, canonicalPackingName, matchPackingSuggestion, bulkPackingSchema, LIMITS, type PackingPreview } from "@triply/shared";
 import { TripModel } from "../models/Trip.js";
@@ -16,11 +16,11 @@ const output = () => ({ items: [
   { name: "Phone charger", category: "electronics", count: 1, reason: "Keep your phone charged during the trip." },
   { name: "Passport", category: "documents", count: 1, reason: "Bring travel identification." },
 ], warnings: [] });
-let db: MongoMemoryServer;
+let db: MongoMemoryReplSet;
 let app: FastifyInstance;
 let guestCounter = 0;
 const owner = new mongoose.Types.ObjectId().toString();
-beforeAll(async () => { db = await MongoMemoryServer.create(); await mongoose.connect(db.getUri()); app = await (await import("../app.js")).createApp(); await TripModel.init(); }, 120_000);
+beforeAll(async () => { db = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: "wiredTiger" } }); await mongoose.connect(db.getUri()); app = await (await import("../app.js")).createApp(); await TripModel.init(); }, 120_000);
 beforeEach(() => { vi.mocked(aiService.generatePacking).mockResolvedValue(output()); });
 afterEach(async () => { vi.useRealTimers(); vi.clearAllMocks(); for (const collection of await mongoose.connection.db!.listCollections({}, { nameOnly: true }).toArray()) await mongoose.connection.db!.collection(collection.name).deleteMany({}); });
 afterAll(async () => { await app?.close(); await mongoose.disconnect(); await db?.stop(); });

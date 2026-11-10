@@ -1,3 +1,4 @@
+import { guestWrite } from "../middleware/guestActivity.js";
 import { contentLocale } from "@triply/shared";
 import { assertVisitedUnchanged, visitRevisionGuard } from "./visitedProtection.js";
 import { expenseLinksForItinerary } from "./expenseLinks.js";
@@ -84,11 +85,11 @@ export async function itineraryCandidates(
       for (const candidate of additions) {
         // Deduplicate by identity atomically, even when simultaneous discoveries
         // return different metadata for the same upstream place.
-        await TripModel.updateOne({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
+        await guestWrite(session => TripModel.updateOne({ _id: trip._id, ...ownerFilter(storedOwner(trip)),
           attractions: { $not: { $elemMatch: { $or: [
             { placeId: candidate.placeId }, { lat: candidate.lat, lng: candidate.lng },
           ] } } },
-        }, { $push: { attractions: candidate } }, { runValidators: true }).exec();
+        }, { $push: { attractions: candidate } }, { runValidators: true }).session(session).exec());
       }
       trip = await loadEditableTrip(tripId, userId);
     }
@@ -320,10 +321,10 @@ export async function editTripItinerary(tripId: string, userId: string, input: I
       warnings: itinerary.days.filter(day => affectedDayIndices.includes(day.dayIndex)).flatMap(day => day.warnings) };
   }
   const links = expenseLinksForItinerary(trip, itinerary.days);
-  const updated = await TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)), ...links.filter,
+  const updated = await guestWrite(session => TripModel.findOneAndUpdate({ _id: trip._id, ...ownerFilter(storedOwner(trip)), ...links.filter,
     status: "ready", itineraryVersion: parsed.data.expectedVersion, $and: [visitRevisionGuard(trip)] }, {
     $set: { itinerary, regeneration: null, ...links.set }, $inc: { itineraryVersion: 1, ...links.increment },
-  }, { new: true, runValidators: true }).exec();
+  }, { new: true, runValidators: true }).session(session).exec());
   if (!updated) throw new ItineraryEditError("The itinerary has changed. Refresh it and try again.", 409);
   return { trip: updated, itineraryVersion: updated.itineraryVersion, affectedDayIndices,
     warnings: itinerary.days.filter((day) => affectedDayIndices.includes(day.dayIndex)).flatMap((day) => day.warnings) };

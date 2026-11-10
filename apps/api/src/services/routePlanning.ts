@@ -59,6 +59,7 @@ export async function buildTripRouting<T extends ClusterablePoi = TripAttraction
   const dayRoutes: OptimizedDayRoute<T>[] = [];
 
   for (const cluster of clustering.clusters) {
+    checkOperation();
     const route = await optimizeClusterRoute<T>(cluster, {
       mode,
       start,
@@ -68,6 +69,7 @@ export async function buildTripRouting<T extends ClusterablePoi = TripAttraction
     });
 
     dayRoutes.push(route);
+    checkOperation();
   }
 
   return {
@@ -76,3 +78,4 @@ export async function buildTripRouting<T extends ClusterablePoi = TripAttraction
     source: aggregateSource(dayRoutes),
   };
 }
+import { checkOperation } from "./generationContext.js";
