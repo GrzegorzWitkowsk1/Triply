@@ -25,7 +25,8 @@ describe("profile settings", () => {
     await waitFor(() => expect((within(profileForm).getByText("Save") as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(within(profileForm).getByText("Save"));
     await waitFor(() => expect(mocks.saveNames).toHaveBeenCalledWith({ name: "Jo" }));
-    expect(await screen.findByText("Profile saved.")).toBeTruthy();
+    const notice = await screen.findByText("Profile saved.");
+    expect(notice.closest(".MuiAlert-root")?.classList.contains("MuiAlert-colorSuccess")).toBe(true);
   });
   it("uploads an avatar on selection without submitting the names form", async () => {
     const { container } = page();
@@ -79,6 +80,22 @@ describe("profile settings", () => {
     const form = screen.getByRole("button", { name: "Food" }).closest("form")!;
     fireEvent.click(within(form).getByText("Save"));
     await waitFor(() => expect(mocks.savePreferences).toHaveBeenCalledWith({ interests: ["culture", "food"], pace: "packed", maxWalkingDistanceKm: 10 }));
+    const notice = await screen.findByText("Preferences saved.");
+    expect(notice.closest(".MuiAlert-root")?.classList.contains("MuiAlert-colorSuccess")).toBe(true);
+  });
+  it("shows a red snackbar after a failed save and keeps the entered name for retry", async () => {
+    mocks.saveNames.mockRejectedValueOnce(new Error("Save failed"));
+    page();
+    const input = screen.getByLabelText("Name");
+    fireEvent.change(input, { target: { value: "Jo" } });
+    const form = input.closest("form")!;
+    await waitFor(() => expect((within(form).getByText("Save") as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(within(form).getByText("Save"));
+    const notice = await screen.findByText("Something went wrong. Please try again.");
+    expect(notice.closest(".MuiAlert-root")?.classList.contains("MuiAlert-colorError")).toBe(true);
+    expect((input as HTMLInputElement).value).toBe("Jo");
+    fireEvent.click(within(form).getByText("Save"));
+    expect(await screen.findByText("Profile saved.")).toBeTruthy();
   });
   it("preserves unsaved preferences when the same session is refetched", () => {
     const view = page();

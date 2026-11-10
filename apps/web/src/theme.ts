@@ -4,7 +4,7 @@ const inputRadius = "var(--radius-control)";
 
 export const theme = createTheme({
   palette: {
-    primary: { main: "#f2664b", dark: "#d54e34", contrastText: "#1c1c1c" },
+    primary: { main: "#f2664b", dark: "#d54e34", contrastText: "#fff" },
     error: { main: "#b42318" },
     success: { main: "#287d2c" },
     warning: { main: "#85421a" },

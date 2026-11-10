@@ -8,6 +8,7 @@ import CollectionPage from "./CollectionPage";
 import ExplorePage from "./ExplorePage";
 import SavedPage from "./SavedPage";
 import ScrollToTop from "../components/layout/ScrollToTop";
+vi.mock("../components/ToastProvider", () => ({ useToast: () => vi.fn() }));
 
 const auth = vi.hoisted(() => ({ status: "guest" }));
 vi.mock("../auth/AuthProvider", () => ({ useAuth: () => ({ status: auth.status, guest: auth.status === "guest" ? { id: "g" } : null, user: auth.status === "authenticated" ? { id: "u" } : null }) }));

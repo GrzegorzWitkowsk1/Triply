@@ -68,6 +68,7 @@ import { useGenerateTrip } from "../hooks/useTripGeneration";
 import { useUpdateTripRequirements } from "../hooks/useTripAnalysis";
 import { useApplyRegeneration, useRegenerateDay } from "../hooks/useTripRegeneration";
 import { TRIPS_KEY, useTrip } from "../hooks/useTrips";
+import { useToast } from "../components/ToastProvider";
 
 const STALE_GENERATION_MS = 2 * 60 * 1000;
 const WALKING_LIMITS = [3, 5, 10] as const;
@@ -109,6 +110,7 @@ function errorMessage(error: unknown): string {
 
 export default function TripPage() {
   const { t } = useTranslation("itinerary", { i18n });
+  const toast = useToast();
   const guestUsage = useGuestUsage();
   const generationBlocked = guestUsage.isGuest && (!guestUsage.data || guestUsage.data.aiGenerationsRemaining === 0);
   const { id } = useParams<{ id: string }>();
@@ -279,11 +281,12 @@ export default function TripPage() {
       ...(walking !== walkingIndex(analysis.maxWalkingDistanceKm) ? { maxWalkingDistanceKm: WALKING_LIMITS[walking] } : {}),
     } }, {
       onSuccess: () => {
+        toast(() => i18n.t("preferencesSaved", { ns: "auth/profile" }));
         setRegenerationPreview(null); setActiveDay(0); setActiveStop(0);
         generate.reset();
         generate.mutate(id);
       },
-      onError: error => setPreferencesError(localizedErrorKey(error)),
+      onError: error => { setPreferencesError(localizedErrorKey(error)); toast(() => localizedError(error), "error"); },
     });
   };
 
@@ -300,10 +303,12 @@ export default function TripPage() {
     if (!id || saveRequirements.isPending) return;
     saveRequirements.mutate({ draftId: id, ...payload }, {
       onSuccess: () => {
+        toast(() => i18n.t("savedSuccessfully", { ns: "common" }));
         setEditOpen(false);
         generate.reset();
         void queryClient.invalidateQueries({ queryKey: TRIPS_KEY });
       },
+      onError: error => toast(() => localizedError(error), "error"),
     });
   };
 
@@ -328,6 +333,7 @@ export default function TripPage() {
     setEditNotice(null);
     itineraryEdit.mutate({ tripId: id, operation, expectedVersion: trip.data.itineraryVersion ?? 0 }, {
       onSuccess: (result) => {
+        toast(() => i18n.t(result.warnings.length ? "savedWithWarnings" : "itinerarySaved", { ns: "trips/details", warnings: i18n.t("dimension_schedule", { ns: "itinerary/quality" }) }));
         setPicker(null); setMovingId(null); setRegenerationPreview(null);
         const updatedDay = result.trip.itinerary?.days.find((entry) => entry.dayIndex === dayIndex);
         const routingUnavailable = operation.type === "reroute" && (!updatedDay?.geometry || updatedDay.geometry.coordinates.length < 2);
@@ -335,6 +341,7 @@ export default function TripPage() {
           ? i18n.t("routeMissingWithWarnings", { ns: "trips/details", warnings: "" }).trim()
           : result.warnings.length ? i18n.t("savedWithWarnings", { ns: "trips/details", warnings: i18n.t("dimension_schedule", { ns: "itinerary/quality" }) }) : i18n.t("itinerarySaved", { ns: "trips/details" }));
       },
+      onError: error => toast(() => localizedError(error), "error"),
       onSettled: () => { editLock.current = false; },
     });
   };
@@ -380,7 +387,9 @@ export default function TripPage() {
           setRegenerateOpen(false);
           setRegenerationPreview(null);
           setEditNotice(() => () => i18n.t("itinerarySaved", { ns: "trips/details" }));
+          toast(() => i18n.t("itinerarySaved", { ns: "trips/details" }));
         },
+        onError: error => { if (currentTripId.current === id) toast(() => localizedError(error), "error"); },
         onSettled: () => { if (currentTripId.current === id) applyLock.current = false; },
       },
     );

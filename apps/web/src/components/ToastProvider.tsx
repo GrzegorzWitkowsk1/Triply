@@ -12,7 +12,7 @@ export function ToastProvider({ children }: PropsWithChildren) {
     setToast({ id: Date.now() + Math.random(), message, severity });
   }, []);
   const close = () => setToast(null);
-  return <ToastContext.Provider value={showToast}>{children}<Snackbar key={toast?.id} open={!!toast} autoHideDuration={6000} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} onClose={(_event, reason) => { if (reason !== "clickaway") close(); }}>
+  return <ToastContext.Provider value={showToast}>{children}<Snackbar sx={{ zIndex: 1700 }} key={toast?.id} open={!!toast} autoHideDuration={6000} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} onClose={(_event, reason) => { if (reason !== "clickaway") close(); }}>
     <Alert severity={toast?.severity ?? "success"} onClose={close} closeText={t("close")} variant="filled">{resolveMessage(typeof toast?.message === "function" ? toast.message() : toast?.message)}</Alert>
   </Snackbar></ToastContext.Provider>;
 }

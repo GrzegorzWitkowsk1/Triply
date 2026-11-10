@@ -5,6 +5,8 @@ import { expenseInputSchema, EXPENSE_CATEGORIES, type ItineraryDay, type TripBud
 import { request } from "../../api/client";
 import TripBudgetCard from "./TripBudgetCard";
 import i18n from "../../i18n";
+const toast = vi.hoisted(() => vi.fn());
+vi.mock("../ToastProvider", () => ({ useToast: () => toast }));
 
 vi.mock("../../api/client", () => ({ request: vi.fn() }));
 const lunch: TripExpense = {

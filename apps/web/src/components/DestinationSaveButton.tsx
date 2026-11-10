@@ -5,9 +5,11 @@ import { IconButton } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { useSavedIdentity } from "../hooks/useSavedDestinations";
 import { useSavedDestinationIds, useSaveDestination, useUnsaveDestination, useDestinationPending } from "../hooks/useSavedDestinations";
+import { useToast } from "./ToastProvider";
 
 export default function DestinationSaveButton({ destinationId, name }: { destinationId: string; name: string }) {
   useTranslation();
+  const toast = useToast();
   const navigate = useNavigate();
   const identity = useSavedIdentity();
   const ids = useSavedDestinationIds();
@@ -19,7 +21,10 @@ export default function DestinationSaveButton({ destinationId, name }: { destina
   return <>
     <IconButton aria-label={i18n.t(saved ? "unsaveDestination" : "saveDestination", { ns: "saved", name })} aria-pressed={saved}
       disabled={identity.loading || identity.enabled && (pending || !ids.data || ids.isError)} className="destination-save"
-      onClick={event => { event.preventDefault(); event.stopPropagation(); if (!identity.enabled) { navigate("/login"); return; } save.reset(); unsave.reset(); (saved ? unsave : save).mutate(destinationId); }}
+      onClick={event => { event.preventDefault(); event.stopPropagation(); if (!identity.enabled) { navigate("/login"); return; } save.reset(); unsave.reset(); (saved ? unsave : save).mutate(destinationId, {
+        onSuccess: () => { if (!saved) toast(() => i18n.t("savedSuccessfully", { ns: "common" })); },
+        onError: () => toast(() => i18n.t("updateFailed", { ns: "saved", name }), "error"),
+      }); }}
       sx={{ bgcolor: "background.paper", color: "primary.main", "&.Mui-focusVisible": { outline: "3px solid currentColor" } }}>
       {saved ? <Favorite /> : <FavoriteBorderOutlined />}
     </IconButton>

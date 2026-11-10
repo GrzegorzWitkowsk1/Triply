@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-rou
 import { DESTINATIONS, destinationQuerySchema, normalizeDestinationText } from "@triply/shared";
 import ExplorePage from "./ExplorePage";
 import SavedPage from "./SavedPage";
+vi.mock("../components/ToastProvider", () => ({ useToast: () => vi.fn() }));
 
 vi.mock("../auth/AuthProvider", () => ({ useAuth: () => ({ status: "guest", guest: { id: "test" }, user: null }) }));
 const clients: QueryClient[] = [];

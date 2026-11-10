@@ -5,6 +5,8 @@ import { MemoryRouter } from "react-router-dom";
 import DestinationSaveButton from "./DestinationSaveButton";
 import SavedPage from "../pages/SavedPage";
 import { findDestination } from "@triply/shared";
+const toast = vi.hoisted(() => vi.fn());
+vi.mock("./ToastProvider", () => ({ useToast: () => toast }));
 const auth = vi.hoisted(() => ({ value: { status: "guest", guest: { id: "a" }, user: null } as { status: string; guest: { id: string } | null; user: { id: string } | null } }));
 vi.mock("../auth/AuthProvider", () => ({ useAuth: () => auth.value }));
 let saved = false;
@@ -38,6 +40,7 @@ it("renders outline/filled hearts, prevents parent navigation and synchronizes a
   expect(screen.getAllByRole("button")[0]).toHaveAttribute("aria-pressed", "false");
   fireEvent.click(screen.getAllByRole("button", { name: "Save Paris" })[0]);
   await waitFor(() => expect(screen.getAllByRole("button", { name: "Unsave Paris" })).toHaveLength(2));
+  await waitFor(() => expect(toast.mock.lastCall?.[0]()).toBe("Saved successfully."));
   expect(navigate).not.toHaveBeenCalled();
   fireEvent.click(screen.getAllByRole("button", { name: "Unsave Paris" })[1]);
   await waitFor(() => expect(screen.getAllByRole("button", { name: "Save Paris" })).toHaveLength(2));
@@ -50,6 +53,7 @@ it("disables every copy during mutation, and preserves state after failure", asy
   await waitFor(() => expect(screen.getAllByRole("button").every(button => button.hasAttribute("disabled"))).toBe(true));
   await waitFor(() => expect(finish).toBeTypeOf("function")); finish!();
   await screen.findByRole("alert");
+  await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.any(Function), "error"));
   expect(screen.getAllByRole("button")[0]).toHaveAttribute("aria-pressed", "false");
 });
 it("shows empty Saved state", async () => { mount(<SavedPage />); expect(await screen.findByText(/No saved places yet/)).toBeVisible(); });

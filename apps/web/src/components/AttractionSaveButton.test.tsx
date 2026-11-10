@@ -7,6 +7,8 @@ import AttractionSaveButton from "./AttractionSaveButton";
 import SavedPage from "../pages/SavedPage";
 import TripTimeline from "./trip/TripTimeline";
 import type { TimelineAttraction } from "../config/itineraryAdapters";
+const toast = vi.hoisted(() => vi.fn());
+vi.mock("./ToastProvider", () => ({ useToast: () => toast }));
 const auth = vi.hoisted(() => ({ value: { status: "guest", guest: { id: "a" }, user: null } as { status: string; guest: { id: string } | null; user: { id: string } | null } }));
 vi.mock("../auth/AuthProvider", () => ({ useAuth: () => auth.value }));
 let saved = false;

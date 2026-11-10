@@ -7,6 +7,8 @@ import type { TripEquipmentItem } from "@triply/shared";
 import { bulkPacking, getPackingContext } from "../api/packing";
 vi.mock("../api/packing", () => ({ getPackingContext: vi.fn(async () => ({ contextFingerprint: "version", generation: null, outdated: false })), bulkPacking: vi.fn(), generatePackingPreview: vi.fn(), applyPackingPreview: vi.fn() }));
 import TripEquipmentPage from "./TripEquipmentPage";
+const toast = vi.hoisted(() => vi.fn());
+vi.mock("../components/ToastProvider", () => ({ useToast: () => toast }));
 import { getEquipment, createEquipmentItem, updateEquipmentItem, deleteEquipmentItem } from "../api/equipment";
 vi.mock("../api/equipment", () => ({ getEquipment: vi.fn(), createEquipmentItem: vi.fn(), updateEquipmentItem: vi.fn(), deleteEquipmentItem: vi.fn() }));
 vi.mock("../hooks/useTrips", async original => ({ ...await original<typeof import("../hooks/useTrips")>(), useTrip: () => ({ data: { analysis: { destination: "Paris", country: "France", durationDays: 3 } } }) }));
@@ -118,8 +120,10 @@ it("edits all fields, cancels without saving, and preserves failed edit input", 
   vi.mocked(updateEquipmentItem).mockRejectedValueOnce(new Error("Edit failed"));
   fireEvent.change(form.getByLabelText("Quantity"), { target: { value: "5" } }); fireEvent.click(form.getByRole("button", { name: "Save changes" }));
   await screen.findAllByText("Something went wrong. Please try again."); expect((form.getByLabelText("Quantity") as HTMLInputElement).value).toBe("5");
+  await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.any(Function), "error"));
   fireEvent.change(form.getByLabelText("Item name"), { target: { value: "Jacket" } }); fireEvent.change(form.getByLabelText("Category"), { target: { value: "other" } });
   fireEvent.click(form.getByRole("button", { name: "Save changes" })); await screen.findByRole("checkbox", { name: "Jacket" });
+  await waitFor(() => expect(toast.mock.lastCall?.[0]()).toBe("Item updated."));
   expect(records.find(item => item.id === "jacket")).toMatchObject({ name: "Jacket", category: "other", count: 5 });
 });
 it("updates progress after deletion and rolls back failed deletion and toggles", async () => {

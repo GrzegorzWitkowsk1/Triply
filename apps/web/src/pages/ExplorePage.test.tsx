@@ -7,6 +7,7 @@ import { DESTINATIONS } from "@triply/shared";
 import ExplorePage from "./ExplorePage";
 import SavedPage from "./SavedPage";
 import { readExploreQuery } from "../hooks/useExploreState";
+vi.mock("../components/ToastProvider", () => ({ useToast: () => vi.fn() }));
 
 const auth = vi.hoisted(() => ({ value: { status: "guest", guest: { id: "a" }, user: null } as { status: string; guest: { id: string } | null; user: { id: string } | null } }));
 vi.mock("../auth/AuthProvider", () => ({ useAuth: () => auth.value }));

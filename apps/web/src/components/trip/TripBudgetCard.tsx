@@ -13,6 +13,7 @@ import {
 } from "@triply/shared";
 import { useTripBudget } from "../../hooks/useTripBudget";
 import type { BudgetSlice } from "../../config/trip";
+import { useToast } from "../ToastProvider";
 
 interface TripBudgetCardProps {
   expenseDraft?: VisitExpenseDraft | null;
@@ -59,6 +60,7 @@ export default function TripBudgetCard(props: TripBudgetCardProps) {
 
 function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex, expenseDraft }: TripBudgetCardProps & { tripId: string }) {
   const { t } = useTranslation("expenses", { i18n });
+  const toast = useToast();
   const { query, mutation } = useTripBudget(tripId);
   const data = budgetData && budgetData.revision > (query.data?.revision ?? -1) ? budgetData : query.data ?? budgetData;
   const summary = data?.summary;
@@ -126,6 +128,7 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex, e
           ...(itineraryItemId ? { itineraryItemId } : {}) });
       } catch {
         setError("errors:validation");
+        toast("errors:validation", "error");
         setInvalidAmount(true); amountInput.current?.focus();
         return;
       }
@@ -133,8 +136,10 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex, e
       setTitle(""); setAmount(""); setCategory(EXPENSE_CATEGORIES[0]); requestId.current = crypto.randomUUID();
       setItineraryItemId(null); setDate(null); setSuccess(true);
       setSelectedDayId(currentDefaultDayId.current);
+      toast(() => i18n.t("expenseSaved", { ns: "itinerary/expenses" }));
     } catch (failure) {
       setError(localizedErrorKey(failure));
+      toast(() => localizedError(failure), "error");
     } finally { submitting.current = false; }
   };
   const deleteExpense = async (id: string) => {
@@ -152,10 +157,11 @@ function PersistentBudgetCard({ tripId, budgetData, days = [], activeDayIndex, e
       const { id, createdAt: _created, updatedAt: _updated, automaticSource: _source, ...original } = correcting;
       let amountMinor: number;
       try { amountMinor = decimalToMinor(decimalInput(correctedAmount.trim()), correcting.currency); }
-      catch { setError("errors:validation"); return; }
+      catch { setError("errors:validation"); toast("errors:validation", "error"); return; }
       await mutation.mutateAsync({ type: "update", id, revision: data.revision, expense: { ...original, amountMinor } });
       setCorrecting(null); setSuccess(true);
-    } catch (failure) { setError(localizedErrorKey(failure)); }
+      toast(() => i18n.t("expenseSaved", { ns: "itinerary/expenses" }));
+    } catch (failure) { setError(localizedErrorKey(failure)); toast(() => localizedError(failure), "error"); }
     finally { submitting.current = false; }
   };
 

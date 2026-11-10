@@ -11,6 +11,7 @@ import { EQUIPMENT_CATEGORIES, createTripEquipmentItemSchema, type EquipmentCate
 import { useCreateEquipmentItem, useDeleteEquipmentItem, useTripEquipment, useUpdateEquipmentItem } from "../hooks/useTripEquipment";
 import PackingSuggestions from "../components/PackingSuggestions";
 import { useTrip } from "../hooks/useTrips";
+import { useToast } from "../components/ToastProvider";
 
 const categories = {
   documents: { get label() { return i18n.t("documents", { ns: "packing" }); }, Icon: DescriptionOutlined },
@@ -26,6 +27,7 @@ function ItemForm({ item, busy, onSave, onCancel }: {
   onSave: (input: CreateTripEquipmentItem) => Promise<void>; onCancel?: () => void;
 }) {
   const { t } = useTranslation("common", { i18n });
+  const toast = useToast();
   const [name, setName] = useState(item?.name ?? "");
   const [category, setCategory] = useState<EquipmentCategory>(item?.category ?? "other");
   const [count, setCount] = useState(String(item?.count ?? 1));
@@ -41,6 +43,7 @@ function ItemForm({ item, busy, onSave, onCancel }: {
     if (!result.success) {
       setInvalidFields(result.error.issues.flatMap(issue => issue.path[0] ?? []));
       setError("packing:enterAnItemName1120CharactersAnd");
+      if (item) toast("packing:enterAnItemName1120CharactersAnd", "error");
       return;
     }
     lock.current = true;
@@ -48,9 +51,11 @@ function ItemForm({ item, busy, onSave, onCancel }: {
     setInvalidFields([]);
     try {
       await onSave(result.data);
+      if (item) toast(() => i18n.t("itemUpdated", { ns: "packing" }));
       if (!item) { setName(""); nameInput.current?.focus(); }
     } catch (failure) {
       setError(localizedErrorKey(failure));
+      if (item) toast(() => localizedError(failure), "error");
     } finally { lock.current = false; }
   }
   return <form className="packing-form" onSubmit={event => void submit(event)} noValidate aria-label={item ? i18n.t("edit", { ns: "packing", value0: item.name }) : i18n.t("addPackingItem", { ns: "packing" })}>

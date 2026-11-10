@@ -17,7 +17,8 @@ export default function LanguageSwitcher({ fullWidth = false }: { fullWidth?: bo
       onClick={event => setAnchor(event.currentTarget)}>
       <img className="flag-icon" src={`/flags/${current}.svg`} alt="" /><span aria-hidden="true" style={{ marginLeft: 6 }}>{current.toUpperCase()}</span>
     </Button>
-    <Menu id={id} anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
+    <Menu id={id} anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}
+      slotProps={{ paper: { sx: fullWidth && anchor ? { width: anchor.getBoundingClientRect().width } : undefined } }}>
       {languages.map(option => <MenuItem key={option.code} role="menuitemradio"
         aria-checked={current === option.code} selected={current === option.code}
         onClick={() => {
