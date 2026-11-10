@@ -414,12 +414,12 @@ export default function TripPage() {
                 </span>
               )}
               {status === "ready" && totalActivities > 0 && (
-                <span className="trip-badge">
+                <span className="trip-badge is-stat">
                   <PlaceOutlined /> {i18n.t("activityCount", { ns: "trips", count: totalActivities })}
                 </span>
               )}
               {status === "ready" && walkingKm !== null && itinerary?.days.every(value => value.totalDistanceMeters !== null) && (
-                <span className="trip-badge">
+                <span className="trip-badge is-stat">
                   <DirectionsWalkOutlined /> {i18n.t("walkingKm", { ns: "trips/details", distance: walkingKm })}
                 </span>
               )}

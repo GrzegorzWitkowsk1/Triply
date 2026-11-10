@@ -85,7 +85,7 @@ export default function PackingSuggestions({ tripId }: { tripId: string }) {
         {preview && <>
           <p className="packing-muted">{i18n.t("reviewEverySuggestionAddSelectedAppendsItemsAnd", { ns: "packing/suggestions" })}</p>
           <p className="packing-preview-summary" role="status">{i18n.t("reviewCounts", { ns: "packing/suggestions", total: reviews.length, newCount: counts.new, exact: counts.exact, possible: counts.possible })}</p>
-          {preview.warnings.map((warning, index) => <p className="packing-preview-warning" key={`${index}-${warning}`}>{i18n.t("reviewWarning", { ns: "packing/suggestions" })}</p>)}
+          {preview.warnings.length > 0 && <p className="packing-preview-warning">{i18n.t("reviewWarning", { ns: "packing/suggestions" })}</p>}
           <p className="packing-muted">{i18n.t("possibleDuplicatesAreSkippedByDefaultSelectThem", { ns: "packing/suggestions" })}</p>
           <p className="packing-muted">{i18n.t("expires", { ns: "packing/suggestions", time: formatTime(preview.expiresAt) })}</p>
           {previewStale && <Alert severity="warning">{i18n.t("yourTripHasChangedSinceTheseSuggestionsWere2", { ns: "packing/suggestions" })}</Alert>}
@@ -125,7 +125,7 @@ export default function PackingSuggestions({ tripId }: { tripId: string }) {
       <DialogActions>
         <Button onClick={close} disabled={apply.isPending}>{preview ? i18n.t("cancel", { ns: "common" }) : i18n.t("close", { ns: "common" })}</Button>
         {preview && <Button onClick={() => void start()} disabled={apply.isPending || generate.isPending}>{i18n.t("refreshSuggestions", { ns: "packing/suggestions" })}</Button>}
-        {preview && <Button variant="contained" onClick={() => void addSelected()} disabled={!selectedIds.length || apply.isPending || expired || (previewStale && !allowStale)}>{apply.isPending ? i18n.t("adding", { ns: "packing/suggestions" }) : i18n.t("addSelectedItems", { ns: "packing/suggestions", value0: selectedIds.length })}</Button>}
+        {preview && <Button className="packing-add-selected-btn" variant="contained" onClick={() => void addSelected()} disabled={!selectedIds.length || apply.isPending || expired || (previewStale && !allowStale)}>{apply.isPending ? i18n.t("adding", { ns: "packing/suggestions" }) : i18n.t("addSelectedItems", { ns: "packing/suggestions", value0: selectedIds.length })}</Button>}
       </DialogActions>
     </Dialog>
   </>;

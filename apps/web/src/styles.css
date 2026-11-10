@@ -2801,6 +2801,11 @@ button, input, textarea, select { font-family: inherit; }
   font-size: 17px;
 }
 
+.trip-badge.is-stat {
+  background: var(--color-surface);
+  border: 1px solid var(--color-primary);
+}
+
 .trip-badge.is-budget.is-ok {
   background: #e7f6e8;
   color: var(--color-success-text);
@@ -3152,7 +3157,6 @@ button, input, textarea, select { font-family: inherit; }
 
 .trip-map-wrap:hover {
   transform: translateY(-6px);
-  box-shadow: 0 16px 40px rgba(242, 102, 75, 0.22);
 }
 
 .trip-map {
@@ -5237,6 +5241,7 @@ body:has(.assistant-panel[aria-modal="true"]) {
 .equipment-page button:disabled { cursor: not-allowed; opacity: .55; }
 .equipment-page :is(button, input, select, a):focus-visible { outline: 3px solid var(--color-primary); outline-offset: 3px; }
 .equipment-page .btn-primary:not(:disabled) { background: var(--color-primary); color: var(--color-text); }
+.equipment-page .equipment-ai-btn:not(:disabled), .packing-preview-dialog .packing-add-selected-btn:not(.Mui-disabled) { color: #fff; }
 .packing-muted { color: var(--color-muted); font-size: 14px; margin-top: 8px; }
 .packing-progress { margin: 0 24px 20px; height: 8px; background: var(--color-primary-light); border-radius: 99px; overflow: hidden; }
 .packing-progress > div { height: 100%; background: var(--color-primary); border-radius: inherit; transition: width .2s ease; }

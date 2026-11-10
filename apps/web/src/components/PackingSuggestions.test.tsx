@@ -48,10 +48,11 @@ it("translates duplicate and stale preview states while preserving suggestions a
   expect(dialog.getByText("Walking shoes")).toBeTruthy();
   expect(records).toEqual(original); expect(generatePackingPreview).toHaveBeenCalledTimes(1); expect(applyPackingPreview).not.toHaveBeenCalled();
 });
-it("generates and renders reviewable categories, quantities, reasons and warnings", async () => {
+it.each([0, 1, 3])("generates reviewable suggestions and shows at most one review notice for %s warnings", async warningCount => {
+  vi.mocked(generatePackingPreview).mockResolvedValueOnce({ ...fixture(), warnings: Array.from({ length: warningCount }, (_, index) => `Review warning ${index + 1}`) });
   mount(); const dialog = await open(); expect(generatePackingPreview).toHaveBeenCalledWith("a", expect.any(AbortSignal));
   expect(dialog.getByText(/Clothing.*Quantity/)).toBeTruthy(); expect(dialog.getByText(/Quantity 2/)).toBeTruthy(); expect(dialog.getByText("Keep devices charged.")).toBeTruthy();
-  expect(dialog.getByText("Some suggestions require review. Check them before adding.")).toBeTruthy(); expect(dialog.getByText("2 suggestions selected")).toBeTruthy(); expect(applyPackingPreview).not.toHaveBeenCalled();
+  expect(dialog.queryAllByText("Some suggestions require review. Check them before adding.")).toHaveLength(warningCount > 0 ? 1 : 0); expect(dialog.getByText("2 suggestions selected")).toBeTruthy(); expect(applyPackingPreview).not.toHaveBeenCalled();
 });
 it("supports individual selection, deselection, select all and no-selection disabled state", async () => {
   mount(); const dialog = await open();
