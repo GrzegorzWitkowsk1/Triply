@@ -1,7 +1,6 @@
 import LanguageSwitcher from "./LanguageSwitcher";
 import { ApiError } from "../api/client";
 import { errorKey as localizedErrorKey, resolveMessage } from "../i18n/errors";
-import { errorMessage as localizedError } from "../i18n/errors";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -125,8 +124,9 @@ export default function LoginPage({ mode }: LoginPageProps) {
       : "/home";
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>, formMode: AuthView) => {
     event.preventDefault();
+    if (formMode !== mode) return;
     if (submitting.current || isSubmitting) return;
     const invalid = [...event.currentTarget.querySelectorAll<HTMLInputElement>("input")].filter(input => !input.validity.valid);
     setInvalidFields(invalid.map(input => input.name));
@@ -135,7 +135,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
     setError(null);
 
     try {
-      if (isRegister) {
+      if (formMode === "register") {
         await register({ email, password });
       } else {
         await login({ email, password });
@@ -149,34 +149,75 @@ export default function LoginPage({ mode }: LoginPageProps) {
 
   const formState = { email, password, showPassword, setEmail, setPassword, setShowPassword };
 
+  const renderForm = (formMode: AuthView) => {
+    const isRegister = formMode === "register";
+    const active = mode === formMode;
+
+    return (
+      <div
+        className={`auth-panel auth-panel--${formMode}`}
+        inert={!active}
+        aria-hidden={!active}
+      >
+        <form noValidate className="auth-form" aria-labelledby={`auth-${formMode}-heading`} aria-busy={isSubmitting} onSubmit={(event) => void handleSubmit(event, formMode)}>
+          <h1 className="auth-heading" id={`auth-${formMode}-heading`}>
+            {t(isRegister ? "createAccountTitle" : "welcomeBack")}
+          </h1>
+          <p className="auth-subtitle">
+            {isRegister
+              ? i18n.t("joinTriplyAndKeepEveryThoughtfulItineraryIn", { ns: "auth" })
+              : i18n.t("signInToContinuePlanningYourNextAdventure", { ns: "auth" })}
+          </p>
+
+          {active && error && (
+            <p className="auth-error" role="alert">
+              {resolveMessage(error)}
+            </p>
+          )}
+          {active && sessionExpired && <p className="auth-error" role="status">{i18n.t("yourGuestSessionHasExpiredEnterGuestMode", { ns: "auth" })}</p>}
+
+          <Fields mode={formMode} {...formState} invalidFields={active ? invalidFields : []} disabled={isSubmitting} />
+
+          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+            {isSubmitting
+              ? isRegister
+                ? i18n.t("creatingAccount", { ns: "auth" })
+                : i18n.t("signingIn", { ns: "auth" })
+              : isRegister
+                ? i18n.t("createAccount", { ns: "auth" })
+                : i18n.t("signIn", { ns: "auth" })}
+          </button>
+
+          <button type="button" className="btn" disabled={isSubmitting} onClick={() => {
+            if (submitting.current || isSubmitting) return;
+            submitting.current = true;
+            setError(null);
+            void startGuest().then(() => navigate(getDestination(), { replace: true })).catch((caught: unknown) =>
+              setError(localizedErrorKey(caught))).finally(() => { submitting.current = false; });
+          }}>{isSubmitting ? i18n.t("pleaseWait", { ns: "auth" }) : i18n.t("continueAsGuest", { ns: "auth" })}</button>
+          <p className="auth-switch-link">
+            {isRegister ? i18n.t("alreadyHaveAnAccount", { ns: "auth" }) : i18n.t("newToTriply", { ns: "auth" })}
+            <button
+              type="button"
+              className="auth-link"
+              disabled={isSubmitting}
+              onClick={() => navigate(isRegister ? "/login" : "/register", { state: location.state })}
+            >
+              {isRegister ? i18n.t("signIn", { ns: "auth" }) : i18n.t("createAnAccount", { ns: "auth" })}
+            </button>
+          </p>
+        </form>
+      </div>
+    );
+  };
+
   return (
     <main className="login-screen" tabIndex={-1}>
-      <div className="auth-card">
-        <div className="auth-media">
-          <img src="/barcelona.jpg" alt={i18n.t("heroImage", { ns: "auth" })} />
-          <div className="auth-media-fade" />
-          <div className="auth-media-body">
-            <span className="auth-location">
-              <LocationOnOutlined sx={{ color: "var(--color-primary)" }} fontSize="small" />
-              {i18n.t("heroImage", { ns: "auth" })}
-            </span>
-            <p className="auth-tagline">
-              {i18n.t("aBetterTripStartsWithAPlanThat", { ns: "auth" })}</p>
-            <ul className="auth-features">
-              <li>
-                <CheckCircle sx={{ color: "var(--color-ok)" }} fontSize="small" />
-                {i18n.t("personalItinerariesInSeconds", { ns: "auth" })}</li>
-              <li>
-                <CheckCircle sx={{ color: "var(--color-ok)" }} fontSize="small" />
-                {i18n.t("realisticRoutesAndBudgets", { ns: "auth" })}</li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="auth-panel">
+      <div className="auth-language"><LanguageSwitcher /></div>
+      <div className={`auth-card${isRegister ? " is-register" : ""}`}>
+        <header className="auth-header">
           <div className="auth-brand">
             <Logo />
-            <LanguageSwitcher />
           </div>
 
           <div className="auth-switch" role="group" aria-label={i18n.t("authView", { ns: "auth" })}>
@@ -197,54 +238,30 @@ export default function LoginPage({ mode }: LoginPageProps) {
             >
               {i18n.t("register", { ns: "auth" })}</button>
           </div>
-
-          <form noValidate className="auth-form" aria-busy={isSubmitting} onSubmit={(event) => void handleSubmit(event)}>
-            <h1 className="auth-heading">
-              {t(isRegister ? "createAccountTitle" : "welcomeBack")}
-            </h1>
-            <p className="auth-subtitle">
-              {isRegister
-                ? i18n.t("joinTriplyAndKeepEveryThoughtfulItineraryIn", { ns: "auth" })
-                : i18n.t("signInToContinuePlanningYourNextAdventure", { ns: "auth" })}
-            </p>
-
-            {error && (
-              <p className="auth-error" role="alert">
-                {resolveMessage(error)}
-              </p>
-            )}
-            {sessionExpired && <p className="auth-error" role="status">{i18n.t("yourGuestSessionHasExpiredEnterGuestMode", { ns: "auth" })}</p>}
-
-            <Fields mode={mode} {...formState} invalidFields={invalidFields} disabled={isSubmitting} />
-
-            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-              {isSubmitting
-                ? isRegister
-                  ? i18n.t("creatingAccount", { ns: "auth" })
-                  : i18n.t("signingIn", { ns: "auth" })
-                : isRegister
-                  ? i18n.t("createAccount", { ns: "auth" })
-                  : i18n.t("signIn", { ns: "auth" })}
-            </button>
-
-            <button type="button" className="btn" disabled={isSubmitting} onClick={() => {
-              if (submitting.current || isSubmitting) return;
-              submitting.current = true;
-              setError(null);
-              void startGuest().then(() => navigate(getDestination(), { replace: true })).catch((caught: unknown) =>
-                setError(localizedErrorKey(caught))).finally(() => { submitting.current = false; });
-            }}>{isSubmitting ? i18n.t("pleaseWait", { ns: "auth" }) : i18n.t("continueAsGuest", { ns: "auth" })}</button>
-            <p className="auth-switch-link">
-              {isRegister ? i18n.t("alreadyHaveAnAccount", { ns: "auth" }) : i18n.t("newToTriply", { ns: "auth" })}
-              <button
-                type="button"
-                className="auth-link"
-                onClick={() => navigate(isRegister ? "/login" : "/register", { state: location.state })}
-              >
-                {isRegister ? i18n.t("signIn", { ns: "auth" }) : i18n.t("createAnAccount", { ns: "auth" })}
-              </button>
-            </p>
-          </form>
+        </header>
+        <div className="auth-stage">
+          {renderForm("login")}
+          {renderForm("register")}
+          <div className="auth-media">
+            <img src="/barcelona.jpg" alt={i18n.t("heroImage", { ns: "auth" })} />
+            <div className="auth-media-fade" />
+            <div className="auth-media-body">
+              <span className="auth-location">
+                <LocationOnOutlined sx={{ color: "var(--color-primary)" }} fontSize="small" />
+                {i18n.t("heroImage", { ns: "auth" })}
+              </span>
+              <p className="auth-tagline">
+                {i18n.t("aBetterTripStartsWithAPlanThat", { ns: "auth" })}</p>
+              <ul className="auth-features">
+                <li>
+                  <CheckCircle sx={{ color: "var(--color-ok)" }} fontSize="small" />
+                  {i18n.t("personalItinerariesInSeconds", { ns: "auth" })}</li>
+                <li>
+                  <CheckCircle sx={{ color: "var(--color-ok)" }} fontSize="small" />
+                  {i18n.t("realisticRoutesAndBudgets", { ns: "auth" })}</li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
     </main>

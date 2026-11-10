@@ -25,7 +25,7 @@ it("returns authenticated users to the planning URL after switching tabs", async
   fireEvent.click(within(screen.getByRole("group", { name: "Auth view" })).getByRole("button", { name: "Register" }));
   fireEvent.click(within(screen.getByRole("group", { name: "Auth view" })).getByRole("button", { name: "Sign in" }));
   fireEvent.change(screen.getByRole("textbox", { name: /Email address/ }), { target: { value: "planner@example.com" } });
-  fireEvent.change(screen.getByLabelText(/^Password/), { target: { value: "Original123!Aa" } });
+  fireEvent.change(within(screen.getByRole("form")).getByLabelText(/^Password/), { target: { value: "Original123!Aa" } });
   fireEvent.submit(view.container.querySelector("form")!);
   expect(await screen.findByTestId("destination")).toHaveTextContent("/home?destinationId=city-003");
 });
@@ -48,11 +48,28 @@ it("blocks duplicate sign-ins and preserves entered credentials after a failure"
   mocks.login.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
   const view = mount();
   fireEvent.change(screen.getByRole("textbox", { name: /Email address/ }), { target: { value: "planner@example.com" } });
-  fireEvent.change(screen.getByLabelText(/^Password/), { target: { value: "Original123!Aa" } });
+  fireEvent.change(within(screen.getByRole("form")).getByLabelText(/^Password/), { target: { value: "Original123!Aa" } });
   fireEvent.submit(view.container.querySelector("form")!); fireEvent.submit(view.container.querySelector("form")!);
   expect(mocks.login).toHaveBeenCalledTimes(1);
   reject(new Error("offline"));
   await screen.findByRole("alert");
   expect(screen.getByRole("textbox", { name: /Email address/ })).toHaveValue("planner@example.com");
-  expect(screen.getByLabelText(/^Password/)).toHaveValue("Original123!Aa");
+  expect(within(screen.getByRole("form")).getByLabelText(/^Password/)).toHaveValue("Original123!Aa");
+});
+
+it("keeps the sliding image mounted and only exposes the selected form", async () => {
+  const view = mount();
+  const image = screen.getByRole("img", { name: /Barcelona/ });
+  fireEvent.change(screen.getByRole("textbox", { name: /Email address/ }), { target: { value: "planner@example.com" } });
+  fireEvent.change(within(screen.getByRole("form")).getByLabelText(/^Password/), { target: { value: "Original123!Aa" } });
+  fireEvent.click(within(screen.getByRole("group", { name: "Auth view" })).getByRole("button", { name: "Register" }));
+  expect(screen.getByRole("img", { name: /Barcelona/ })).toBe(image);
+  expect(view.container.querySelector(".auth-card")).toHaveClass("is-register");
+  expect(view.container.querySelector(".auth-panel--login")).toHaveAttribute("inert");
+  expect(screen.getAllByRole("form")).toHaveLength(1);
+  expect(screen.getByRole("textbox", { name: /Email address/ })).toHaveValue("planner@example.com");
+  expect(within(screen.getByRole("form")).getByLabelText(/^Password/)).toHaveAttribute("autocomplete", "new-password");
+  fireEvent.submit(screen.getByRole("form"));
+  expect(await screen.findByTestId("destination")).toHaveTextContent("/home?destinationId=city-003");
+  expect(mocks.register).toHaveBeenCalledWith({ email: "planner@example.com", password: "Original123!Aa" });
 });
