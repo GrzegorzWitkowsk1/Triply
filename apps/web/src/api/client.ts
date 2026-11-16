@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { apiUrl } from "./config";
 
 export class ApiError extends Error {
   readonly code?: string;
@@ -45,7 +46,7 @@ export async function request<T>(path: string, init: RequestInit = {}, schema?: 
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     ...init,
     headers,
     credentials: init.credentials ?? "include",

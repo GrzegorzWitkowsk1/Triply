@@ -1,12 +1,13 @@
 import { getSelectedLanguage } from "../i18n";
 import { ApiError, parseResponse } from "./client";
+import { apiUrl } from "./config";
 
 export type PdfTarget = { tripId: string; shareToken?: never } | { shareToken: string; tripId?: never };
 export async function downloadTripPdf(target: PdfTarget, signal?: AbortSignal): Promise<void> {
   const isPublic = target.shareToken !== undefined;
   const path = isPublic ? `/api/public/trips/${encodeURIComponent(target.shareToken!)}/export/pdf`
     : `/api/trips/${encodeURIComponent(target.tripId!)}/export/pdf`;
-  const response = await fetch(`${path}?locale=${getSelectedLanguage()}`,  { credentials: isPublic ? "omit" : "include", cache: "no-store",
+  const response = await fetch(apiUrl(`${path}?locale=${getSelectedLanguage()}`),  { credentials: isPublic ? "omit" : "include", cache: "no-store",
     referrerPolicy: "no-referrer", headers: { Accept: "application/pdf" }, signal });
   if (!response.ok) { await parseResponse(response); return; }
   if (!response.headers.get("Content-Type")?.startsWith("application/pdf")) throw new ApiError("The server did not return a PDF. Please try again.", 502);
