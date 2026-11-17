@@ -9,7 +9,7 @@ export interface SessionCookie {
   secure: boolean;
   httpOnly: boolean;
   path: string;
-  sameSite: "lax";
+  sameSite: 'none' | "lax";
 }
 export interface SessionData {
   cookie: SessionCookie;

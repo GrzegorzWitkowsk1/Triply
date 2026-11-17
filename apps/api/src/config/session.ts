@@ -7,7 +7,7 @@ import { createMongoSessionStore, sessionContents, SESSION_TTL_MS, type SessionD
 
 export const SESSION_COOKIE_NAME = "triply.sid";
 export const sessionCookieOptions = {
-  httpOnly: true, secure: env.NODE_ENV === "production", sameSite: "lax", path: "/",
+  httpOnly: true, secure: env.NODE_ENV === "production", sameSite: env.NODE_ENV === "production" ? "none" : "lax", path: "/",
 } as const;
 
 export interface TriplySession {
